@@ -39,6 +39,16 @@ class ClaimantClaimViewTest {
     }
 
     @Test
+    void underReviewStatusMapsToReceivedAndUnderReviewSteps() {
+        List<String> steps = ClaimantClaimView.stepsFor("UNDER_REVIEW");
+        assertEquals(2, steps.size());
+        assertTrue(steps.get(0).startsWith("FNOL received"),
+                "the received step stays visible once an adjuster is assigned");
+        assertTrue(steps.get(1).startsWith("Under review"),
+                "an assigned claim tells the claimant it is now under review");
+    }
+
+    @Test
     void unknownStatusYieldsNoSteps() {
         assertTrue(ClaimantClaimView.stepsFor("MYSTERY").isEmpty());
     }

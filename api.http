@@ -41,3 +41,9 @@ Content-Disposition: form-data; name="lossDescription"\r
 Kitchen flooded after a pipe burst.\r
 # (photos are optional — add a part like the text ones above, name "photos", to upload)
 ------ApiHttpBoundary--\r
+
+### Adjuster queue — own claims (ADJUSTER_L1/L2) or the whole team (SUPERVISOR)
+# Auth: access token from an adjuster/supervisor session (browser DevTools -> any
+# /api/queue request -> Authorization header), pasted as {{token}} above.
+GET {{host}}/api/queue
+Authorization: Bearer {{token}}

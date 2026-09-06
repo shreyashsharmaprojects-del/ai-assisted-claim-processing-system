@@ -1,0 +1,44 @@
+<main data-testid="queue-page">
+  <h1>My queue</h1>
+
+  @if (error(); as message) {
+    <p class="error" data-testid="queue-error" role="alert">{{ message }}</p>
+  } @else if (loaded()) {
+    @if (claims().length === 0) {
+      <p data-testid="queue-empty">No claims in your queue right now.</p>
+    } @else {
+      <ul class="queue-list">
+        @for (claim of claims(); track claim.claimNumber) {
+          <li class="queue-row" data-testid="queue-row">
+            <div class="queue-head">
+              <strong data-testid="queue-claim-number">{{ claim.claimNumber }}</strong>
+              <span class="badge" data-testid="queue-status">{{ claim.status }}</span>
+              <span class="badge level" data-testid="queue-level">{{ claim.level }}</span>
+              @if (claim.assignedTo; as assignee) {
+                <span data-testid="queue-assigned">→ {{ assignee }}</span>
+              }
+            </div>
+            <dl>
+              <div>
+                <dt>Policy</dt>
+                <dd data-testid="queue-policy">{{ claim.policyNumber }}</dd>
+              </div>
+              <div>
+                <dt>Loss date</dt>
+                <dd data-testid="queue-loss-date">{{ claim.lossDate }}</dd>
+              </div>
+              <div>
+                <dt>Location</dt>
+                <dd data-testid="queue-loss-location">{{ claim.lossLocation }}</dd>
+              </div>
+              <div>
+                <dt>Description</dt>
+                <dd data-testid="queue-loss-description">{{ claim.lossDescription }}</dd>
+              </div>
+            </dl>
+          </li>
+        }
+      </ul>
+    }
+  }
+</main>

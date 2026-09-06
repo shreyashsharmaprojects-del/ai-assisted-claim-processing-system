@@ -72,5 +72,58 @@
         "post.logout.redirect.uris": "http://localhost:4200/*"
       }
     }
+  ],
+  "users": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "username": "adjuster.one",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Priya",
+      "lastName": "Sharma",
+      "email": "priya.sharma@claims.test",
+      "realmRoles": ["adjuster_l1"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "adjuster-Pass-123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "username": "adjuster.two",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Marcus",
+      "lastName": "Webb",
+      "email": "marcus.webb@claims.test",
+      "realmRoles": ["adjuster_l1"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "adjuster-Pass-123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000003",
+      "username": "adjuster.three",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ines",
+      "lastName": "Kowalski",
+      "email": "ines.kowalski@claims.test",
+      "realmRoles": ["adjuster_l2"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "adjuster-Pass-123",
+          "temporary": false
+        }
+      ]
+    }
   ]
 }

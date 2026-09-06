@@ -5,6 +5,105 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-2 assignment runs inside the FNOL transaction
+
+**Context:** Plan slice 2: new claims move to UNDER_REVIEW and are load-balanced to the
+least-loaded adjuster of their level (fewest open claims, lowest `app_user.id` on ties),
+atomically. There is no separate "assign later" endpoint in the slice.
+**Decision:** Assignment happens in the creating transaction (the claim is never
+observable as UNASSIGNED when adjusters of its level exist). Atomicity under simultaneous
+FNOLs: the candidate adjusters' rows are locked (`SELECT ... FOR UPDATE`) before counts
+are read, so concurrent FNOLs to one level serialize and the second recounts after the
+first commits. Selection itself is a pure function (`LoadBalancer`), unit-tested; the
+serialization is exercised by a two-thread integration test asserting distinct assignees.
+**Why:** The plan's risk list names this exact race ("make assignment atomic"); row
+locking is the smallest mechanism that is actually atomic.
+**Rejected:** A global advisory lock (serializes every FNOL across both levels); an
+asynchronous assignment worker (no queue infra, and the claimant email must carry the
+assignee immediately).
+
+---
+
+### 2026-09-06 — app_user carries the routing level
+
+**Context:** The plan model lists `app_user` with identity fields only ("role comes from
+Keycloak, not stored here"), but slice-2 assignment must pick L1 vs L2 adjusters at claim
+time, and the backend is a resource server — it never calls Keycloak's admin API.
+**Decision:** `app_user` gains a `level` column (L1/L2), seeded in V4 to mirror the
+provisioned Keycloak role of each staff user. It is a cache projection, exactly like
+`display_name`/`email`, kept in step with the Keycloak role.
+**Why:** Without it, load-balancing within a level is impossible without an admin-API call
+per claim.
+**Rejected / deferred:** Auto-populating `app_user` rows at login ("on login" per plan) —
+adjusters are provisioned and seeded, so no first-login write is needed yet; if staff
+profiles ever drift, the login hook is the sync point (see Deferred).
+
+---
+
+### 2026-09-06 — Assignment email to the claimant; assignee identity stays off the screen
+
+**Context:** Flow 2: "an assignment email is sent with who to contact" and the claimant's
+process-steps screen updates. Plan: process steps "never exposes the … internal assignee".
+**Decision:** The assignment email goes to the verified policy-holder address and names the
+adjuster (display name + email) — that is the "who to contact". The claimant-view steps
+for UNDER_REVIEW say an adjuster is assigned but name no one. Like the FNOL email, sending
+is best-effort after commit (a mail outage must not lose the assignment).
+**Why:** Requirement text puts contact in the email; the plan's visibility rules keep
+identity off claimant surfaces (email is one-way and not a claimant-facing screen).
+
+---
+
+### 2026-09-06 — Keycloak staff users provisioned with fixed subjects
+
+**Context:** Adjusters cannot self-register; E2E logs them in as provisioned users, and the
+backend's "own queue" join keys on `app_user.keycloak_sub = JWT subject`.
+**Decision:** `keycloak/realm-export.json` now imports three staff users (two L1, one L2)
+each carrying an explicit fixed `id`, and V4 seeds `app_user.keycloak_sub` with those same
+values. Verified empirically that realm import honors explicit user ids, so subjects are
+deterministic in dev, E2E (`claims_e2e`), and CI alike.
+**Why:** A random subject per import would make "own queue" untestable end to end.
+
+---
+
+### 2026-09-06 — "404 for non-assignee" integration case deferred to slice 3
+
+**Context:** Plan slice 2 says integration tests cover "queue + assignment auth rules
+(incl. 404 for non-assignee)". Slice 2 exposes no per-claim internal endpoint — the full
+claim view that a non-assignee could request arrives in slice 3 — so the 404 case has
+nothing to attach to.
+**Decision:** Slice 2 integration pins the queue's real rules: role gating (401 anonymous,
+403 claimant), own-vs-team visibility, ordering, and empty queue. The cross-tenant
+404-for-non-assignee assertion ships with the slice-3 full-view endpoints, where it is
+testable.
+**Why:** Building a per-claim endpoint early just to carry one 404 test would pull slice 3
+forward and violate the slice boundary.
+
+---
+
+### 2026-09-06 — CLAIM_ASSIGNED audit rows are actor-less system actions
+
+**Context:** C1: "every status change and decision is logged with actor and timestamp."
+Assignment is triggered by a claimant's FNOL but performed by the system.
+**Decision:** The audit writer records `CLAIM_ASSIGNED` with `actor_sub` NULL (system),
+`after` holding claim number, assignee id + display name, and the new status; `CLAIM_CREATED`
+keeps the claimant as actor. The schema already allows a NULL actor.
+**Why:** Crediting the claimant with an internal assignment (or fabricating an adjuster as
+the actor) would misattribute the action.
+
+---
+
+## Deferred
+
+### 2026-09-06 — app_user auto-population on login; supervisor Keycloak user
+
+**Considered:** A login hook that upserts `app_user` rows from the JWT, and provisioning a
+supervisor user in Keycloak now.
+**Why not now:** Adjusters are seeded with fixed subjects, so no first-login upsert is
+needed; the supervisor role token already unlocks the team queue in tests, and no journey
+logs in as a supervisor until the supervisor slices (5+).
+**Build it when:** staff display data can drift from Keycloak, or slice 5's supervisor
+journey needs a real supervisor login.
+
 ### 2026-09-06 — Slice-1 review fixes (fresh-context agent review)
 
 **Context:** A fresh-context review of slice 1 found one blocking CI issue and eight

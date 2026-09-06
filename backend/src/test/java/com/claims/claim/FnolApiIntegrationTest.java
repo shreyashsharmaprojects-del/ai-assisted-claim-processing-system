@@ -99,10 +99,11 @@ class FnolApiIntegrationTest {
                         true));
 
         assertEquals(201, response.statusCode(), response.body());
-        assertTrue(response.body().contains("\"status\":\"UNASSIGNED\""), response.body());
+        assertTrue(response.body().contains("\"status\":\"UNDER_REVIEW\""), response.body());
         assertTrue(response.body().matches(".*\"claimNumber\":\"CLM-\\d{6}\".*"), response.body());
         // The claimant view must structurally lack internals on the wire (visibility wall).
-        for (String internal : new String[] {"claimantSub", "policyId", "lossDescription", "level"}) {
+        for (String internal : new String[] {"claimantSub", "policyId", "lossDescription", "level",
+                "assignedTo", "assignedAdjusterId"}) {
             assertFalse(response.body().contains("\"" + internal + "\""),
                     "claimant response must not contain internal field " + internal + ": " + response.body());
         }
@@ -112,6 +113,14 @@ class FnolApiIntegrationTest {
         assertEquals("L1", claim.getLevel(), "HOME routes to L1");
         assertEquals("sub-claimant-1", claim.getClaimantSub());
         assertEquals("Happened overnight.", claim.getClaimantRemarks());
+        // Slice 2: the claim was assigned at FNOL to an L1 adjuster and moved to under review.
+        assertEquals("UNDER_REVIEW", claim.getStatus());
+        assertEquals(1, count("SELECT count(*) FROM claim WHERE id = ? "
+                + "AND assigned_adjuster_id IS NOT NULL AND assigned_at IS NOT NULL", claim.getId()));
+        assertEquals("L1", jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a ON a.id = c.assigned_adjuster_id WHERE c.id = ?",
+                String.class, claim.getId()),
+                "an L1 claim must be assigned to an L1 adjuster");
 
         // Attachment row + the file really on disk under the upload dir.
         String path = jdbcTemplate.queryForObject(
@@ -124,11 +133,19 @@ class FnolApiIntegrationTest {
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE entity_type = 'CLAIM' "
                 + "AND entity_id = ? AND action = 'CLAIM_CREATED' AND actor_sub = ?",
                 claim.getId(), "sub-claimant-1"));
+        // And the assignment, recorded as a system action.
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE entity_type = 'CLAIM' "
+                + "AND entity_id = ? AND action = 'CLAIM_ASSIGNED' AND actor_sub IS NULL",
+                claim.getId()));
 
-        // FNOL email to the verified policy-holder address with the claim number.
+        // FNOL + assignment emails to the verified policy-holder address with the claim number.
         String inbox = get(mailpitUrl() + "/api/v1/messages");
         assertTrue(inbox.contains(claimNumber), "mailpit should hold the FNOL email: " + inbox);
         assertTrue(inbox.contains("ada.lovelace@example.test"), inbox);
+        assertTrue(inbox.contains("is now with an adjuster"),
+                "an assignment email must be sent: " + inbox);
+        assertTrue(inbox.contains("priya.sharma@claims.test") || inbox.contains("marcus.webb@claims.test"),
+                "the assignment email names the assigned adjuster: " + inbox);
     }
 
     @Test
@@ -145,7 +162,13 @@ class FnolApiIntegrationTest {
 
         assertEquals(201, response.statusCode(), response.body());
         String claimNumber = response.body().replaceAll(".*\"claimNumber\":\"([^\"]+)\".*", "$1");
-        assertEquals("L2", findClaim(claimNumber).getLevel(), "AUTO routes to L2");
+        Claim claim = findClaim(claimNumber);
+        assertEquals("L2", claim.getLevel(), "AUTO routes to L2");
+        assertEquals("UNDER_REVIEW", claim.getStatus());
+        assertEquals("L2", jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a ON a.id = c.assigned_adjuster_id WHERE c.id = ?",
+                String.class, claim.getId()),
+                "an L2 claim must be assigned to an L2 adjuster");
     }
 
     @Test

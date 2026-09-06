@@ -12,3 +12,15 @@ export const claimantGuard: CanActivateFn = async () => {
   }
   return true;
 };
+
+/** Internal surfaces (the adjuster queue) are for provisioned staff roles only. */
+export const internalGuard: CanActivateFn = async () => {
+  const authenticated = await ensureAuthenticated();
+  const internalRoles = ['adjuster_l1', 'adjuster_l2', 'supervisor'];
+  if (!authenticated || !internalRoles.some(hasRole)) {
+    const router = inject(Router);
+    await router.navigate(['']);
+    return false;
+  }
+  return true;
+};

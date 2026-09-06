@@ -31,6 +31,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/queue")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()
                         .anyRequest().authenticated())
                 // CSRF is disabled because this is a stateless bearer-token API: there are no

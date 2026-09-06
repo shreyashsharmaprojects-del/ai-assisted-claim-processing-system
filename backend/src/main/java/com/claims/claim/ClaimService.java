@@ -17,17 +17,19 @@ import org.springframework.web.multipart.MultipartFile;
 import com.claims.api.FnolValidationException;
 import com.claims.api.PolicyMismatchException;
 import com.claims.api.UnroutableException;
+import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityConfigRepository;
 import com.claims.routing.ClaimClassifier;
+import com.claims.staff.AppUser;
 
 /**
  * FNOL: verify the policy, classify the claim from the product code, persist claim +
- * photos + audit entry in one transaction. Returns the claimant view with the claim
- * number immediately.
+ * photos + audit entry, assign the claim to the least-loaded adjuster of its level (slice
+ * 2), all in one transaction. Returns the claimant view with the claim number immediately.
  */
 @Service
 public class ClaimService {
@@ -38,22 +40,25 @@ public class ClaimService {
     private final AttachmentRepository attachments;
     private final PhotoStorage photoStorage;
     private final AuditLogWriter auditLog;
+    private final ClaimAssigner assigner;
     private final JdbcTemplate jdbcTemplate;
 
     public ClaimService(ClaimRepository claims, PolicyRepository policies,
             AuthorityConfigRepository authorityConfigs, AttachmentRepository attachments,
-            PhotoStorage photoStorage, AuditLogWriter auditLog, JdbcTemplate jdbcTemplate) {
+            PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
+            JdbcTemplate jdbcTemplate) {
         this.claims = claims;
         this.policies = policies;
         this.authorityConfigs = authorityConfigs;
         this.attachments = attachments;
         this.photoStorage = photoStorage;
         this.auditLog = auditLog;
+        this.assigner = assigner;
         this.jdbcTemplate = jdbcTemplate;
     }
 
     @Transactional
-    public ClaimantClaimView fileFnol(FnolInput input) {
+    public FnolResult fileFnol(FnolInput input) {
         LocalDate lossDate = validate(input);
         String policyNumber = normalizePolicyNumber(input.policyNumber());
 
@@ -107,7 +112,22 @@ public class ClaimService {
                         "status", claim.getStatus())),
                 null);
 
-        return ClaimantClaimView.from(claim);
+        // Assign inside the creating transaction: the claim is never observable as
+        // UNASSIGNED. CLAIM_ASSIGNED is recorded as a system action (no actor).
+        AppUser adjuster = assigner.assign(claim);
+        if (adjuster != null) {
+            auditLog.append(null, "CLAIM_ASSIGNED", "CLAIM", claimId, null,
+                    AuditJson.of(Map.of(
+                            "claimNumber", claim.getClaimNumber(),
+                            "assignedAdjusterId", adjuster.getId(),
+                            "assignedTo", adjuster.getDisplayName(),
+                            "status", claim.getStatus())),
+                    null);
+        }
+
+        return new FnolResult(ClaimantClaimView.from(claim),
+                adjuster == null ? null : adjuster.getDisplayName(),
+                adjuster == null ? null : adjuster.getEmail());
     }
 
     private LocalDate validate(FnolInput input) {

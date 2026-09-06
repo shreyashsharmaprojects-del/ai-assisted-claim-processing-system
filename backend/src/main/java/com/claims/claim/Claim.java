@@ -1,5 +1,6 @@
 package com.claims.claim;
 
+import java.time.Instant;
 import java.time.LocalDate;
 
 import jakarta.persistence.Column;
@@ -10,8 +11,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * A claim as filed at FNOL. Sliced vertically: only columns slice 1 writes are mapped;
- * assignment/reserve/decision fields arrive with their slices.
+ * A claim as filed at FNOL. Sliced vertically: columns the current slice writes are mapped
+ * (slice 1: FNOL data; slice 2: assignment); reserve/decision fields arrive with theirs.
  */
 @Entity
 @Table(name = "claim")
@@ -47,6 +48,12 @@ public class Claim {
 
     @Column(name = "claimant_remarks")
     private String claimantRemarks;
+
+    @Column(name = "assigned_adjuster_id")
+    private Long assignedAdjusterId;
+
+    @Column(name = "assigned_at")
+    private Instant assignedAt;
 
     protected Claim() {
         // for JPA
@@ -103,5 +110,24 @@ public class Claim {
 
     public String getClaimantRemarks() {
         return claimantRemarks;
+    }
+
+    public Long getAssignedAdjusterId() {
+        return assignedAdjusterId;
+    }
+
+    public Instant getAssignedAt() {
+        return assignedAt;
+    }
+
+    /**
+     * Assigns this claim to an adjuster: records the assignee and moves the status to
+     * UNDER_REVIEW. Call inside the creating transaction so the row is never observable
+     * as UNASSIGNED.
+     */
+    public void assignTo(Long adjusterId, Instant at) {
+        this.assignedAdjusterId = adjusterId;
+        this.assignedAt = at;
+        this.status = "UNDER_REVIEW";
     }
 }

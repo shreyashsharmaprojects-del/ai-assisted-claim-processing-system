@@ -14,12 +14,15 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
     }
 
     /**
-     * The claimant-visible process steps derived from status. Slice 1 has a single status
-     * (UNASSIGNED); the list grows as the state machine does.
+     * The claimant-visible process steps derived from status. The list grows as the state
+     * machine does; it never exposes the reserve, internal notes, or the internal assignee.
      */
     public static List<String> stepsFor(String status) {
         return switch (status) {
             case "UNASSIGNED" -> List.of("FNOL received — your claim is being routed to an adjuster");
+            case "UNDER_REVIEW" -> List.of(
+                    "FNOL received — your claim is being routed to an adjuster",
+                    "Under review — an adjuster has been assigned to your claim");
             default -> List.of();
         };
     }
