@@ -16,9 +16,9 @@ notes are structurally absent from every claimant-facing response and screen (E2
 2 checks screen AND network body). Backend **52 tests**, **6 E2E journeys** — all green.
 Slice 3 has NOT had its fresh-context review; that belongs in a new session.
 
-Slice 2 was pushed to `origin`/`main` (commits 27561e7, 0106a6d) and a GitHub Actions run
-was triggered — see the Actions tab for its result. Slice 3 is committed locally, not yet
-pushed.
+Slice 2 was pushed to `origin`/`main` (commits 27561e7, 0106a6d) and the GitHub Actions
+run **passed all three jobs** (backend Testcontainers, frontend build, E2E compose) —
+2026-09-06. Slice 3 is committed locally, not yet pushed.
 
 Next up: Slice 4 (decision & the authority gate) — do not start without the user's go,
 and only after a fresh-session review of slice 3.
@@ -100,8 +100,8 @@ Unit: 18 · Integration: 34 (incl. context smoke) · E2E: 6 · All green: yes (2
 ## Blocked on
 
 - Nothing. Slice 3 review (fresh session) then Slice 4, both awaiting the user's go.
-  Slice-2 commits are on `origin`/`main` (CI run triggered 2026-09-06 — check GitHub
-  Actions). Slice 3 is local only.
+  Slice-2 commits are on `origin`/`main` with a green CI run (2026-09-06). Slice 3 is
+  local only.
 
 ## Notes for whoever picks this up
 
