@@ -5,6 +5,100 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-07 — Pre-ship hardening pass (phase 06)
+
+**Context:** All slices (0–7) were done, reviewed, and green. This pass worked the whole
+`phases/06-harden.md` checklist against the real code, in small commits, with tests where
+they make sense. Re-verified the load-bearing rules (still green: 140 backend tests + 11
+E2E journeys after the pass; frontend build green; `npm audit` 0 vulnerabilities in both
+`frontend/` and `e2e/`).
+
+**Fixed:**
+- **Dev credentials → environment variables** (the slice-2/3 deferred item): Postgres
+  (`DB_USERNAME`/`DB_PASSWORD`) and Keycloak bootstrap admin (`KEYCLOAK_ADMIN_USERNAME`/
+  `KEYCLOAK_ADMIN_PASSWORD`) read from env in `docker-compose.yml` + `application.properties`;
+  realm-user passwords render from `ADJUSTER_PASSWORD`/`SUPERVISOR_PASSWORD` into a
+  **gitignored** `keycloak/realm-export.json` via `keycloak/render-realm.mjs` (committed
+  `realm-export.template.json`). Added `.env.example`, `.env` to `.gitignore`, `npm run setup`,
+  CI + E2E now inject env. The realm-sync test reads the template.
+- **`GET /api/health`** public liveness endpoint (+ integration test), documented in `api.http`.
+- **Frontend loading/empty/error/retry:** every fetch screen (home, queue, escalations,
+  authority, claim status, claim detail) now has a Loading state (no blank flash) and a
+  Try-again retry.
+- **Double-submit guards:** reserve, note, decision (approve/deny), and authority-save
+  disable their buttons during the in-flight request. FNOL already had one.
+- **Reserve form:** a blank/NaN box no longer submits `0`; the amount renders with two
+  decimals; the input seeds with `.toFixed(2)`.
+- **Logout:** a Sign-out link (Keycloak logout) when authenticated; "Adjuster queue" nav
+  hidden from the public (slice-2 deferred item).
+- **Accessibility:** visible `:focus-visible` outline; muted text contrast `#777`→`#666`
+  (WCAG AA); `bruteForceProtected: true` made explicit in the realm (login rate limiting).
+- **Docs:** `README.md` rewritten (setup/run/test/deploy/backup/rollback + env vars + health);
+  `SecurityConfig` javadoc refreshed; `api.http` gained the health example.
+
+**Needs a decision from the user:**
+1. **Rewrite git history to purge the pre-hardening dev-only credentials.** The values
+   `claims`/`claims`, `admin`/`admin`, `adjuster-Pass-123`, `supervisor-Pass-123` still exist
+   in commit history (they were committed in slices 1–7 and removed from the working tree
+   now). They guard only a throwaway local Postgres/Keycloak, so a rewrite is optional, but
+   it is the only way to fully satisfy "never committed" for the history. Rewriting would
+   force-push `main` and rewrite the remote — needs your call.
+2. **Rate limiting on FNOL/email.** Login brute-force is Keycloak's (now explicit). The only
+   claimant-triggered mail is the FNOL confirmation (one per filed claim; assignment/decision
+   mail is staff-triggered, one per claim). A per-claimant FNOL rate limit is a product/policy
+   choice (what limit? per-hour? per-policy?) and adds state; at the stated scale (low hundreds
+   of claimants/year) it was not built. Say the limit and it gets added.
+
+**Deliberately accepted (with reasons):**
+- **CSRF disabled** — stateless bearer-token API, no cookies to forge; CSRF protection would
+  only reject legitimate clients. **CORS left at Spring's default (no cross-origin)** — not
+  wide open; the SPA is same-origin via the dev proxy and any prod deploy would configure CORS
+  explicitly.
+- **No pagination** on the queue/escalations/audit lists — scale is single-digit adjusters and
+  low hundreds of claims/year; the queue is bounded by the active caseload, not total history.
+  Build it when a real queue exceeds ~100 open rows.
+- **Notes-list N+1** (a per-note `app_user` lookup on the claim detail page) — detail page, few
+  notes per claim; the list pages (queue) are a single joined query with no N+1. Not optimised
+  without a measurement (YAGNI).
+- **Per-field server errors not `aria-describedby`-linked** — the forms use native `required`
+  for per-field client validation; the server returns one summary alert (`role="alert"`) for
+  cross-field validation (policy mismatch etc.). Per-field API errors are a larger change.
+- **Backups/rollback** — no production/hosting target is specified (`requirements.md`), so
+  there is nothing to back up yet; the mechanism (`pg_dump`/`pg_restore` + on-disk photos,
+  redeploy the previous image) is documented in the README. Flyway is forward-only by design
+  (immutable audit), so a schema rollback = restore from a pre-migration backup.
+- **Maven dependency audit** — `npm audit` ran clean (0 vulns, both packages). The Java set is
+  Spring Boot 4.1.1-managed with no version overrides; a full OWASP dependency-check needs
+  network + NVD data and is the production step (not run in this sandbox).
+- **Keyboard/a11y pass** — done by code review (native form controls and links, no
+  `outline:none`, labels on every input, headings nest h1→h2); no axe run (no browser tooling
+  in this environment). The structure is keyboard-friendly; an axe/Lighthouse sweep is worth
+  running on a real build before the first real user.
+- **`TEST_DB_PASSWORD` fallback `claims`** in `TestcontainersConfiguration` — test-only
+  convenience for the throwaway local test Postgres, never the dev/prod DB.
+
+**Deferred-list resolution** (the "optional cleanups" carried from slices 2–3 are now either
+done or explicitly left): done — dev-credential hardening, "Adjuster queue" nav gating, the
+unused `loaded()` signals (now actually used by the loading states), empty/NaN reserve
+submission, `£` currency formatting, stale SecurityConfig javadoc. Left as-is on purpose —
+`LoadBalancer` `.sorted()` (correct and unit-tested; the id tie-break is asserted), the
+`CLAIM_CREATED` audit row recording the momentary UNASSIGNED status (the following
+`CLAIM_ASSIGNED` row records the transition), `QueueClaimView.createdAt` (informational, no
+UI consumer — harmless), UNDER_REVIEW step copy (the "being routed" first step is historical
+and not wrong), and the two-copy E2E helper duplication (still exactly two specs use it, so
+no extraction per the rule-of-three). The E2E-database-isolation and Keycloak-dev-container
+items were already resolved in slices 1–2.
+
+**Non-goals check:** re-read `requirements.md` Non-goals one last time — nothing on it got
+built. No reopening/appeals, no multiple/partial payments (one payment per claim, uniqueness
+enforced), no policy admin/underwriting/rating (policies seeded read-only), no automated
+adjudication/fraud/document-reading, no external integrations, no real money movement
+(payments are recorded facts), no SMS (email only), no mobile app (responsive web), no
+websockets/real-time (pull-to-refresh + email), no multi-tenancy (single carrier), no
+i18n/offline/SSO-beyond-Keycloak.
+
+---
+
 ### 2026-09-06 — Slice-7 fresh-context review findings applied (deepseek-v4-pro)
 
 **Context:** A fresh-context review of slice 7 (run on the strong model in a new agent

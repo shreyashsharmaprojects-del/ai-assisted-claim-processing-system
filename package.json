@@ -4,7 +4,7 @@
   "scripts": {
     "setup": "cp -n .env.example .env && npm run realm:render",
     "realm:render": "node --env-file=.env keycloak/render-realm.mjs",
-    "db:up": "npm run realm:render && docker compose up -d",
+    "db:up": "npm run realm:render && docker compose up -d --wait",
     "db:down": "docker compose down",
     "backend": "sh -c 'set -a; . ./.env; set +a; mvn -f backend/pom.xml spring-boot:run'",
     "backend:test": "mvn -f backend/pom.xml test",

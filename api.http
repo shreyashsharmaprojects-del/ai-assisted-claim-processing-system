@@ -5,6 +5,9 @@
 ### Walking-skeleton page data: seeded policies (public)
 GET {{host}}/api/policies
 
+### Health — public liveness probe for deploy orchestration (no auth, no DB check)
+GET {{host}}/api/health
+
 ### FNOL — file a claim (CLAIMANT only, 401 without a token)
 # Auth: the SPA signs the user in via Keycloak (authorization-code + PKCE, public client
 # "claims-frontend", realm "claims", http://localhost:8090). There is no password grant,
