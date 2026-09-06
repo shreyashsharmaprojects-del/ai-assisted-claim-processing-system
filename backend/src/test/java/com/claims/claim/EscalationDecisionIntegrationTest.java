@@ -130,10 +130,26 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
                 + "AND entity_id = ? AND before::text LIKE ?", claimId,
                 "%ESCALATED_SUPERVISOR%"));
 
-        // Decision email to the verified holder address (approval copy).
+        // Decision email to the verified holder address (approval copy), carrying the amount.
         String inbox = mailpitFetch();
         assertTrue(inbox.contains("Decision on claim " + claimNumber), inbox);
         assertTrue(inbox.contains("approved"), inbox);
+        assertTrue(inbox.contains("We will pay"), inbox);
+        assertTrue(inbox.contains(ABOVE_L2), "the approval email states the amount: " + inbox);
+
+        // The claimant's view of the supervisor-closed claim (slice 6): decision + the
+        // approved amount, wall intact — a supervisor approval reaches the claimant the
+        // same way an adjuster's does.
+        String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
+        assertTrue(claimantView.contains("\"status\":\"CLOSED\""), claimantView);
+        assertTrue(claimantView.contains("\"decision\":\"APPROVED\""), claimantView);
+        assertTrue(claimantView.contains("\"indemnityAmount\":" + ABOVE_L2), claimantView);
+        assertFalse(claimantView.contains("decisionRemarks"), claimantView);
+        assertTrue(claimantView.contains("Under review"), claimantView);
+        assertFalse(claimantView.contains("reserveAmount"), claimantView);
+        assertFalse(claimantView.contains("\"notes\""), claimantView);
+        assertFalse(claimantView.contains("\"assignedTo\""), claimantView);
+        assertFalse(claimantView.contains("\"coverage\""), claimantView);
     }
 
     // --- supervisor denial closes with remarks -------------------------------------
@@ -157,8 +173,24 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'DECISION' "
                 + "AND entity_id = ? AND actor_sub = ? AND rationale = ?", claimId,
                 SUB_SUPERVISOR, "Coverage excludes the reported damage."));
-        assertTrue(mailpitFetch().contains("not been approved"),
-                "denial email is sent: " + mailpitFetch());
+
+        // The claimant's view of the supervisor-denied claim (slice 6): denial + remarks
+        // verbatim, no amount, wall intact.
+        String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
+        assertTrue(claimantView.contains("\"decision\":\"DENIED\""), claimantView);
+        assertTrue(claimantView.contains("\"decisionRemarks\":\"Coverage excludes the "
+                + "reported damage.\""), "the supervisor rationale is the claimant-visible "
+                + "remarks: " + claimantView);
+        assertFalse(claimantView.contains("indemnityAmount"), claimantView);
+        assertFalse(claimantView.contains("reserveAmount"), claimantView);
+        assertFalse(claimantView.contains("\"notes\""), claimantView);
+
+        // The denial email carries the remarks in the body.
+        String inbox = mailpitFetch();
+        assertTrue(inbox.contains("not been approved"),
+                "denial email is sent: " + inbox);
+        assertTrue(inbox.contains("Coverage excludes the reported damage."),
+                "the denial email states the remarks: " + inbox);
     }
 
     // --- validation ---------------------------------------------------------------
@@ -302,6 +334,10 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         // The visibility wall holds on the escalated claim: no internal fields leak.
         assertFalse(claimantView.contains("reserveAmount"), claimantView);
         assertFalse(claimantView.contains("\"notes\""), claimantView);
+        // Slice 6: an undecided (open) claim carries no decision content at all — the
+        // decision fields serialize only once a decision exists.
+        assertFalse(claimantView.contains("\"decision\""),
+                "an open claim must not carry decision fields: " + claimantView);
     }
 
     // --- helpers ---------------------------------------------------------------------

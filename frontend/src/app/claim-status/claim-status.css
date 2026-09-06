@@ -8,3 +8,35 @@
 .error {
   color: #b00020;
 }
+
+.section-title {
+  margin-top: 1.5rem;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555;
+}
+
+.panel {
+  margin-top: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #d8d4cf;
+  border-radius: 8px;
+  background: #faf8f5;
+}
+
+.decision .section-title {
+  margin-top: 0;
+}
+
+.decision.approved {
+  border-left: 4px solid #1a7f37;
+}
+
+.decision.denied {
+  border-left: 4px solid #b00020;
+}
+
+.remarks {
+  white-space: pre-wrap;
+}

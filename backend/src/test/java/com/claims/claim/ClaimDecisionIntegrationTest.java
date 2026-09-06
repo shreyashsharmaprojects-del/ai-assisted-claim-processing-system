@@ -135,19 +135,34 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
                 + "AND entity_id = ? AND actor_sub = ? AND rationale IS NOT NULL",
                 claimId, SUB_L1_ONE));
 
-        // The claimant's view of the closed claim still holds the wall.
+        // The claimant's view of the closed claim (slice 6): decision + the approved
+        // amount ride the view — and only those — while the wall still holds.
         String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
-        assertTrue(claimantView.contains("CLOSED"), claimantView);
+        assertTrue(claimantView.contains("\"status\":\"CLOSED\""), claimantView);
+        assertTrue(claimantView.contains("\"decision\":\"APPROVED\""), claimantView);
+        assertTrue(claimantView.contains("\"indemnityAmount\":" + WITHIN_L1),
+                "the approved amount reaches the claimant on an APPROVED closure: "
+                        + claimantView);
+        assertFalse(claimantView.contains("decisionRemarks"),
+                "an approval carries no remarks on the claimant view: " + claimantView);
+        assertTrue(claimantView.contains("FNOL received"), claimantView);
+        assertTrue(claimantView.contains("Under review"),
+                "the closed view keeps the shared pre-decision steps: " + claimantView);
         assertFalse(claimantView.contains("reserveAmount"), claimantView);
         assertFalse(claimantView.contains("\"notes\""), claimantView);
+        assertFalse(claimantView.contains("\"assignedTo\""), claimantView);
+        assertFalse(claimantView.contains("\"coverage\""), claimantView);
 
         // Decision email to the verified holder address (distinct subject from the
-        // FNOL/assignment emails, which also mention the claim number).
+        // FNOL/assignment emails, which also mention the claim number), carrying the
+        // approved amount in the body.
         String inbox = mailpitFetch();
         assertTrue(inbox.contains("Decision on claim " + claimNumber),
                 "a decision email should exist: " + inbox);
         assertTrue(inbox.contains("ada.lovelace@example.test"), inbox);
         assertTrue(inbox.contains("approved"), inbox);
+        assertTrue(inbox.contains("We will pay"), inbox);
+        assertTrue(inbox.contains(WITHIN_L1), "the approval email states the amount: " + inbox);
     }
 
     // --- denial always closes with remarks -------------------------------------
@@ -171,8 +186,25 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'DECISION' "
                 + "AND entity_id = ? AND rationale = ?", claimId,
                 "Coverage excludes the reported damage."));
-        assertTrue(mailpitFetch().contains("not been approved"),
-                "denial email is sent: " + mailpitFetch());
+
+        // The claimant's view of the denied claim (slice 6): the denial + remarks verbatim,
+        // never an indemnity amount, wall intact.
+        String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
+        assertTrue(claimantView.contains("\"status\":\"CLOSED\""), claimantView);
+        assertTrue(claimantView.contains("\"decision\":\"DENIED\""), claimantView);
+        assertTrue(claimantView.contains("\"decisionRemarks\":\"Coverage excludes the "
+                + "reported damage.\""), "the rationale is the claimant-visible remarks: "
+                + claimantView);
+        assertFalse(claimantView.contains("indemnityAmount"),
+                "a denied claim never carries an amount on the claimant view: " + claimantView);
+        assertFalse(claimantView.contains("reserveAmount"), claimantView);
+        assertFalse(claimantView.contains("\"notes\""), claimantView);
+
+        // The denial email carries the remarks in the body.
+        String inbox = mailpitFetch();
+        assertTrue(inbox.contains("not been approved"), "denial email is sent: " + inbox);
+        assertTrue(inbox.contains("Coverage excludes the reported damage."),
+                "the denial email states the remarks: " + inbox);
     }
 
     // --- above-level approval is blocked and escalated -------------------------
@@ -429,6 +461,23 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         assertEquals(200, l2Decision.statusCode(), l2Decision.body());
         assertEquals("CLOSED", jdbcTemplate.queryForObject(
                 "SELECT status FROM claim WHERE id = ?", String.class, idOf(claimNumber)));
+    }
+
+    @Test
+    void aClosedClaimIsStillVisibleOnlyToItsOwner() throws Exception {
+        // Slice 6: the decision fields reach the owner of a closed claim — and the access
+        // rules are status-independent: a closed claim number is never revealed to an
+        // anonymous caller (401) or another claimant (404), exactly like an open one.
+        String claimNumber = fileHomeFnol();
+        postJson("/api/claims/" + claimNumber + "/decision", adjusterOneBearer(),
+                "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\"}");
+
+        assertEquals(200, get("/api/claims/" + claimNumber, claimantBearer()).statusCode(),
+                "the owner reads their closed claim's decision");
+        assertEquals(401, get("/api/claims/" + claimNumber, null).statusCode());
+        assertEquals(404, get("/api/claims/" + claimNumber,
+                JwtTestConfig.tokenFor("sub-claimant-other", "claimant")).statusCode(),
+                "someone else's closed claim is a 404, never a 403");
     }
 
     // --- helpers ---------------------------------------------------------------

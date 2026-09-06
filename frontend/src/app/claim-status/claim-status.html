@@ -4,11 +4,30 @@
   } @else if (view(); as claim) {
     <h1>Claim {{ claim.claimNumber }}</h1>
     <p class="tagline" data-testid="claim-status-state">{{ claim.status }}</p>
+    <h2 class="section-title">Process</h2>
     <ul data-testid="claim-status-steps">
       @for (step of claim.steps; track step) {
         <li>{{ step }}</li>
       }
     </ul>
+    @if (claim.decision === 'APPROVED') {
+      <section class="panel decision approved" data-testid="claim-decision-approved">
+        <h2 class="section-title">Decision</h2>
+        <p>
+          Your claim has been approved. We will pay
+          <strong data-testid="claim-decision-amount">{{ approvedAmountText() }}</strong
+          >.
+        </p>
+      </section>
+    } @else if (claim.decision === 'DENIED') {
+      <section class="panel decision denied" data-testid="claim-decision-denied">
+        <h2 class="section-title">Decision</h2>
+        <p>Your claim has not been approved.</p>
+        <p class="remarks" data-testid="claim-decision-remarks">
+          {{ claim.decisionRemarks }}
+        </p>
+      </section>
+    }
     <p><a routerLink="/" data-testid="claim-status-home">Back to home</a></p>
   }
 </main>

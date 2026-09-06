@@ -8,9 +8,13 @@ interface ClaimantClaimView {
   claimNumber: string;
   status: string;
   steps: string[];
+  /** Slice 6: present only once the claim is decided (omitted from the wire when null). */
+  decision?: 'APPROVED' | 'DENIED' | null;
+  indemnityAmount?: number | null;
+  decisionRemarks?: string | null;
 }
 
-/** The claimant's own claim status screen (journey 2): only claimant-visible data. */
+/** The claimant's own claim status screen (journey 2, 8): only claimant-visible data. */
 @Component({
   imports: [RouterLink],
   selector: 'app-claim-status',
@@ -27,6 +31,12 @@ export class ClaimStatus {
 
   constructor() {
     void this.load();
+  }
+
+  /** The approved amount, rendered in pounds with two decimals (journey 8 asserts it). */
+  protected approvedAmountText(): string {
+    const amount = this.view()?.indemnityAmount;
+    return amount == null ? '' : '£' + amount.toFixed(2);
   }
 
   async load() {

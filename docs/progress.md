@@ -7,51 +7,44 @@ seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**Slice 5 (supervisor escalation & aging) is done, verified green, and has been through its
-fresh-context review; no blocking findings.** A supervisor approves or denies claims in `ESCALATED_SUPERVISOR` on
-`POST /api/claims/{claimNumber}/escalation-decision` (SUPERVISOR only; rationale required;
-approve → single payment + close, deny → close with remarks; payment/closure/`DECISION`
-audit atomic — the slice-4 machinery; decision email best-effort after commit via the same
-`DecisionEmailSender`). Supervisor approvals are **not amount-gated** (highest authority)
-and no-self-approval is structural (supervisors never create the escalations they decide —
-see `docs/decisions.md`). A supervisor has **no app_user row**, so its approval records the
-payment with `authorized_by_id = NULL` while the `DECISION` audit carries its Keycloak
-subject as `actor_sub`.
+**Slice 6 (claimant decision & notification — the claimant half of Flow 5) is done and all
+green.** A claimant who opens their CLOSED claim now sees the decision: an approval shows
+"Your claim has been approved. We will pay £…" with the amount (`claim.indemnity_amount`,
+sent only when `decision = APPROVED`); a denial shows "Your claim has not been approved."
+plus the rationale as remarks (`claim.decision_remarks`, stored verbatim from the denial
+rationale by slices 4–5). The visibility wall still holds on closed claims: reserve, notes,
+assignee, and coverage never reach this surface, structurally (`ClaimantClaimView` has no
+such components, and the integration/E2E wire assertions pin it on CLOSED claims).
 
-The supervisor's escalation surface: `GET /api/escalations` (SUPERVISOR-only) lists claims
-in `ESCALATED_SUPERVISOR` (same row shape as the queue, oldest first); the SPA gained the
-`/escalations` route (supervisor-only guard + nav link) and the claim-detail decision panel
-now opens for a supervisor on an escalated claim (posts to the escalation-decision
-endpoint). Claimants now see an "Escalated" process step while their claim waits on the
-supervisor (`ClaimantClaimView.stepsFor`); the decision display on closed claims remains
-slice 6.
+The growth of the claimant view was a deliberate shape change: the record is now
+`(claimNumber, status, steps, decision, indemnityAmount, decisionRemarks)`, pinned by the
+updated `ClaimantClaimViewTest.viewStructurallyCarriesOnlyPublicFields` and by journey 2's
+wire assertions. The mapper guards each field to its decision (amount only when APPROVED,
+remarks only when DENIED), and a class-level `@JsonInclude(NON_NULL)` (Jackson-2 compat
+annotations, honored by this Boot-4/Jackson-3 mapper — probed empirically) omits the null
+fields from the wire: an undecided claim's response is byte-identical to slice 5, an
+APPROVED closure adds `decision` + `indemnityAmount`, a DENIED closure adds `decision` +
+`decisionRemarks`. No migration: all needed columns have existed on `claim` since slice 4.
 
-**Aging (Flow 6)** runs as a scheduled background job: `AgingScheduler` (cron daily 03:00,
-`@EnableScheduling`) calls `AgingService.ageClaims(Instant)` — the instant parameter is the
-injectable clock (tests pass fixed instants; a `Clock` bean was deliberately not added).
-A claim undecided **3 days from FNOL** is pushed to the L2 tier (level → L2, least-loaded
-L2 adjuster via `ClaimAssigner`; no L2 provisioned → `ESCALATED_SUPERVISOR` fallback with
-the level reverted, same rule as slice 4); **5 days** → `ESCALATED_SUPERVISOR`. The 5-day
-rung wins over the 3-day rung, so a missed run or a clock jump lands a claim at the top in
-one idempotent move; claims already held at L2 are not re-pushed at day 3; `CLOSED` and
-already-`ESCALATED_SUPERVISOR` claims are never re-touched. The anchor is `claim.created_at`
-(read via JDBC — it is not entity-mapped); each candidate row is locked (`FOR UPDATE`) and
-the ladder step recomputed against the freshly locked state, so a concurrent decision or a
-second run never double-transitions. Every transition writes a `CLAIM_ESCALATED` audit row
-with `actor_sub NULL` (system action) and a rationale naming the rung.
+Decisions made this slice (recorded in `docs/decisions.md`): the CLOSED process-steps list
+shows only the two stages every closure truthfully shared (FNOL received, under review) —
+**never** a guessed "Escalated" step, because CLOSED cannot recall escalation history from
+status/decision columns and the decision/closure machinery does not record it (reading the
+DECISION audit `before.status` to reconstruct it was considered and rejected); the decision
+renders as its own block, the terminal "→ decision" step. E2E journey 8 went into the
+existing `queue.spec.ts` as one test covering both rendering branches (approved amount on an
+adjuster-approval fixture, remarks on an adjuster-denial fixture) with journey-2-style wire
+leak capture on the closed claims. The four slice-4/5 closure tests already asserted Mailpit
+delivery on every closure actor — slice 6 did **not** duplicate that; it strengthened their
+assertions in place for email content correctness (approval body states the amount, denial
+body carries the remarks verbatim) and added the closed-claim claimant-view wire assertions
+per closure actor to those same tests.
 
-**Supervisor identity:** `keycloak/realm-export.json` now provisions a fixed-subject
-supervisor (id `10000000-0000-0000-0000-000000000004`, username `supervisor`, role
-`supervisor`, dev password `supervisor-Pass-123`) with **no app_user row** (the realm-sync
-seam test still pins exactly the three adjusters). E2E journey 7 logs in as this real user.
-
-Backend **117 tests** (50 unit + 67 integration) and **9 E2E journeys** — all green
+Backend **122 tests** (54 unit + 68 integration) and **10 E2E journeys** — all green
 (2026-09-06, full local run: `mvn test` + Playwright against compose Keycloak/Mailpit).
-Slice 5 went through its fresh-context review (2026-09-06, deepseek-v4-pro in a new agent
-session): **no blocking findings**; one should-fix (a stale comment in
-`application.properties` pointing at a nonexistent test-properties file) applied, and three
-optional items deferred (see `docs/decisions.md` — 2026-09-06 slice-5 review entry).
-Next up: **Slice 6 (claimant decision & notification)** — start only with the user's go.
+Slice 6 has NOT yet had its fresh-context review (that belongs to a new session on the
+strong model, per the workflow). Next up: **Slice 7 (compliance & admin)** — start only with
+the user's go.
 
 ## Run it (canonical — Docker)
 
@@ -66,20 +59,23 @@ Open http://localhost:4200. Claimant: **File a claim** → register in Keycloak
 (self-registered users get `claimant`) → FNOL against seeded `POL-10001` (Ada Lovelace /
 ada.lovelace@example.test) or `POL-20002` (AUTO → L2) → claim number immediately, then
 **Track this claim** → the status screen (steps only — no reserve/notes ever; an escalated
-claim now shows the Escalated step). Internal: **Adjuster queue** → sign in as a provisioned
-adjuster (adjuster.one / adjuster.two = L1, adjuster.three = L2, password
+claim shows the Escalated step; a **closed** claim shows the decision — approved amount or
+denial remarks — under the Process steps). Internal: **Adjuster queue** → sign in as a
+provisioned adjuster (adjuster.one / adjuster.two = L1, adjuster.three = L2, password
 `adjuster-Pass-123`) → **Open claim** on a row → full internal view with coverage, the
 reserve form, the notes box, photo downloads, and the decision panel. **Supervisor**
 (username `supervisor`, password `supervisor-Pass-123`): sign in → **Escalations** (nav) →
 the supervisor escalation queue → **Review claim** → approve/deny with a rationale. (The
 aging job only fires at 03:00 and needs claims 3+ days old — it is exercised at the
 integration layer with fixed instants, not in a running dev app.) Ports 8081/8090 exist
-because 8080 on this machine is taken.
+because 8080 on this machine is taken. To see slice 6 live: close a claim (adjuster approve
+or deny, or supervisor approve/deny), then open `/claim/<claimNumber>` in the claimant's
+session.
 
 ## Tests
 
 ```bash
-JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 mvn -f backend/pom.xml test  # 117: unit + integration
+JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 mvn -o -f backend/pom.xml test  # 122: unit + integration
 npm --prefix frontend run build
 docker compose up -d db mailpit keycloak            # once
 JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm --prefix e2e test
@@ -97,164 +93,142 @@ JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm --prefix e2e test
 | 3 | Adjuster works the claim & the visibility wall | **done** (2026-09-06) | yes — fresh-context agent review; should-fix S1–S6 applied and re-verified |
 | 4 | Decision & the authority gate | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; B1 + S1–S2 + O1–O4 applied and re-verified |
 | 5 | Supervisor escalation & aging | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking; should-fix S1 applied, optionals deferred |
-| 6 | Claimant decision & notification | not started | no |
+| 6 | Claimant decision & notification | **done** (2026-09-06) | no — review belongs to a fresh session |
+| 7 | Compliance & admin | not started | no |
 
-Slice 5 delivered, per `docs/plan.md`: the supervisor half of Flow 4 (`POST
-/api/claims/{claimNumber}/escalation-decision`, SUPERVISOR only; `GET /api/escalations`);
-the Flow-6 aging job (3-day → L2 / 5-day → supervisor, claimant-visible escalated step);
-and the realm supervisor identity for journey 7. Deliberate decisions recorded in
-`docs/decisions.md` (2026-09-06 slice-5 entry): unconditional supervisor approval +
-structural no-self-approval; 400-vs-404 eligibility on the escalation endpoint; NULL
-`payment.authorized_by` with the subject on the audit row; realm-only supervisor (no
-app_user row, seam test intact); aging-ladder semantics under clock jumps (5-day rung
-wins, L2-held claims not re-pushed, CLOSED/ESCALATED immune, null-actor `CLAIM_ESCALATED`
-audit rows with rung-naming rationale); injectable time via an explicit `Instant` on
-`ageClaims` (no Clock bean) with the cron disabled in claim-writing tests through an
-inherited `@DynamicPropertySource`; the escalation queue reusing `QueueClaimView`.
+Slice 6 delivered, per `docs/plan.md`: the claimant-facing half of Flow 5 — the CLOSED
+claim's claimant view now carries the decision (`ClaimantClaimView` grew
+`decision`/`indemnityAmount`/`decisionRemarks`, null-omitted on the wire), the claim-status
+screen renders the decision block (approved amount on APPROVED; denial + remarks on DENIED),
+CLOSED claims show the two shared process steps (never a fabricated escalated step), and E2E
+journey 8 pins both rendering branches end to end. The decision email was already sent on
+every closure path (slices 4–5); this slice verified content correctness by strengthening
+the existing Mailpit assertions in the four closure integration tests and asserted the
+closed-claim claimant view on the wire per closure actor (adjuster approve/deny, supervisor
+approve/deny), plus the owner-only rule on closed claims (401 anonymous / 404 other
+claimant) and that open undecided claims stay byte-identical. Deliberate decisions recorded
+in `docs/decisions.md` (2026-09-06 slice-6 entry): closed-steps truthfulness (no recalled
+escalation history), the grown view shape with mapper guards + `@JsonInclude(NON_NULL)`,
+journey 8 in the existing spec file, email assertions strengthened in place rather than
+duplicated, and the closed-claim access rule re-pinned.
 
-## Starting Slice 6 (fresh session)
+## Starting Slice 7 (fresh session)
 
-Read first: `docs/plan.md` (slice 6 + the claimant-view/state-transition sections + the
-API-table rows for `GET /api/claims/{claimNumber}` + the route table), `docs/requirements.md`
-(Flow 5), `docs/decisions.md` (2026-09-06 slice-4 and slice-5 entries — especially the
-claimant-view-unchanged decisions), and `rules/yagni.md` + `rules/testing-web.md`. Slice 5
-is reviewed (fresh-context, deepseek-v4-pro, no blocking findings); slice 6 is ready to
-start on the user's go.
+Read first: `docs/plan.md` (slice 7 + the API-table rows it adds + the route table),
+`docs/requirements.md` (Flow 7 / compliance rows), `docs/decisions.md` (2026-09-06 slice-6
+and slice-4/5 entries), and `rules/yagni.md` + `rules/testing-web.md`. Slice 6 is done and
+green but has NOT been reviewed; per the workflow, review it first in a fresh-context session
+on the strong model (deepseek-v4-pro) before or alongside slice 7.
 
-**Slice-6 scope (from the plan, with the current state of each piece):**
+**Slice-7 scope (from the plan, with the current state of each piece):**
+1. **Compliance & admin** — supervisor edits authority config, views the audit log, and
+   reassigns claims; "100% of decisions have recorded actor + rationale". The plan API rows:
+   `GET /api/config/authority` + `PUT /api/config/authority/{productCode}` (SUPERVISOR), the
+   `GET /api/claims/{claimNumber}/audit` row (SUPERVISOR), the
+   `POST /api/claims/{claimNumber}/reassign` row (SUPERVISOR), the `/admin/authority` route.
+   The route table already lists `/admin/authority` (SUPERVISOR).
+   - Today `authority_config` is seeded (V6) with uniform 2500/10000 thresholds, read in
+     every claim path via `AuthorityConfigRepository.findAll()` (a stream filter on product
+     code in `ClaimDecisionService`); `audit_log` is append-only (writer, JSONB payloads,
+     actor + rationale) with per-claim reads never exposed — there is no read endpoint; the
+     reassign endpoint does not exist (re-assignment happens only inside the slice-4/5/6
+     decision & aging paths through `ClaimAssigner`).
+   - Watch-outs: config edits must feed the authority gate immediately (the gate reads rows
+     per decision — but any in-memory caching would need invalidation); audit-log
+     immutability is enforced at the data layer (append-only writer + DB trigger/privileges?
+     — the plan says "reject UPDATE/DELETE", decide where that enforcement lives); the
+     `reassign` endpoint must respect the 404-not-403 rule and the role-driven-queue facts;
+     supervisor identity still has no `app_user` row (an audit GET/reassign by supervisor
+     must not require one).
+2. **Tests** (from the plan): integration — config endpoints auth + effect on the gate;
+   audit-log append-only; reassign endpoint (auth + assignee changes + audit logged);
+   E2E — config edit reflected in classification/gate. Journey 9 will need a supervisor
+   session (journey 7/8 helpers in `queue.spec.ts` — keep using the existing spec file per
+   the standing decision).
+3. **api.http** gains working examples for the new endpoints; **docs/decisions.md** records
+   any open calls; **docs/progress.md** is rewritten again for cold pickup.
 
-1. **Claimant decision display** — Flow 5's claimant half: the claimant opens their CLOSED
-   claim and sees the decision — the approved amount (`indemnity_amount`, when
-   `decision = APPROVED`) or denial + remarks (`decision_remarks`). The wall still holds on
-   closed claims (no reserve/notes ever). Today `ClaimantClaimView` structurally carries
-   only `claimNumber`/`status`/`steps` (a unit test pins the record shape), `stepsFor`
-   returns **empty for CLOSED** (default branch; the ESCALATED_SUPERVISOR branch landed in
-   slice 5), and the claim-status screen renders only status + steps. Slice 4 and 5
-   deliberately deferred decision fields on the claimant view to this slice.
-   - Watch-outs: the claim-status screen copy and the wire shape change together; the
-     structural-wall test (`ClaimantClaimViewTest.viewStructurallyCarriesOnlyPublicFields`)
-     and the journey-2 wire assertions must be extended deliberately, not accidentally; a
-     CLOSED claim whose journey passed through escalation shows steps + decision (is the
-     escalated step part of the CLOSED timeline? status alone cannot recall history — the
-     decision/closure columns don't record escalation; decide what the closed view shows).
-2. **Decision email verification** — the decision email already fires on closure (slice 4
-   adjuster path; slice 5 supervisor path) and integration tests already assert Mailpit
-   delivery on closure. Slice 6 verifies it end to end (journey 8: claimant sees the
-   decision; the email is asserted at the integration layer — maybe assert the claimant
-   actually receives it in Mailpit as the journey's user).
-3. **E2E journey 8** (plan list): claimant sees the decision on the closed claim — approved
-   amount, or denial + remarks. Fixture: a claim closed by an adjuster (journey 5 flow) and
-   one closed by denial (or by the supervisor — journey 7's flow). Denial remarks =
-   rationale (slice-4/5 decision); internal notes stay off the surface.
-4. **Emails on closure already exist** — nothing to build for the "sent on closure" half;
-   only the claimant-facing rendering and verification land here.
-
-**Files you'll likely touch:** `ClaimantClaimView` (+ new fields and its factory),
-`ClaimantStatusController` maybe unchanged (shape lives in the view record), the
-claim-status screen (`claim-status.ts/html`), `ClaimantClaimViewTest` (structural test
-update + decision mapping tests), the wall tests (`ClaimDecisionIntegrationTest` already
-asserts the closed claimant view lacks reserve/notes — extend for the new decision fields),
-an integration test for the closed-claim claimant view incl. denial remarks and approval
-amount, `queue.spec.ts` or `fnol.spec.ts` for journey 8 (existing file, per the standing
-E2E-worker decision), `api.http` if a response shape changes, `docs/progress.md` +
-`docs/decisions.md`.
-
-**Tests (from the plan + this slice's pattern):** integration — the closed claim's claimant
-view shows decision/indemnity_amount or remarks, never reserve/notes; decision email
-received (Mailpit) on both approval and denial closures (adjuster and supervisor actors);
-E2E — journey 8. The claimant-view record change is the kind of deliberate DTO change the
-repo pins with a structural test first.
-
-**Watch-outs:** the visibility wall on CLOSED claims is load-bearing (slice-2..5 decision
-notes: wall holds on closed claims). `decision_remarks` on denials IS claimant-visible by
-design; internal notes are not — keep the separation. `indemnity_amount` appears only when
-`decision = APPROVED` (the plan API row). The 404-not-403 rule still applies (someone
-else's closed claim is a 404). Journey 8's claim can be set up through the UI (journey 5/6
-helpers in `queue.spec.ts`) or via API — follow the existing spec conventions. Slice 6 does
-not touch the internal adjuster/supervisor screens.
+**Test counts to update everywhere:** backend 122 (unit 54 + integration 68) and E2E 10.
 
 ## Test counts
 
-Unit: 50 · Integration: 67 (incl. context smoke) · E2E: 9 · All green: yes (2026-09-06)
+Unit: 54 · Integration: 68 (incl. context smoke) · E2E: 10 · All green: yes (2026-09-06)
 
-- Unit 50: PolicyViewMapper 4 · ClaimClassifier 3 · LoadBalancer 5 · ClaimantClaimView 5
-  (slice 5 added the ESCALATED_SUPERVISOR escalated-step case) · ClaimNumberFormatter 1 ·
-  AuditJson 1 · AuthorityGate 16 (slice 4) · **AgingPolicy 15** (slice 5: the pure ladder —
-  under-threshold no-ops incl. boundary just-under, 3-day push for L1/UNASSIGNED at and
-  after the exact boundary, L2-held claims not re-pushed, 5-day rung for every open state
-  at the exact boundary and it beating the 3-day rung, the clock-jump catch-up, and the
-  CLOSED/ESCALATED_SUPERVISOR immunity).
-- Integration 67: FnolApi 11 · AssignmentQueue 10 · ClaimWork 15 · ClaimDecision 12 ·
-  **EscalationDecision 9** (slice 5: supervisor approval → single payment with NULL
-  authorized_by + CLOSED + DECISION audit carrying the subject + before payload + approval
-  email; supervisor denial → CLOSED with remarks, no payment, email; missing rationale 400
-  for approve/deny; invalid decision/amount 400s; second decision 400 with a single payment;
-  the auth matrix — 401 anonymous, 403 claimant/adjuster_l1/adjuster_l2, 404 unknown claim,
-  400 for a non-escalated claim and already-decided; GET /api/escalations supervisor-only
-  and lists only ESCALATED claims; a decided escalation leaves the queue; the claimant sees
-  the Escalated step while the claim waits on the supervisor) · **Aging 8** (slice 5: L1
-  claim at 3 days → L2 assignee + level L2 + null-actor CLAIM_ESCALATED audit + no extra
-  CLAIM_ASSIGNED; idempotency under a second run; the no-L2 fallback to the supervisor;
-  L1 at 5 days → ESCALATED_SUPERVISOR; the clock jump from day 2 to day 6 skipping the L2
-  rung; an L2-routed claim staying put at 3 days then escalating at 5; CLOSED and
-  already-ESCALATED claims never aged) · PolicyApi 1 · context smoke 1.
-- E2E 9: skeleton page · journey 1 (register → FNOL w/ photo → claim number) ·
+- Unit 54: PolicyViewMapper 4 · ClaimClassifier 3 · LoadBalancer 5 · ClaimantClaimView 9
+  (slice 6: structural-shape update + approved/denied/undecided decision mapping +
+  CLOSED-steps case) · ClaimNumberFormatter 1 · AuditJson 1 · AuthorityGate 16 ·
+  AgingPolicy 15.
+- Integration 68: FnolApi 11 · AssignmentQueue 10 · ClaimWork 15 · ClaimDecision 13 (slice 6
+  added the closed-claim owner-only test: 401/404 on a closed claim; the approval and denial
+  closure tests now assert the closed claimant view on the wire — decision/amount or
+  remarks, wall intact — and the email body content) · EscalationDecision 9 (slice 6:
+  supervisor approval/denial closure tests now assert the closed claimant view on the wire
+  + email body content; the escalated-open-claim test asserts no decision content on an
+  undecided claim) · Aging 8 · PolicyApi 1 · context smoke 1.
+- E2E 10: skeleton page · journey 1 (register → FNOL w/ photo → claim number) ·
   rejected-FNOL-stays-on-form · journey 2 (claimant status screen: no reserve/notes on
   screen or wire) · journey 3 (claim in exactly one L1 queue, never L2) · journey 4
   (assigned adjuster sets a reserve, adds a note, downloads the photo) · journey 5
   (adjuster approves a within-limit amount → claim closes and leaves the queue) · journey 6
-  (above-limit approval blocked + escalated to the L2 adjuster) · **journey 7** (slice 5:
-  an above-L2 approval escalates to the supervisor; the supervisor signs in through the real
-  realm, sees the claim in /escalations, and approves it with a rationale → it closes and
-  leaves the escalation queue).
+  (above-limit approval blocked + escalated to the L2 adjuster) · journey 7 (above-L2
+  approval escalates to the supervisor; the supervisor signs in through the real realm and
+  approves with rationale → closes and leaves the escalation queue) · **journey 8** (slice
+  6: the claimant reopens a CLOSED claim and sees the decision — £1500.00 on an
+  adjuster-approval fixture, the remarks verbatim on an adjuster-denial fixture — with
+  journey-2-style wire-leak capture on the closed claims).
 
-Slice 4 went through its fresh-context review (see `docs/decisions.md`, 2026-09-06 review
-entry). Slice 5 went through its fresh-context review (2026-09-06, deepseek-v4-pro in a new
-agent session) — no blocking findings; the single should-fix (a stale properties comment)
-was applied; three optionals are deferred (see `docs/decisions.md`, 2026-09-06 slice-5
-review entry).
+Slice 6 is green but unreviewed. Slices 4–5 went through their fresh-context reviews (see
+`docs/decisions.md`, 2026-09-06 review entries; slice-5 no blocking findings).
 
 ## Blocked on
 
-- Nothing. Slice 5 is reviewed; slice 6 awaits the user's go.
+- Nothing. Slice 6 is done and green; slice 7 awaits the user's go (and slice 6's
+  fresh-context review comes first, in a new session).
 
 ## Notes for whoever picks this up
 
 - Docs: concept `docs/claims-product-concept.md`; requirements `docs/requirements.md`;
-  plan `docs/plan.md`; decisions `docs/decisions.md` (2026-09-06 slice-5 entry on top,
-  then slice-4 review + slice-4 decision entries; Deferred holds the older optionals).
-- Load-bearing rules now six: the **visibility wall** (slices 1–3, holds on CLOSED), the
-  **404-not-403** object-access rule, the **authority gate** (slice 4), the
-  **single-payment/closure atomicity** rule (slice 4), the **role-driven queue** (slice 2),
-  and the **aging ladder** (slice 5 — pure `AgingPolicy.stepFor(status, level, created,
-  now)`; the 5-day rung wins; CLOSED/ESCALATED immune).
-- Slice-5 backend shapes: `EscalationDecisionService`/`Controller` (claim package — reuses
-  `ClaimDecisionInput`/`ClaimDecisionView`/`ClaimDecisionOutcome` + `AuthorityGate.validate`
-  + the row lock; approve closes unconditionally with `Payment(..., authorizedBy = null)`),
-  `EscalationsController` (queue package) + `QueueService.supervisorEscalationQueue()`,
-  `AgingPolicy`/`AgingService`/`AgingScheduler` (aging package). No V-migration was needed
-  (ESCALATED_SUPERVISOR status, nullable payment.authorized_by_id and audit actor_sub
-  already existed).
+  plan `docs/plan.md`; decisions `docs/decisions.md` (2026-09-06 slice-6 entry on top,
+  then slice-5 review + slice-5 decision entries).
+- Load-bearing rules now six plus the wall's slice-6 extension: the **visibility wall**
+  (slices 1–3, holds on CLOSED — decision fields are the *only* addition to the claimant
+  view; reserve/notes/assignee/coverage still never reach it), the **404-not-403**
+  object-access rule (re-pinned on closed claims in slice 6), the **authority gate**
+  (slice 4), the **single-payment/closure atomicity** rule (slice 4), the **role-driven
+  queue** (slice 2), and the **aging ladder** (slice 5).
+- Slice-6 backend shape: `ClaimantClaimView` grew to `(claimNumber, status, steps,
+  decision, indemnityAmount, decisionRemarks)` with mapper guards (amount only when
+  APPROVED, remarks only when DENIED) and class-level `@JsonInclude(NON_NULL)`. That
+  annotation is the **Jackson-2 compat package** (`com.fasterxml.jackson.annotation`), NOT
+  `tools.jackson.annotation` (which does not exist on this classpath — verified): Boot 4.1.1
+  runs Jackson 3 (`tools.jackson.databind`) but still ships jackson-annotations 2.x and
+  honors its annotations. Without the annotation this Boot mapper writes **explicit nulls**
+  (probed: `{"decision":"APPROVED","indemnityAmount":null,...}`), which would have grown the
+  open-claim wire with `"decision":null` and broken the byte-identical open-claim contract.
+- The decision email content (approval "We will pay £X", denial carrying the remarks
+  verbatim) is asserted inside the four closure integration tests against Mailpit — do not
+  add a fifth delivery test unless a new closure actor appears.
+- CLOSED `stepsFor`: two shared steps, never "Escalated" (see decisions.md). If a future
+  slice needs the escalated step on closed claims, it needs a recorded
+  escalation-history source (column or audit read) — that decision is already recorded.
+- The claim-status screen (`frontend/src/app/claim-status/`) renders the decision block with
+  data-testids `claim-decision-approved` / `claim-decision-denied` /
+  `claim-decision-amount` / `claim-decision-remarks`; journey 8 (queue.spec.ts) asserts
+  `£1500.00` and the remarks verbatim.
 - Scheduler determinism: `AgingScheduler` is `@ConditionalOnProperty("claims.aging.enabled")`
   (main properties: true, cron daily 03:00, `@EnableScheduling` on the app class);
   `ClaimTableResettingTest` disables it in claim-writing tests via an inherited
   `@DynamicPropertySource`. Do NOT reintroduce a `src/test/resources/application.properties`
-  — it shadows the main file wholesale and breaks property resolution (learned this slice).
-  There is no `Clock` bean: `AgingService.ageClaims(Instant)` takes the time explicitly.
+  — it shadows the main file wholesale and breaks property resolution (learned slice 5).
 - `claim.created_at` is NOT entity-mapped (slice-3 review dropped the mapping); the aging
   candidate query reads it via JDBC. Aging locks each candidate row with
   `ClaimRepository.findByClaimNumberForUpdate` (the slice-4 lock) before deciding.
-- Frontend: `/escalations` route is supervisor-guarded (`supervisorGuard` in auth.guard.ts)
-  with a role-gated nav link; the queue-page component/template/css pattern was copied to
-  `escalations/` (data-testids `esc-*`); the claim-detail decision panel opens for a
-  supervisor on an `ESCALATED_SUPERVISOR` claim and posts to the escalation-decision
-  endpoint; a supervisor closure reloads the (still-visible) claim as CLOSED, unlike an
-  adjuster escalation which must not reload (the claim leaves the actor's hands).
-- Keycloak: the realm now has a fourth provisioned user — supervisor — who has NO app_user
-  row and no V-seed. `keycloak/realm-export.json` imports on Keycloak boot; if you edit it,
-  recreate the container (`docker compose rm -sf keycloak && docker compose up -d keycloak`)
-  so E2E sees the change. The realm-sync seam test (AssignmentQueueIntegrationTest) counts
-  exactly the three adjuster-role users.
-- `api.http` has working examples for both new endpoints (and the whole surface).
-- Slice-1..4 facts from before still hold (fixed adjuster subjects, dev creds, E2E on
+- Keycloak: the realm has four provisioned users — three adjusters and the supervisor (who
+  has NO app_user row and no V-seed). `keycloak/realm-export.json` imports on Keycloak boot;
+  if you edit it, recreate the container (`docker compose rm -sf keycloak && docker compose
+  up -d keycloak`) so E2E sees the change. The realm-sync seam test
+  (AssignmentQueueIntegrationTest) counts exactly the three adjuster-role users.
+- `api.http` documents the whole surface, including the slice-6 claimant-status response
+  shape (decision fields only once CLOSED and decided) and the four decision endpoints.
+- Slice-1..5 facts from before still hold (fixed adjuster subjects, dev creds, E2E on
   claims_e2e/port 8082, no new E2E spec files while registrations share the realm).

@@ -49,6 +49,11 @@ GET {{host}}/api/queue
 Authorization: Bearer {{token}}
 
 ### Claimant status — own claim only (CLAIMANT; someone else's claim is a 404)
+# Response: claimant-view — claimNumber/status/steps, plus — only once the claim is CLOSED
+# and decided — the decision: decision=APPROVED with the approved indemnityAmount, or
+# decision=DENIED with the rationale as decisionRemarks. Undecided claims carry no decision
+# fields at all; reserve/notes/assignee/coverage never appear (visibility wall holds on
+# closed claims).
 GET {{host}}/api/claims/CLM-000001
 Authorization: Bearer {{token}}
 

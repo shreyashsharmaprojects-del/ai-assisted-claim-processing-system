@@ -328,3 +328,96 @@ test('supervisor approves an escalated claim with rationale and it closes', asyn
   ).toHaveCount(0);
   await supervisorContext.close();
 });
+
+/**
+ * Journey 8 (slice 6): the claimant opens their CLOSED claim and sees the decision — the
+ * approved amount on an approval closure, or the denial remarks on a denial closure. Both
+ * rendering branches are exercised (approval fixture = journey-5 flow, denial fixture = a
+ * deny with rationale). The visibility wall is checked on the wire of the closed claims
+ * too (journey-2 pattern): reserve/notes/assignee/coverage never reach a closed claim's
+ * claimant response.
+ */
+test('claimant sees the decision on the closed claim: approved amount, or denial remarks', async ({
+  browser,
+}) => {
+  const leaked: string[] = [];
+  /** Captures the claimant status response to assert the wall holds on closed claims. */
+  const watchClaimantWire = (page: Page) => {
+    page.on('response', async (response) => {
+      if (
+        response.request().method() === 'GET' &&
+        /\/api\/claims\/CLM-\d+$/.test(response.url())
+      ) {
+        const body = await response.text();
+        for (const field of [
+          'reserveAmount',
+          'reserve',
+          'notes',
+          'assignedTo',
+          'policyNumber',
+          'coverage',
+        ]) {
+          if (body.includes(`"${field}"`)) {
+            leaked.push(field);
+          }
+        }
+      }
+    });
+  };
+
+  // Approval closure: the assigned L1 adjuster approves 1500.00 within authority.
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  watchClaimantWire(claimantPage);
+  await registerClaimant(claimantPage);
+  const approvedClaim = await fileFnolWithPhoto(claimantPage);
+
+  const holder = await openClaimAsHolder(browser, approvedClaim);
+  await holder.getByTestId('detail-decision-amount').fill('1500.00');
+  await holder
+    .getByTestId('detail-decision-rationale')
+    .fill('Quotes verified; within my authority.');
+  await holder.getByTestId('detail-approve').click();
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('Approved');
+  await holder.context().close();
+
+  // The claimant reopens the closed claim: the approved amount is on the screen.
+  await claimantPage.goto('/claim/' + approvedClaim);
+  await expect(claimantPage.getByTestId('claim-status-page')).toBeVisible();
+  await expect(claimantPage.getByTestId('claim-status-state')).toHaveText('CLOSED');
+  await expect(claimantPage.getByTestId('claim-decision-approved')).toBeVisible();
+  await expect(claimantPage.getByTestId('claim-decision-amount')).toHaveText('£1500.00');
+  await expect(claimantPage.getByTestId('claim-decision-denied')).toHaveCount(0);
+  await claimantContext.close();
+
+  // Denial closure: the holder denies with a rationale, which becomes the remarks.
+  const denyClaimantContext = await browser.newContext();
+  const denyClaimantPage = await denyClaimantContext.newPage();
+  watchClaimantWire(denyClaimantPage);
+  await registerClaimant(denyClaimantPage);
+  const deniedClaim = await fileFnolWithPhoto(denyClaimantPage);
+
+  const denyHolder = await openClaimAsHolder(browser, deniedClaim);
+  await denyHolder
+    .getByTestId('detail-decision-rationale')
+    .fill('Coverage excludes the reported damage.');
+  await denyHolder.getByTestId('detail-deny').click();
+  await expect(denyHolder.getByTestId('detail-decision-result')).toContainText('Denied');
+  await expect(denyHolder.getByTestId('detail-decision-result')).toContainText('closed');
+  await denyHolder.context().close();
+
+  // The claimant reopens the closed claim: the denial + remarks are on the screen, no amount.
+  await denyClaimantPage.goto('/claim/' + deniedClaim);
+  await expect(denyClaimantPage.getByTestId('claim-status-page')).toBeVisible();
+  await expect(denyClaimantPage.getByTestId('claim-status-state')).toHaveText('CLOSED');
+  await expect(denyClaimantPage.getByTestId('claim-decision-denied')).toBeVisible();
+  await expect(denyClaimantPage.getByTestId('claim-decision-remarks')).toHaveText(
+    'Coverage excludes the reported damage.',
+  );
+  await expect(denyClaimantPage.getByTestId('claim-decision-amount')).toHaveCount(0);
+  await denyClaimantContext.close();
+
+  // Neither closed-claim response leaked an internal field.
+  expect(leaked, `internal fields leaked on a closed claimant wire: ${leaked.join(', ')}`)
+    .toEqual([]);
+});

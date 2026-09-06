@@ -5,6 +5,71 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-6 decisions: the closed claim's claimant view (decision display)
+
+**Context:** Slice 4 deferred the claimant-view decision fields here deliberately, and the
+slice-6 brief left four shape questions open ("decide and record"): what the process-steps
+list shows for a CLOSED claim when `stepsFor` derives from status alone and CLOSED cannot
+recall whether the journey passed through `ESCALATED_SUPERVISOR`; the exact grown shape of
+`ClaimantClaimView`; whether the decision email needs new end-to-end coverage; and where
+E2E journey 8 lives.
+**Decision:**
+- **Closed process steps: the two stages every closure truthfully shared, never a guessed
+  "Escalated" step.** `stepsFor("CLOSED")` returns *FNOL received* + *Under review* only.
+  The decision/closure columns do not record whether the claim was supervisor-escalated, so
+  no closed view can truthfully show "escalated (when applicable)" from the claim row —
+  showing it for every closure would misrepresent never-escalated claims. Reconstructing
+  history from the `DECISION` audit row's `before.status` was considered and rejected:
+  reading the append-only log into a claimant surface, per GET, for a history nicety, is
+  cost without a requirement. The terminal "→ decision" step is the decision itself, which
+  the screen renders from the decision fields as a block (amount or remarks) — richer than
+  a status-only list line could be, and outcome-specific (which a pure status projection
+  cannot produce). *Revisit if* closure ever records escalation (e.g. a `was_escalated`
+  flag) or claimants ask for their full timeline.
+- **`ClaimantClaimView` shape (slice 6): decision fields always on the record, null when
+  not applicable; omitted from the wire when null.** The record grows to
+  `(claimNumber, status, steps, decision, indemnityAmount, decisionRemarks)`. The mapper
+  guards each field to its decision — `indemnityAmount` only when `decision = APPROVED`,
+  `decisionRemarks` only when `decision = DENIED` — so the plan's "approved amount present
+  only when APPROVED" rule is structural at the view boundary, not a serialization
+  accident. The record carries `@JsonInclude(NON_NULL)` (Jackson-2 compat annotations,
+  honored by this Boot-4/Jackson-3 mapper — probed empirically): the wire omits null
+  fields, so an undecided claim's response is **byte-identical to slice 5** (journey 2 and
+  the open-claim wall tests did not need changing), an APPROVED closure adds
+  `decision` + `indemnityAmount`, and a DENIED closure adds `decision` +
+  `decisionRemarks`. The structural wall test
+  (`viewStructurallyCarriesOnlyPublicFields`) and the journey-2 wire assertions were
+  extended deliberately with this shape, per the repo's no-dead-surface and
+  no-accidental-growth rules.
+- **Decision email: no new delivery test — the four slice-4/5 closure tests already pin
+  Mailpit delivery on every closure actor (adjuster approve/deny,
+  supervisor approve/deny).** Slice 6 *strengthened those assertions in place* to cover
+  the plan's "email content correctness" risk: the approval email body states "We will
+  pay" plus the amount, the denial email carries the rationale as remarks verbatim. Those
+  same four tests now also fetch the closed claim's claimant view and assert the decision
+  fields on the wire per closure actor, plus the wall (no reserve/notes/assignee/coverage)
+  and the closed steps — extending, not duplicating, the existing wall assertions.
+- **E2E journey 8 lives in `queue.spec.ts`** (existing file, per the standing decision —
+  no new spec file adds a parallel worker's Keycloak registration traffic). One test
+  exercises **both** rendering branches: an adjuster-approved claim (the claimant sees
+  `£1500.00`) and an adjuster-denied claim (the claimant sees the remarks verbatim),
+  with journey-2-style wire-leak capture on the closed claims. The supervisor-closed wire
+  path stays at the integration layer: the browser rendering is decision-agnostic, so
+  driving a third closure through the UI would buy nothing E2E-specific.
+- **Closed-claim access is unchanged and re-pinned:** the claimant status endpoint's
+  owner-only rule (401 anonymous, 404 another claimant — never 403) is status-independent
+  and already pinned on open claims; a closed-claim variant test was added so the rule has
+  an explicit regression guard on the surface this slice changed.
+**Why:** Each choice keeps the closed view truthful without new columns or audit-log
+coupling, keeps the open-claim wire pristine, pins every acceptance criterion to a test
+that fails on regression, and lands the only genuinely new user-visible behavior (the
+decision block) with its E2E journey — while reusing every existing fixture instead of
+duplicating it.
+**Deferred:** A recorded escalation flag or audit-derived history for closed claims (see
+the steps decision); per-claim "what happens next" mail content beyond the closure email.
+
+---
+
 ### 2026-09-06 — Slice-5 fresh-context review findings applied (deepseek-v4-pro)
 
 **Context:** A fresh-context review of slice 5 (run on the strong model in a new agent
