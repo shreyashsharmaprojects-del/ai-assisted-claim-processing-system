@@ -17,11 +17,24 @@ export class Home {
 
   protected readonly policies = signal<PolicySummary[]>([]);
   protected readonly error = signal<string | null>(null);
+  protected readonly loaded = signal(false);
 
   constructor() {
+    this.load();
+  }
+
+  load() {
+    this.error.set(null);
+    this.loaded.set(false);
     this.http.get<PolicySummary[]>('/api/policies').subscribe({
-      next: (policies) => this.policies.set(policies),
-      error: () => this.error.set('Could not load policies from the backend.'),
+      next: (policies) => {
+        this.policies.set(policies);
+        this.loaded.set(true);
+      },
+      error: () => {
+        this.error.set('Could not load policies from the backend.');
+        this.loaded.set(true);
+      },
     });
   }
 }

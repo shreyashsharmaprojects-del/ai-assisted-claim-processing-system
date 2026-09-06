@@ -36,6 +36,7 @@ export class Authority {
   protected readonly error = signal<string | null>(null);
   protected readonly saved = signal<string | null>(null);
   protected readonly loaded = signal(false);
+  protected readonly saving = signal(false);
 
   constructor() {
     void this.load();
@@ -43,6 +44,7 @@ export class Authority {
 
   async load() {
     this.error.set(null);
+    this.loaded.set(false);
     try {
       const headers = await this.authHeaders();
       if (!headers) {
@@ -69,8 +71,10 @@ export class Authority {
   async save(row: EditableRow) {
     this.error.set(null);
     this.saved.set(null);
+    this.saving.set(true);
     const headers = await this.authHeaders();
     if (!headers) {
+      this.saving.set(false);
       return;
     }
     try {
@@ -92,6 +96,8 @@ export class Authority {
     } catch (err) {
       const message = (err as { error?: { message?: string } })?.error?.message;
       this.error.set(message ?? 'Could not save the authority settings.');
+    } finally {
+      this.saving.set(false);
     }
   }
 

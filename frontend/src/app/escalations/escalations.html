@@ -4,7 +4,12 @@
 
   @if (error(); as message) {
     <p class="error" data-testid="esc-error" role="alert">{{ message }}</p>
-  } @else if (loaded()) {
+    <button type="button" class="retry" data-testid="esc-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <p class="loading" data-testid="esc-loading">Loading…</p>
+  } @else {
     @if (claims().length === 0) {
       <p data-testid="esc-empty">No escalated claims right now.</p>
     } @else {

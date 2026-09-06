@@ -1,1 +1,17 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global styles. */
+
+/* Visible focus indicator for keyboard navigation (WCAG 2.1 AA): keep the browser's
+   default ring explicit and consistent across every interactive element. */
+:focus-visible {
+  outline: 2px solid #1455d9;
+  outline-offset: 2px;
+}
+
+/* Shared loading / retry affordances used by the fetch-based screens. */
+.loading {
+  color: #555;
+}
+
+.retry {
+  margin-top: 0.5rem;
+}

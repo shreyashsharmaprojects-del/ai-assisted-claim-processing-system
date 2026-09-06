@@ -2,10 +2,17 @@
   <a routerLink="/" class="brand">Claims Processing</a>
   <nav>
     <a routerLink="/claim/new" data-testid="nav-file-claim">File a claim</a>
-    <a routerLink="/queue" data-testid="nav-queue">Adjuster queue</a>
+    @if (isInternal()) {
+      <a routerLink="/queue" data-testid="nav-queue">Adjuster queue</a>
+    }
     @if (isSupervisor()) {
       <a routerLink="/escalations" data-testid="nav-escalations">Escalations</a>
       <a routerLink="/admin/authority" data-testid="nav-authority">Authority settings</a>
+    }
+    @if (isSignedIn()) {
+      <button type="button" class="signout" data-testid="nav-signout" (click)="signOut()">
+        Sign out
+      </button>
     }
   </nav>
 </header>

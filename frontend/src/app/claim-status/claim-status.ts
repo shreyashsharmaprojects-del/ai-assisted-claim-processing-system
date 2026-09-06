@@ -40,6 +40,8 @@ export class ClaimStatus {
   }
 
   async load() {
+    this.error.set(null);
+    this.loaded.set(false);
     const claimNumber = this.route.snapshot.paramMap.get('claimNumber');
     if (!claimNumber) {
       this.error.set('No claim number given.');

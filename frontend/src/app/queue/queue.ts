@@ -35,6 +35,7 @@ export class Queue {
 
   async load() {
     this.error.set(null);
+    this.loaded.set(false);
     try {
       const token = await accessToken();
       if (!token) {

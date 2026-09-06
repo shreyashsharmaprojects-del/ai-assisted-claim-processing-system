@@ -38,6 +38,18 @@ export function hasRole(role: string): boolean {
   return !!kc.tokenParsed?.realm_access?.roles?.includes(role);
 }
 
+export function isAuthenticated(): boolean {
+  return keycloak().authenticated;
+}
+
+/** Ends the Keycloak session and returns to the app home (logout is a hardening check). */
+export async function logout(): Promise<void> {
+  const kc = keycloak();
+  if (kc.authenticated) {
+    await kc.logout({ redirectUri: window.location.origin + '/' });
+  }
+}
+
 export async function accessToken(): Promise<string | null> {
   const kc = keycloak();
   try {

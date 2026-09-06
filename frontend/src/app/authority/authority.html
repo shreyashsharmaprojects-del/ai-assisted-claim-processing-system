@@ -7,12 +7,17 @@
 
   @if (error(); as message) {
     <p class="error" data-testid="auth-error" role="alert">{{ message }}</p>
+    <button type="button" class="retry" data-testid="auth-retry" (click)="load()">
+      Try again
+    </button>
   }
   @if (saved(); as message) {
     <p class="saved" data-testid="auth-saved" role="status">{{ message }}</p>
   }
 
-  @if (loaded()) {
+  @if (!loaded()) {
+    <p class="loading" data-testid="auth-loading">Loading…</p>
+  } @else {
     <ul class="auth-list">
       @for (row of rows(); track row.productCode) {
         <li class="auth-row" data-testid="auth-row">
@@ -47,7 +52,7 @@
                 name="l2"
               />
             </label>
-            <button type="submit" data-testid="auth-save">Save</button>
+            <button type="submit" data-testid="auth-save" [disabled]="saving()">Save</button>
           </form>
         </li>
       }

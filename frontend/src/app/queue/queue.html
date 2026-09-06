@@ -3,7 +3,12 @@
 
   @if (error(); as message) {
     <p class="error" data-testid="queue-error" role="alert">{{ message }}</p>
-  } @else if (loaded()) {
+    <button type="button" class="retry" data-testid="queue-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <p class="loading" data-testid="queue-loading">Loading…</p>
+  } @else {
     @if (claims().length === 0) {
       <p data-testid="queue-empty">No claims in your queue right now.</p>
     } @else {

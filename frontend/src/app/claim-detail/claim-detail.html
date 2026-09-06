@@ -1,6 +1,11 @@
 <main data-testid="claim-detail-page">
   @if (error(); as message) {
     <p class="error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
+    <button type="button" class="retry" data-testid="claim-detail-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <p class="loading" data-testid="claim-detail-loading">Loading…</p>
   } @else if (view(); as claim) {
     <h1>
       Claim <span data-testid="detail-claim-number">{{ claim.claimNumber }}</span>
@@ -55,7 +60,8 @@
     <section class="panel">
       <h2>Reserve</h2>
       <p data-testid="detail-reserve-value">
-        Current reserve: {{ claim.reserveAmount == null ? 'not set' : '£' + claim.reserveAmount }}
+        Current reserve:
+        {{ claim.reserveAmount == null ? 'not set' : '£' + claim.reserveAmount.toFixed(2) }}
       </p>
       <form (ngSubmit)="saveReserve()" class="inline">
         <label for="reserve">New reserve</label>
@@ -68,7 +74,13 @@
           [(ngModel)]="reserveInput"
           name="reserve"
         />
-        <button type="submit" data-testid="detail-reserve-save">Save reserve</button>
+        <button
+          type="submit"
+          data-testid="detail-reserve-save"
+          [disabled]="savingReserve() || !reserveInput.trim()"
+        >
+          Save reserve
+        </button>
       </form>
     </section>
 
@@ -95,7 +107,11 @@
           [(ngModel)]="noteInput"
           name="note"
         ></textarea>
-        <button type="submit" data-testid="detail-note-add" [disabled]="!noteInput.trim()">
+        <button
+          type="submit"
+          data-testid="detail-note-add"
+          [disabled]="savingNote() || !noteInput.trim()"
+        >
           Add note
         </button>
       </form>
@@ -131,14 +147,14 @@
             <button
               type="submit"
               data-testid="detail-approve"
-              [disabled]="!decisionAmount || !decisionRationale.trim()"
+              [disabled]="deciding() || !decisionAmount || !decisionRationale.trim()"
             >
               Approve
             </button>
             <button
               type="button"
               data-testid="detail-deny"
-              [disabled]="!decisionRationale.trim()"
+              [disabled]="deciding() || !decisionRationale.trim()"
               (click)="deny()"
             >
               Deny

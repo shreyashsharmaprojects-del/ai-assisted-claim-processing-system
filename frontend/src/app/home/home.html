@@ -4,6 +4,11 @@
 
   @if (error(); as message) {
     <p data-testid="policy-error">{{ message }}</p>
+    <button type="button" class="retry" data-testid="policy-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <p class="loading" data-testid="policy-loading">Loading…</p>
   } @else {
     <ul data-testid="policy-list">
       @for (policy of policies(); track policy.policyNumber) {

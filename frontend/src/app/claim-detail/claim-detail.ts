@@ -59,6 +59,9 @@ export class ClaimDetail {
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
   protected readonly decisionResult = signal<string | null>(null);
+  protected readonly savingReserve = signal(false);
+  protected readonly savingNote = signal(false);
+  protected readonly deciding = signal(false);
 
   protected reserveInput = '';
   protected noteInput = '';
@@ -98,6 +101,7 @@ export class ClaimDetail {
 
   async load() {
     this.error.set(null);
+    this.loaded.set(false);
     try {
       const headers = await this.authHeaders();
       if (!headers) {
@@ -107,7 +111,7 @@ export class ClaimDetail {
         this.http.get<InternalClaimView>(`/api/claims/${this.claimNumber}/full`, { headers }),
       );
       this.view.set(view);
-      this.reserveInput = view.reserveAmount == null ? '' : String(view.reserveAmount);
+      this.reserveInput = view.reserveAmount == null ? '' : view.reserveAmount.toFixed(2);
     } catch {
       this.error.set('Could not load this claim.');
     } finally {
@@ -117,11 +121,21 @@ export class ClaimDetail {
 
   async saveReserve() {
     this.error.set(null);
-    const headers = await this.authHeaders();
-    if (!headers) {
+    if (!this.reserveInput.trim()) {
+      this.error.set('Enter a reserve amount.');
       return;
     }
     const amount = Number(this.reserveInput);
+    if (Number.isNaN(amount)) {
+      this.error.set('Reserve must be a number.');
+      return;
+    }
+    this.savingReserve.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.savingReserve.set(false);
+      return;
+    }
     try {
       const view = await firstValueFrom(
         this.http.put<InternalClaimView>(
@@ -133,13 +147,17 @@ export class ClaimDetail {
       this.view.set(view);
     } catch {
       this.error.set('Could not save the reserve.');
+    } finally {
+      this.savingReserve.set(false);
     }
   }
 
   async addNote() {
     this.error.set(null);
+    this.savingNote.set(true);
     const headers = await this.authHeaders();
     if (!headers) {
+      this.savingNote.set(false);
       return;
     }
     try {
@@ -154,6 +172,8 @@ export class ClaimDetail {
       await this.load();
     } catch {
       this.error.set('Could not add the note.');
+    } finally {
+      this.savingNote.set(false);
     }
   }
 
@@ -176,8 +196,10 @@ export class ClaimDetail {
   }) {
     this.error.set(null);
     this.decisionResult.set(null);
+    this.deciding.set(true);
     const headers = await this.authHeaders();
     if (!headers) {
+      this.deciding.set(false);
       return;
     }
     try {
@@ -197,6 +219,8 @@ export class ClaimDetail {
     } catch (err) {
       const message = (err as { error?: { message?: string } })?.error?.message;
       this.error.set(message ?? 'Could not record the decision.');
+    } finally {
+      this.deciding.set(false);
     }
   }
 

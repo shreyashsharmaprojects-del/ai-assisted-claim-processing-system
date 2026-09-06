@@ -1,6 +1,11 @@
 <main data-testid="claim-status-page">
   @if (error(); as message) {
     <p class="error" data-testid="claim-status-error" role="alert">{{ message }}</p>
+    <button type="button" class="retry" data-testid="claim-status-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <p class="loading" data-testid="claim-status-loading">Loading…</p>
   } @else if (view(); as claim) {
     <h1>Claim {{ claim.claimNumber }}</h1>
     <p class="tagline" data-testid="claim-status-state">{{ claim.status }}</p>
