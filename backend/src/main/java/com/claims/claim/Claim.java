@@ -1,5 +1,6 @@
 package com.claims.claim;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 
@@ -49,11 +50,18 @@ public class Claim {
     @Column(name = "claimant_remarks")
     private String claimantRemarks;
 
+    @Column(name = "created_at", insertable = false, updatable = false)
+    private Instant createdAt;
+
     @Column(name = "assigned_adjuster_id")
     private Long assignedAdjusterId;
 
     @Column(name = "assigned_at")
     private Instant assignedAt;
+
+    /** The adjuster's internal reserve estimate; never claimant-visible (slice 3). */
+    @Column(name = "reserve_amount")
+    private BigDecimal reserveAmount;
 
     protected Claim() {
         // for JPA
@@ -112,12 +120,24 @@ public class Claim {
         return claimantRemarks;
     }
 
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
     public Long getAssignedAdjusterId() {
         return assignedAdjusterId;
     }
 
     public Instant getAssignedAt() {
         return assignedAt;
+    }
+
+    public BigDecimal getReserveAmount() {
+        return reserveAmount;
+    }
+
+    public void setReserveAmount(BigDecimal reserveAmount) {
+        this.reserveAmount = reserveAmount;
     }
 
     /**

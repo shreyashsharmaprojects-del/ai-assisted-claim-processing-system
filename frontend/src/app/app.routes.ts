@@ -9,9 +9,19 @@ export const routes: Routes = [
     loadComponent: () => import('./fnol/fnol').then((m) => m.Fnol),
   },
   {
+    path: 'claim/:claimNumber',
+    canActivate: [claimantGuard],
+    loadComponent: () => import('./claim-status/claim-status').then((m) => m.ClaimStatus),
+  },
+  {
     path: 'queue',
     canActivate: [internalGuard],
     loadComponent: () => import('./queue/queue').then((m) => m.Queue),
+  },
+  {
+    path: 'claims/:claimNumber',
+    canActivate: [internalGuard],
+    loadComponent: () => import('./claim-detail/claim-detail').then((m) => m.ClaimDetail),
   },
   { path: '**', redirectTo: '' },
 ];

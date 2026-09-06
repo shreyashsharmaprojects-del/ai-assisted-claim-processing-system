@@ -1,0 +1,128 @@
+<main data-testid="claim-detail-page">
+  @if (error(); as message) {
+    <p class="error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
+  } @else if (view(); as claim) {
+    <h1>
+      Claim <span data-testid="detail-claim-number">{{ claim.claimNumber }}</span>
+    </h1>
+    <p class="tagline" data-testid="detail-status">
+      {{ claim.status }} · {{ claim.level }} · {{ claim.assignedTo ?? 'unassigned' }}
+    </p>
+
+    <section class="panel">
+      <h2>Policy &amp; coverage</h2>
+      <dl>
+        <div>
+          <dt>Policy</dt>
+          <dd data-testid="detail-policy">{{ claim.policyNumber }}</dd>
+        </div>
+        <div>
+          <dt>Product</dt>
+          <dd data-testid="detail-product">{{ claim.productCode }}</dd>
+        </div>
+        <div>
+          <dt>Holder</dt>
+          <dd data-testid="detail-holder">{{ claim.holderName }}</dd>
+        </div>
+      </dl>
+      <pre class="coverage" data-testid="detail-coverage">{{ coverageText() }}</pre>
+    </section>
+
+    <section class="panel">
+      <h2>Loss</h2>
+      <dl>
+        <div>
+          <dt>Date</dt>
+          <dd data-testid="detail-loss-date">{{ claim.lossDate }}</dd>
+        </div>
+        <div>
+          <dt>Location</dt>
+          <dd data-testid="detail-loss-location">{{ claim.lossLocation }}</dd>
+        </div>
+        <div>
+          <dt>Description</dt>
+          <dd data-testid="detail-loss-description">{{ claim.lossDescription }}</dd>
+        </div>
+        @if (claim.claimantRemarks; as remarks) {
+          <div>
+            <dt>Claimant remarks</dt>
+            <dd data-testid="detail-remarks">{{ remarks }}</dd>
+          </div>
+        }
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>Reserve</h2>
+      <p data-testid="detail-reserve-value">
+        Current reserve: {{ claim.reserveAmount == null ? 'not set' : '£' + claim.reserveAmount }}
+      </p>
+      <form (ngSubmit)="saveReserve()" class="inline">
+        <label for="reserve">New reserve</label>
+        <input
+          id="reserve"
+          type="number"
+          min="0"
+          step="0.01"
+          data-testid="detail-reserve-input"
+          [(ngModel)]="reserveInput"
+          name="reserve"
+        />
+        <button type="submit" data-testid="detail-reserve-save">Save reserve</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Internal notes</h2>
+      @if (claim.notes.length === 0) {
+        <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
+      } @else {
+        <ul data-testid="detail-note-list">
+          @for (note of claim.notes; track note.id) {
+            <li class="note" data-testid="detail-note-item">
+              <p>{{ note.body }}</p>
+              <p class="muted">{{ note.author ?? 'Internal' }}</p>
+            </li>
+          }
+        </ul>
+      }
+      <form (ngSubmit)="addNote()">
+        <label for="note">Add a note</label>
+        <textarea
+          id="note"
+          rows="3"
+          data-testid="detail-note-input"
+          [(ngModel)]="noteInput"
+          name="note"
+        ></textarea>
+        <button type="submit" data-testid="detail-note-add" [disabled]="!noteInput.trim()">
+          Add note
+        </button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Photos</h2>
+      @if (claim.attachments.length === 0) {
+        <p class="muted" data-testid="detail-photos-empty">No photos attached.</p>
+      } @else {
+        <ul>
+          @for (attachment of claim.attachments; track attachment.id) {
+            <li>
+              <button
+                type="button"
+                class="linklike"
+                data-testid="detail-attachment"
+                (click)="download(attachment)"
+              >
+                Download {{ attachment.originalName }}
+              </button>
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <p><a routerLink="/queue" data-testid="detail-back-to-queue">Back to my queue</a></p>
+  }
+</main>

@@ -1,0 +1,79 @@
+.tagline {
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+}
+
+.panel {
+  border: 1px solid #e2e2e2;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  row-gap: 0.25rem;
+  margin: 0 0 0.5rem;
+}
+
+dt {
+  color: #666;
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+}
+
+.coverage {
+  background: #f6f6f6;
+  border-radius: 0.25rem;
+  padding: 0.75rem;
+  overflow-x: auto;
+}
+
+form {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+  max-width: 30rem;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.inline label {
+  margin: 0;
+}
+
+.note {
+  margin-bottom: 0.5rem;
+}
+
+.note p {
+  margin: 0.1rem 0;
+}
+
+.muted {
+  color: #777;
+}
+
+.error {
+  color: #b00020;
+}
+
+.linklike {
+  background: none;
+  border: none;
+  color: #1455d9;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}

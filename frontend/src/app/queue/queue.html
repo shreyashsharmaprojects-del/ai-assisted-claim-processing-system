@@ -36,6 +36,12 @@
                 <dd data-testid="queue-loss-description">{{ claim.lossDescription }}</dd>
               </div>
             </dl>
+            <a
+              class="open"
+              [routerLink]="['/claims', claim.claimNumber]"
+              data-testid="queue-open-claim"
+              >Open claim</a
+            >
           </li>
         }
       </ul>

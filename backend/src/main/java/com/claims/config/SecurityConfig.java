@@ -31,6 +31,14 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*").hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
+                                "/api/claims/*/attachments/*")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                        .requestMatchers(HttpMethod.PUT, "/api/claims/*/reserve")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/notes")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()

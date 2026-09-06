@@ -100,3 +100,85 @@ test('a filed claim lands in exactly one L1 adjuster queue and never in the L2 q
   await threeContext.close();
   expect(threeHolds, `the L2 queue must not contain the L1 claim ${claimNumber}`).toBe(false);
 });
+
+const PHOTO = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+]);
+
+/** Files an FNOL with a photo through the UI and returns the claim number. */
+async function fileFnolWithPhoto(page: Page): Promise<string> {
+  await page.getByTestId('fnol-policy-number').fill('POL-10001');
+  await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-loss-date').fill('2026-09-01');
+  await page.getByTestId('fnol-loss-location').fill('London');
+  await page.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
+  await page.getByTestId('fnol-photos').setInputFiles({
+    name: 'kitchen.png',
+    mimeType: 'image/png',
+    buffer: PHOTO,
+  });
+  await page.getByTestId('fnol-submit').click();
+  await expect(page.getByTestId('claim-number')).toBeVisible();
+  const claimNumber = (await page.getByTestId('claim-number').textContent())!.trim();
+  await expect(page.getByTestId('claim-steps')).toContainText('Under review');
+  return claimNumber;
+}
+
+/** Signs in the L1 adjuster who holds the claim and opens its detail screen. */
+async function openClaimAsHolder(browser: Browser, claimNumber: string): Promise<Page> {
+  for (const username of ['adjuster.one', 'adjuster.two']) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await signInAdjuster(page, username);
+    if (await queueShows(page, claimNumber)) {
+      const row = page.getByTestId('queue-row').filter({ hasText: claimNumber });
+      await row.getByTestId('queue-open-claim').click();
+      await expect(page.getByTestId('claim-detail-page')).toBeVisible();
+      return page;
+    }
+    await context.close();
+  }
+  throw new Error(`no L1 adjuster queue held claim ${claimNumber}`);
+}
+
+/**
+ * Journey 4: the assigned adjuster opens the claim from their queue and works it — reads
+ * policy/coverage and the loss, sets a reserve, adds an internal note, and downloads the
+ * photo. All of that data is internal; journey 2 pins that none of it reaches the claimant.
+ */
+test('the assigned adjuster sets a reserve, adds an internal note and downloads the photo', async ({
+  browser,
+}) => {
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  const claimNumber = await fileFnolWithPhoto(claimantPage);
+  await claimantContext.close();
+
+  const holder = await openClaimAsHolder(browser, claimNumber);
+
+  // The internal full view: policy + coverage + loss details.
+  await expect(holder.getByTestId('detail-claim-number')).toHaveText(claimNumber);
+  await expect(holder.getByTestId('detail-policy')).toHaveText('POL-10001');
+  await expect(holder.getByTestId('detail-coverage')).toContainText('"type": "home"');
+  await expect(holder.getByTestId('detail-loss-description')).toContainText('Kitchen flooded');
+
+  // Set a reserve; the saved value is shown back.
+  await holder.getByTestId('detail-reserve-input').fill('1250.50');
+  await holder.getByTestId('detail-reserve-save').click();
+  await expect(holder.getByTestId('detail-reserve-value')).toContainText('1250');
+
+  // Add an internal note; it appears in the note list.
+  await holder.getByTestId('detail-note-input').fill('Coverage confirmed; awaiting builder quote.');
+  await holder.getByTestId('detail-note-add').click();
+  await expect(holder.getByTestId('detail-note-list')).toContainText('Coverage confirmed');
+
+  // Download the uploaded photo.
+  const downloadPromise = holder.waitForEvent('download');
+  await holder.getByTestId('detail-attachment').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('kitchen.png');
+
+  await holder.context().close();
+});

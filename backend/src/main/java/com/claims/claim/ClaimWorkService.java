@@ -1,0 +1,184 @@
+package com.claims.claim;
+
+import java.math.BigDecimal;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.claims.api.ClaimNotFoundException;
+import com.claims.api.InvalidRequestException;
+import com.claims.audit.AuditJson;
+import com.claims.audit.AuditLogWriter;
+import com.claims.policy.Policy;
+import com.claims.policy.PolicyRepository;
+import com.claims.staff.AppUser;
+import com.claims.staff.AppUserRepository;
+
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * Slice 3: the assigned adjuster's (and supervisor's) work on a claim — full internal
+ * view (policy + coverage + reserve + notes + photos), reserve updates, internal notes,
+ * and photo downloads. Every read/write goes through {@link ClaimAccess}: anything the
+ * caller may not see is a 404.
+ *
+ * <p>The visibility wall is structural: the only shapes this service returns are the
+ * internal view/note/download records, which are never routed to claimant surfaces.
+ */
+@Service
+public class ClaimWorkService {
+
+    private static final Logger log = LoggerFactory.getLogger(ClaimWorkService.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private final ClaimRepository claims;
+    private final PolicyRepository policies;
+    private final AttachmentRepository attachments;
+    private final InternalNoteRepository notes;
+    private final AppUserRepository appUsers;
+    private final ClaimAccess access;
+    private final AuditLogWriter auditLog;
+    private final JdbcTemplate jdbcTemplate;
+
+    public ClaimWorkService(ClaimRepository claims, PolicyRepository policies,
+            AttachmentRepository attachments, InternalNoteRepository notes,
+            AppUserRepository appUsers, ClaimAccess access, AuditLogWriter auditLog,
+            JdbcTemplate jdbcTemplate) {
+        this.claims = claims;
+        this.policies = policies;
+        this.attachments = attachments;
+        this.notes = notes;
+        this.appUsers = appUsers;
+        this.access = access;
+        this.auditLog = auditLog;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public InternalClaimView fullView(String claimNumber, String actorSub, boolean supervisor) {
+        return fullView(requireVisible(claimNumber, actorSub, supervisor));
+    }
+
+    /** Sets/updates the reserve (never authority-gated — an internal estimate). */
+    @Transactional
+    public InternalClaimView updateReserve(String claimNumber, String actorSub,
+            boolean supervisor, BigDecimal amount) {
+        Claim claim = requireVisible(claimNumber, actorSub, supervisor);
+        if (amount == null || amount.signum() < 0) {
+            throw new InvalidRequestException("Reserve amount must be zero or more.");
+        }
+        BigDecimal before = claim.getReserveAmount();
+        claim.setReserveAmount(amount);
+        claims.save(claim);
+        auditLog.append(actorSub, "RESERVE_SET", "CLAIM", claim.getId(),
+                AuditJson.of(before == null ? Map.of() : Map.of("reserveAmount", before)),
+                AuditJson.of(Map.of("claimNumber", claimNumber, "reserveAmount", amount)),
+                null);
+        return fullView(claim);
+    }
+
+    /** Adds an internal note by the acting staff user. */
+    @Transactional
+    public InternalClaimView.NoteView addNote(String claimNumber, String actorSub,
+            boolean supervisor, String body) {
+        Claim claim = requireVisible(claimNumber, actorSub, supervisor);
+        if (body == null || body.isBlank()) {
+            throw new InvalidRequestException("Note text is required.");
+        }
+        Long authorId = appUsers.findByKeycloakSub(actorSub).map(AppUser::getId).orElse(null);
+        InternalNote note = notes.save(new InternalNote(claim.getId(), authorId, body.trim(), Instant.now()));
+        return new InternalClaimView.NoteView(note.getId(), note.getBody(),
+                authorId == null ? null : appUsers.findById(authorId).map(AppUser::getDisplayName).orElse(null),
+                note.getCreatedAt());
+    }
+
+    /** The photo binary for an attachment of a visible claim. */
+    public AttachmentDownload download(String claimNumber, String actorSub,
+            boolean supervisor, Long attachmentId) {
+        Claim claim = requireVisible(claimNumber, actorSub, supervisor);
+        Attachment attachment = attachments.findById(attachmentId)
+                .filter(a -> a.getClaimId().equals(claim.getId()))
+                .orElseThrow(ClaimNotFoundException::new);
+        Path file = Path.of(attachment.getStoragePath());
+        if (!Files.isRegularFile(file)) {
+            log.error("Attachment {} for claim {} points at a missing file: {}",
+                    attachment.getId(), claimNumber, file);
+            throw new ClaimNotFoundException();
+        }
+        try {
+            return new AttachmentDownload(Files.readAllBytes(file),
+                    attachment.getContentType(), attachment.getOriginalName());
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Could not read attachment " + attachmentId, ex);
+        }
+    }
+
+    private Claim requireVisible(String claimNumber, String actorSub, boolean supervisor) {
+        Claim claim = claims.findByClaimNumber(claimNumber)
+                .orElseThrow(ClaimNotFoundException::new);
+        if (!access.internalReaderMaySee(claim, actorSub, supervisor)) {
+            throw new ClaimNotFoundException();
+        }
+        return claim;
+    }
+
+    private InternalClaimView fullView(Claim claim) {
+        Policy policy = policies.findById(claim.getPolicyId())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Claim " + claim.getClaimNumber() + " references a missing policy "
+                                + claim.getPolicyId()));
+        List<InternalClaimView.AttachmentView> attachmentViews = attachments
+                .findByClaimIdOrderById(claim.getId()).stream()
+                .map(a -> new InternalClaimView.AttachmentView(
+                        a.getId(), a.getOriginalName(), a.getContentType()))
+                .toList();
+        List<InternalClaimView.NoteView> noteViews = notes
+                .findByClaimIdOrderByCreatedAtAscIdAsc(claim.getId()).stream()
+                .map(n -> new InternalClaimView.NoteView(n.getId(), n.getBody(),
+                        displayNameOf(n.getAuthorId()), n.getCreatedAt()))
+                .toList();
+        return new InternalClaimView(
+                claim.getClaimNumber(),
+                claim.getStatus(),
+                claim.getLevel(),
+                policy.getPolicyNumber(),
+                policy.getProductCode(),
+                coverageOf(policy.getId()),
+                policy.getHolderName(),
+                claim.getLossDate(),
+                claim.getLossLocation(),
+                claim.getLossDescription(),
+                claim.getClaimantRemarks(),
+                claim.getReserveAmount(),
+                claim.getCreatedAt(),
+                displayNameOf(claim.getAssignedAdjusterId()),
+                attachmentViews,
+                noteViews);
+    }
+
+    private String displayNameOf(Long appUserId) {
+        if (appUserId == null) {
+            return null;
+        }
+        return appUsers.findById(appUserId).map(AppUser::getDisplayName).orElse(null);
+    }
+
+    /** The policy coverage is JSONB and deliberately unmapped on the entity; read as JSON. */
+    private Object coverageOf(Long policyId) {
+        String text = jdbcTemplate.queryForObject(
+                "SELECT coverage::text FROM policy WHERE id = ?", String.class, policyId);
+        try {
+            return text == null ? null : JSON.readTree(text);
+        } catch (JacksonException ex) {
+            throw new IllegalStateException("Policy " + policyId + " holds invalid coverage JSON", ex);
+        }
+    }
+}

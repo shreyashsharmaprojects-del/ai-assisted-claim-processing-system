@@ -47,3 +47,30 @@ Kitchen flooded after a pipe burst.\r
 # /api/queue request -> Authorization header), pasted as {{token}} above.
 GET {{host}}/api/queue
 Authorization: Bearer {{token}}
+
+### Claimant status — own claim only (CLAIMANT; someone else's claim is a 404)
+GET {{host}}/api/claims/CLM-000001
+Authorization: Bearer {{token}}
+
+### Internal full view — policy + coverage + reserve + notes + photos
+# (assigned adjuster or SUPERVISOR only; anyone else gets a 404)
+GET {{host}}/api/claims/CLM-000001/full
+Authorization: Bearer {{token}}
+
+### Set/update the reserve (assigned adjuster or SUPERVISOR)
+PUT {{host}}/api/claims/CLM-000001/reserve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "amount": 1500.00 }
+
+### Add an internal note (assigned adjuster or SUPERVISOR)
+POST {{host}}/api/claims/CLM-000001/notes
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "body": "Coverage confirmed; awaiting builder quote." }
+
+### Download a photo attachment (assigned adjuster or SUPERVISOR; served as an attachment)
+GET {{host}}/api/claims/CLM-000001/attachments/1
+Authorization: Bearer {{token}}

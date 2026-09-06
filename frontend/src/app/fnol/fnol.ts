@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { accessToken } from '../auth/auth.service';
@@ -11,7 +12,7 @@ interface ClaimantClaimView {
 }
 
 @Component({
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   selector: 'app-fnol',
   styleUrl: './fnol.css',
   templateUrl: './fnol.html',

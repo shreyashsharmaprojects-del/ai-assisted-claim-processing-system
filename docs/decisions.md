@@ -5,6 +5,64 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-3 notes: author_id nullable; notes not audited
+
+**Context:** Flow 3 lets the assigned adjuster write internal notes on a claim. The plan
+model shows `internal_note.author_id` FK → `app_user`, and audit C1 covers status changes
+and decisions.
+**Decision:** `internal_note.author_id` is nullable: a SUPERVISOR token may have no
+`app_user` (staff-cache) row yet, and forcing one per supervisor would either fabricate
+cache entries or require provisioning supervisors before slice 5. Their identity still
+rides the audit trail where the plan requires it. Note *adds* are not written to the audit
+log — the note rows themselves are the record; financial/state changes (claim created,
+assigned, reserve set, later decisions) are what get audited.
+**Why:** Notes are content, not state; auditing each one would duplicate the table it
+lives in.
+
+---
+
+### 2026-09-06 — Reserve is set/updated via PUT and audited; not authority-gated
+
+**Context:** Flow 3: "set/update a reserve". Plan: reserve is internal, never
+claimant-visible, and NOT authority-gated (only the indemnity/payment is).
+**Decision:** `PUT /api/claims/{claimNumber}/reserve` takes `{amount}` (≥ 0, else 400)
+and returns the updated internal view; every change writes a `RESERVE_SET` audit row
+(before/after amounts, actor). The assigned adjuster or a supervisor may set it — no
+authority gate on purpose.
+**Why:** A reserve is an internal estimate; gating it would be building the authority
+mechanism for the wrong field.
+
+---
+
+### 2026-09-06 — Photos are served as attachments; the 404 rule now has real endpoints
+
+**Context:** Slice-1 review deferral (a): serve photos with `Content-Disposition:
+attachment` and don't trust client content types for rendering. Slice-2 deferred the
+"404 for non-assignee" integration case because no per-claim internal endpoint existed.
+**Decision:** Photo downloads are always `attachment` (never inline — untrusted bytes must
+not render in the adjuster's browser), with the stored filename scrubbed of CR/LF/quotes
+so a hostile original name cannot smuggle header content; the stored content type is kept
+as the entity's media type (informational — the attachment disposition is the control).
+The 404-for-non-assignee rule now lands on the slice-3 per-claim endpoints (claimant
+status, full view, reserve, notes, attachments): a real claim someone else owns is 404,
+never 403.
+**Why:** Serving inline would create a stored-XSS vector; the plan's 404-not-403
+authorization rule needed an object-level endpoint to apply to.
+
+---
+
+### 2026-09-06 — Policy coverage stays unmapped; read as JSON for the internal view
+
+**Context:** Slice-0 deliberately left `policy.coverage` (JSONB) unmapped. Slice 3's full
+view must show coverage to the adjuster.
+**Decision:** Coverage is read with a parameterized JDBC query (`coverage::text`) and
+parsed to JSON for the internal view — the entity stays unmapped (nothing writes it), and
+the internal view is the only consumer.
+**Why:** Mapping a read-only JSONB column on the entity just to serialize it back adds
+mapping surface for no write path.
+
+---
+
 ### 2026-09-06 — Slice-2 review fixes (fresh-context agent review)
 
 **Context:** A fresh-context review of slice 2 (commit 27561e7) found no blocking issues
@@ -117,35 +175,6 @@ keeps the claimant as actor. The schema already allows a NULL actor.
 the actor) would misattribute the action.
 
 ---
-
-## Deferred
-
-### 2026-09-06 — Slice-2 review optional items
-
-**Considered:** Seven optional cleanups from the slice-2 review: replacing
-`LoadBalancer`'s load-bearing `.sorted()` with an explicit id `thenComparing`; recording
-the CLAIM_CREATED audit payload with the final (UNDER_REVIEW) status instead of the
-momentary UNASSIGNED state; hiding the "Adjuster queue" nav link from the public;
-dropping `QueueClaimView.createdAt` (no consumer yet); fixing UNDER_REVIEW step copy that
-contradicts the received step; extracting the duplicated E2E `registerClaimant` helper;
-hardening the dev-only plaintext credentials (Keycloak admin/admin, adjuster passwords)
-in realm-export/docker-compose.
-**Why not now:** All are cosmetic or cross-slice concerns with no behavioral risk; the
-user scoped the fix round to the should-fix findings. Credential hardening is a
-pre-ship/hardening-phase checklist item, not a slice item.
-**Build it when:** slice 3 (or a hardening pass) touches the relevant file anyway.
-
----
-
-### 2026-09-06 — app_user auto-population on login; supervisor Keycloak user
-
-**Considered:** A login hook that upserts `app_user` rows from the JWT, and provisioning a
-supervisor user in Keycloak now.
-**Why not now:** Adjusters are seeded with fixed subjects, so no first-login upsert is
-needed; the supervisor role token already unlocks the team queue in tests, and no journey
-logs in as a supervisor until the supervisor slices (5+).
-**Build it when:** staff display data can drift from Keycloak, or slice 5's supervisor
-journey needs a real supervisor login.
 
 ### 2026-09-06 — Slice-1 review fixes (fresh-context agent review)
 
@@ -362,6 +391,35 @@ Keycloak) for the E2E job.
 ---
 
 ## Deferred
+
+### 2026-09-06 — Slice-2 review optional items
+
+**Considered:** Seven optional cleanups from the slice-2 review: replacing
+`LoadBalancer`'s load-bearing `.sorted()` with an explicit id `thenComparing`; recording
+the CLAIM_CREATED audit payload with the final (UNDER_REVIEW) status instead of the
+momentary UNASSIGNED state; hiding the "Adjuster queue" nav link from the public;
+dropping `QueueClaimView.createdAt` (no consumer yet); fixing UNDER_REVIEW step copy that
+contradicts the received step; extracting the duplicated E2E `registerClaimant` helper;
+hardening the dev-only plaintext credentials (Keycloak admin/admin, adjuster passwords)
+in realm-export/docker-compose.
+**Why not now:** All are cosmetic or cross-slice concerns with no behavioral risk; the
+user scoped the fix round to the should-fix findings. Credential hardening is a
+pre-ship/hardening-phase checklist item, not a slice item.
+**Build it when:** slice 3 (or a hardening pass) touches the relevant file anyway.
+
+---
+
+### 2026-09-06 — app_user auto-population on login; supervisor Keycloak user
+
+**Considered:** A login hook that upserts `app_user` rows from the JWT, and provisioning a
+supervisor user in Keycloak now.
+**Why not now:** Adjusters are seeded with fixed subjects, so no first-login upsert is
+needed; the supervisor role token already unlocks the team queue in tests, and no journey
+logs in as a supervisor until the supervisor slices (5+).
+**Build it when:** staff display data can drift from Keycloak, or slice 5's supervisor
+journey needs a real supervisor login.
+
+---
 
 ### 2026-09-03 — E2E database isolation (review finding S1, follow-up)
 

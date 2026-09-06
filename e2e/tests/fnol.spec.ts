@@ -84,3 +84,47 @@ test('a rejected FNOL keeps the form on screen with the server error', async ({ 
   await expect(page.getByTestId('fnol-policy-number')).toBeVisible();
   await expect(page.getByTestId('claim-number')).toHaveCount(0);
 });
+
+/**
+ * Journey 2: the claimant opens their claim status screen. Reserve and internal notes must
+ * be absent from the screen AND from the /api/claims/{claimNumber} response on the wire —
+ * the visibility wall is a structural property of the API, not a UI hiding.
+ */
+test('claimant status screen shows no reserve or internal notes, on screen or wire', async ({
+  page,
+}) => {
+  // Capture the claim-status response body to assert the wall at the wire level too.
+  const leaked: string[] = [];
+  page.on('response', async (response) => {
+    if (response.request().method() === 'GET' && /\/api\/claims\/CLM-\d+$/.test(response.url())) {
+      const body = await response.text();
+      for (const field of ['reserveAmount', 'reserve', 'notes', 'assignedTo', 'policyNumber', 'coverage']) {
+        if (body.includes(`"${field}"`)) {
+          leaked.push(field);
+        }
+      }
+    }
+  });
+
+  await registerClaimant(page);
+  await page.getByTestId('fnol-policy-number').fill('POL-10001');
+  await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-loss-date').fill('2026-09-01');
+  await page.getByTestId('fnol-loss-location').fill('London');
+  await page.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
+  await page.getByTestId('fnol-submit').click();
+
+  await expect(page.getByTestId('claim-number')).toBeVisible();
+  await page.getByTestId('track-claim').click();
+
+  // The status screen renders the public steps…
+  await expect(page.getByTestId('claim-status-page')).toBeVisible();
+  await expect(page.getByTestId('claim-status-steps')).toContainText('Under review');
+  // …and nothing internal: no reserve section, no notes, no coverage/policy detail.
+  await expect(page.getByTestId('claim-status-page')).not.toContainText('Reserve');
+  await expect(page.getByTestId('claim-status-page')).not.toContainText('Internal notes');
+  await expect(page.getByTestId('claim-status-page')).not.toContainText('coverage');
+
+  expect(leaked, `internal fields leaked on the claimant wire: ${leaked.join(', ')}`).toEqual([]);
+});

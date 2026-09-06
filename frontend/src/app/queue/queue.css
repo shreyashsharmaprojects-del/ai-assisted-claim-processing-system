@@ -50,3 +50,8 @@ dd {
 .error {
   color: #b00020;
 }
+
+.open {
+  display: inline-block;
+  margin-top: 0.5rem;
+}

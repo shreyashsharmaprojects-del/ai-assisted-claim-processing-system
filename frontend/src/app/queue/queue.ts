@@ -1,4 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { accessToken } from '../auth/auth.service';
@@ -16,6 +17,7 @@ export interface QueueClaimView {
 }
 
 @Component({
+  imports: [RouterLink],
   selector: 'app-queue',
   styleUrl: './queue.css',
   templateUrl: './queue.html',

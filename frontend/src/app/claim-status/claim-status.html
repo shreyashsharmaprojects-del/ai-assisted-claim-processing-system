@@ -1,0 +1,14 @@
+<main data-testid="claim-status-page">
+  @if (error(); as message) {
+    <p class="error" data-testid="claim-status-error" role="alert">{{ message }}</p>
+  } @else if (view(); as claim) {
+    <h1>Claim {{ claim.claimNumber }}</h1>
+    <p class="tagline" data-testid="claim-status-state">{{ claim.status }}</p>
+    <ul data-testid="claim-status-steps">
+      @for (step of claim.steps; track step) {
+        <li>{{ step }}</li>
+      }
+    </ul>
+    <p><a routerLink="/" data-testid="claim-status-home">Back to home</a></p>
+  }
+</main>

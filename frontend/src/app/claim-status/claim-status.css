@@ -1,0 +1,10 @@
+.tagline {
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.85rem;
+}
+
+.error {
+  color: #b00020;
+}
