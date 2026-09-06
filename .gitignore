@@ -17,3 +17,7 @@ e2e/blob-report/
 
 # Claimant evidence photos written by the dev backend (claims.uploads.dir)
 uploads/
+
+# Local secrets and generated Keycloak realm (copy .env.example -> .env, then render)
+.env
+keycloak/realm-export.json

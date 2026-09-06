@@ -37,6 +37,14 @@ jobs:
   e2e:
     name: E2E (Playwright, full compose stack)
     runs-on: ubuntu-latest
+    # Dev-only credentials for the throwaway local Postgres/Keycloak. For any non-local
+    # deployment, replace the || fallbacks with required secrets (drop the defaults).
+    env:
+      DB_USERNAME: ${{ secrets.DB_USERNAME || 'claims' }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'claims' }}
+      KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD || 'admin' }}
+      ADJUSTER_PASSWORD: ${{ secrets.ADJUSTER_PASSWORD || 'adjuster-Pass-123' }}
+      SUPERVISOR_PASSWORD: ${{ secrets.SUPERVISOR_PASSWORD || 'supervisor-Pass-123' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -58,6 +66,8 @@ jobs:
       - name: Install Playwright browsers
         working-directory: e2e
         run: npx playwright install --with-deps chromium
+      - name: Render Keycloak realm (inject provisioned-user passwords)
+        run: node keycloak/render-realm.mjs
       - name: Start stack (Postgres + Mailpit + Keycloak)
         run: docker compose up -d db mailpit keycloak
       - name: Wait for Keycloak realm

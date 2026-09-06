@@ -1,4 +1,25 @@
 import { defineConfig } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+/**
+ * Load ../.env into process.env (no dotenv dependency). Real environment variables (CI)
+ * always win over .env values, so a deployment can inject credentials as secrets.
+ */
+function loadEnvFile(): void {
+  try {
+    const raw = readFileSync(resolve(process.cwd(), '../.env'), 'utf8');
+    for (const line of raw.split('\n')) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (match && process.env[match[1]] === undefined) {
+        process.env[match[1]] = match[2].replace(/^["']|["']$/g, '');
+      }
+    }
+  } catch {
+    // No .env file — rely on the real environment (CI) or the stack will fail loudly.
+  }
+}
+loadEnvFile();
 
 /**
  * E2E journeys run against the dedicated `claims_e2e` database (see docker/db-init and
@@ -35,8 +56,8 @@ export default defineConfig({
       env: {
         SERVER_PORT: '8082',
         SPRING_DATASOURCE_URL: 'jdbc:postgresql://localhost:5432/claims_e2e',
-        SPRING_DATASOURCE_USERNAME: 'claims',
-        SPRING_DATASOURCE_PASSWORD: 'claims',
+        DB_USERNAME: process.env.DB_USERNAME!,
+        DB_PASSWORD: process.env.DB_PASSWORD!,
       },
     },
     {

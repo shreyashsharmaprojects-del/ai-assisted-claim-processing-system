@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: claims
-      POSTGRES_USER: claims
-      POSTGRES_PASSWORD: claims
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U claims -d claims"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d claims"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -31,12 +31,14 @@ services:
     image: quay.io/keycloak/keycloak:26.3
     command: ["start-dev", "--import-realm", "--http-port=8080"]
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
     ports:
       - "8090:8080"   # host 8080 is taken by an unrelated process; Keycloak lives on 8090
     volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
+      # Only the rendered realm file is imported (keycloak/render-realm.mjs writes it from
+      # the template + .env; the template lives next to it but is not mounted).
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
     depends_on:
       db:
         condition: service_healthy

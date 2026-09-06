@@ -230,9 +230,9 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
     @Test
     void seededAdjusterCacheMatchesTheProvisionedRealmStaff() throws Exception {
         // S2/S4 seam check: app_user.keycloak_sub/level/identity are hand-synced with
-        // keycloak/realm-export.json (V4 seeds mirror the imported realm users). This test
-        // pins that sync so a drift between the two files — which would silently mis-route
-        // claims or empty a queue — fails here instead of in production.
+        // keycloak/realm-export.template.json (V4 seeds mirror the imported realm users). This
+        // test pins that sync so a drift between the two files — which would silently
+        // mis-route claims or empty a queue — fails here instead of in production.
         JsonNode realm = new ObjectMapper().readTree(realmExportFile().toFile());
         List<JsonNode> staff = new ArrayList<>();
         for (JsonNode user : realm.path("users")) {
@@ -331,13 +331,15 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
     }
 
     private static Path realmExportFile() {
+        // The realm lives as a committed template (passwords are env-rendered into the
+        // gitignored realm-export.json at dev/E2E boot); this test reads identity fields only.
         // Surefire runs with the module directory as cwd; also accept the repo root.
-        Path fromModule = Path.of("../keycloak/realm-export.json");
+        Path fromModule = Path.of("../keycloak/realm-export.template.json");
         if (Files.exists(fromModule)) {
             return fromModule;
         }
-        Path fromRepo = Path.of("keycloak/realm-export.json");
-        assertTrue(Files.exists(fromRepo), "keycloak/realm-export.json not found next to the backend module");
+        Path fromRepo = Path.of("keycloak/realm-export.template.json");
+        assertTrue(Files.exists(fromRepo), "keycloak/realm-export.template.json not found next to the backend module");
         return fromRepo;
     }
 

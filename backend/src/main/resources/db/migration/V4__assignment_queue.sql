@@ -8,8 +8,8 @@
 -- (see docs/decisions.md — app_user carries the routing level).
 --
 -- keycloak_sub values are FIXED and match the user ids imported from
--- keycloak/realm-export.json (adjuster.one / adjuster.two = L1, adjuster.three = L2), so
--- "own queue" lookups by JWT subject work in dev and E2E alike.
+-- keycloak/realm-export.template.json (adjuster.one / adjuster.two = L1, adjuster.three = L2),
+-- so "own queue" lookups by JWT subject work in dev and E2E alike.
 
 CREATE TABLE app_user (
     id           BIGSERIAL PRIMARY KEY,

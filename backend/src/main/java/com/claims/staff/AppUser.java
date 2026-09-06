@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
  * cached projection the backend can query without an admin-API call — display identity for
  * emails/queues plus the adjuster's L1/L2 routing level (see docs/decisions.md).
  * Seeded by V4 with keycloak_sub values matching the users imported from
- * keycloak/realm-export.json.
+ * keycloak/realm-export.template.json (rendered to realm-export.json at dev/E2E boot).
  */
 @Entity
 @Table(name = "app_user")

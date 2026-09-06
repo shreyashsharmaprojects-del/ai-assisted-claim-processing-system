@@ -3,6 +3,15 @@ import { Browser, Page } from '@playwright/test';
 
 let registrationCounter = 0;
 
+/** Provisioned-realm passwords come from the environment (see .env.example -> .env). */
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is not set — copy .env.example to .env (or set it in CI).`);
+  }
+  return value;
+}
+
 /** Registers a fresh claimant through the real Keycloak realm and returns to the FNOL form. */
 async function registerClaimant(page: Page): Promise<void> {
   const stamp = Date.now() + '_' + registrationCounter++;
@@ -32,7 +41,7 @@ async function signInAdjuster(page: Page, username: string): Promise<void> {
   await page.goto('/queue');
   await expect(page).toHaveURL(/realms\/claims/);
   await page.locator('#username').fill(username);
-  await page.locator('#password').fill('adjuster-Pass-123');
+  await page.locator('#password').fill(requiredEnv('ADJUSTER_PASSWORD'));
   await page.locator('#kc-login').click();
   await expect(page.getByTestId('queue-page')).toBeVisible();
 }
@@ -280,7 +289,7 @@ async function signInSupervisor(page: Page): Promise<void> {
   await page.goto('/escalations');
   await expect(page).toHaveURL(/realms\/claims/);
   await page.locator('#username').fill('supervisor');
-  await page.locator('#password').fill('supervisor-Pass-123');
+  await page.locator('#password').fill(requiredEnv('SUPERVISOR_PASSWORD'));
   await page.locator('#kc-login').click();
   await expect(page.getByTestId('escalations-page')).toBeVisible();
 }
