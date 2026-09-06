@@ -206,6 +206,10 @@ slice-5 no blocking). All plan slices are delivered.
   its end, so an interrupted run cannot cascade (no other journey touches AUTO). Never point
   journey-9-style config edits at HOME — journeys 1–8 assume HOME routes L1 with
   2500/10000 limits.
+- E2E stability: `queueShows` in `queue.spec.ts` waits for a terminal queue state (rows /
+  empty / error) before counting rows — an immediate count could race the Angular render
+  under parallel load on the accumulated claims_e2e DB and report a present claim as
+  missing (fixed during the slice-7 post-review E2E rerun).
 - Scheduler determinism: `AgingScheduler` is `@ConditionalOnProperty("claims.aging.enabled")`
   (main properties: true, cron daily 03:00, `@EnableScheduling`); `ClaimTableResettingTest`
   disables it in claim-writing tests via an inherited `@DynamicPropertySource`. Do NOT

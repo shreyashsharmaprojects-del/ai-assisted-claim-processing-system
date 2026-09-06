@@ -37,10 +37,21 @@ async function signInAdjuster(page: Page, username: string): Promise<void> {
   await expect(page.getByTestId('queue-page')).toBeVisible();
 }
 
-/** True when the signed-in adjuster's queue shows exactly one row for the claim. */
+/**
+ * True when the signed-in adjuster's queue shows exactly one row for the claim. Waits for
+ * the queue fetch to settle first: rows render only once loaded() is true, so counting
+ * rows immediately after the page shell appears can race the render under parallel load
+ * and report a claim that is present as missing (observed on the shared claims_e2e DB).
+ */
 async function queueShows(page: Page, claimNumber: string): Promise<boolean> {
   await page.goto('/queue');
   await expect(page.getByTestId('queue-page')).toBeVisible();
+  await expect(
+    page
+      .getByTestId('queue-error')
+      .or(page.getByTestId('queue-empty'))
+      .or(page.getByTestId('queue-row').first()),
+  ).toBeVisible();
   await expect(page.getByTestId('queue-error')).toHaveCount(0);
   const row = page.getByTestId('queue-row').filter({ hasText: claimNumber });
   return (await row.count()) === 1;
