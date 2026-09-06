@@ -135,3 +135,38 @@ Content-Type: application/json
   "decision": "DENIED",
   "rationale": "The reported damage is outside the policy coverage."
 }
+
+### Authority config — list rows (SUPERVISOR only; 403 for adjusters/claimants). Each row:
+# product code + route level (classifies new FNOL claims) + L1/L2 approval limits (the gate).
+GET {{host}}/api/config/authority
+Authorization: Bearer {{token}}
+
+### Authority config — edit one row (SUPERVISOR). The change feeds the next decision (gate)
+# and the next filed claim (classification) immediately — no caching. Validation: route
+# level L1/L2; amounts positive, <= 2 decimal places, L1 <= L2; unknown product -> 404.
+PUT {{host}}/api/config/authority/HOME
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "routeLevel": "L1",
+  "l1LimitAmount": 2500.00,
+  "l2LimitAmount": 10000.00
+}
+
+### Reassign a claim to a target level (SUPERVISOR only) — routed to that level's
+# least-loaded adjuster; the claim's level follows its new holder. Rejected for decided,
+# supervisor-escalated, or invalid-level claims (400) and unknown claims (404). Audited as
+# CLAIM_REASSIGNED with the supervisor as actor.
+POST {{host}}/api/claims/CLM-000001/reassign
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "level": "L2"
+}
+
+### Claim audit log (SUPERVISOR only) — the claim's immutable history, oldest first.
+# Append-only is enforced at the data layer (V7 trigger): raw UPDATE/DELETE are rejected.
+GET {{host}}/api/claims/CLM-000001/audit
+Authorization: Bearer {{token}}

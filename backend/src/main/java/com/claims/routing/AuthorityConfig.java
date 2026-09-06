@@ -72,4 +72,19 @@ public class AuthorityConfig {
     public BigDecimal getL2LimitAmount() {
         return l2LimitAmount;
     }
+
+    /** Supervisor edit path (slice 7): the only write to an otherwise read-only row. */
+    public void setRouteLevel(String routeLevel) {
+        this.routeLevel = routeLevel;
+    }
+
+    /** Supervisor edit path (slice 7): the only write to an otherwise read-only row. */
+    public void setL1LimitAmount(BigDecimal l1LimitAmount) {
+        this.l1LimitAmount = l1LimitAmount;
+    }
+
+    /** Supervisor edit path (slice 7): the only write to an otherwise read-only row. */
+    public void setL2LimitAmount(BigDecimal l2LimitAmount) {
+        this.l2LimitAmount = l2LimitAmount;
+    }
 }

@@ -9,7 +9,7 @@ import { hasRole } from './auth/auth.service';
   templateUrl: './app.html',
 })
 export class App {
-  /** The escalation queue link is shown to supervisors only (the route is guarded too). */
+  /** Supervisor-only nav links (the routes are guarded too — slice 5, slice 7). */
   protected isSupervisor(): boolean {
     return hasRole('supervisor');
   }

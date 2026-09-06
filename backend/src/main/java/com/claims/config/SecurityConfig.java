@@ -51,6 +51,18 @@ public class SecurityConfig {
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/escalations")
                                 .hasRole("SUPERVISOR")
+                        // Slice 7: the supervisor's compliance & admin surfaces — the
+                        // authority config editor, claim reassignment, and the claim audit
+                        // log. Only a supervisor; an adjuster or claimant is a 403 before
+                        // any claim logic runs.
+                        .requestMatchers(HttpMethod.GET, "/api/config/authority")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.PUT, "/api/config/authority/*")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/reassign")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/audit")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()

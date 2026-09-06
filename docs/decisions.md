@@ -5,6 +5,76 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-7 decisions: config editor, reassign, and the immutable audit view
+
+**Context:** docs/plan.md slice 7 left several shape questions open ("decide and record"):
+what a supervisor reassign takes and what it may act on; the config edit shape and
+validation; where audit-log immutability is enforced; how much of slice 7 gets a UI; and
+how E2E journey 9 edits config without poisoning the shared e2e database for journeys 1–8.
+**Decision:**
+- **Reassign takes a target level, not a named adjuster.** `POST
+  /api/claims/{claimNumber}/reassign` body is `{level: L1|L2}`; the service re-levels the
+  claim and routes it to that level's **least-loaded adjuster via `ClaimAssigner`** — the
+  same rule every other re-assignment in the system uses (FNOL slice 2, escalation slice
+  4), one reassignment rule instead of two. The claim's routing `level` follows its new
+  holder (aging and the gate read the level), so a reassign cannot silently leave a claim
+  on a level that will re-age or mis-gate it. The claim row is locked (the slice-4 `FOR
+  UPDATE` read) so a concurrent decision or second reassign serializes. Response is
+  `{claimNumber, status, level, assignedTo}`.
+- **Reassign eligibility/errors.** Unknown claim → 404 (never reveals existence). A decided
+  claim → 400 "already been decided" (terminal; mirroring the decision endpoints).
+  `ESCALATED_SUPERVISOR` → 400 "awaiting a supervisor decision" — the claim is out of every
+  adjuster's hands and pulling it silently out of the escalation queue would strand it.
+  Missing/invalid level → 400 "must be L1 or L2". A target level with **no provisioned
+  adjuster → 400** with an actionable message (unlike FNOL's silent UNASSIGNED and the
+  slice-4 escalation fallback, a supervisor's explicit request must not no-op). Every
+  reassign writes a `CLAIM_REASSIGNED` audit row with the supervisor's Keycloak subject as
+  actor (no app_user row — the slice-5 pattern) and before/after holding assignee id +
+  display name + level + status. Supervisor-only at the URL (403 for adjusters/claimants);
+  UI pages were not added — the plan has no route-table row for reassign (or audit).
+- **Config edit shape and validation.** `GET /api/config/authority` lists every row as
+  `{productCode, routeLevel, l1LimitAmount, l2LimitAmount}` ordered by product code; `PUT
+  /api/config/authority/{productCode}` takes the three editable parameters (the product
+  code is the path key) and returns the saved row. Validation: route level L1|L2; amounts
+  positive with ≤ 2 decimal places within NUMERIC(14,2); **l1 ≤ l2** (an inverted ladder is
+  a config error, rejected — never a legal gate state); unknown product → 404. The row
+  entity gains setters — the supervisor edit is its one write path. **No caching anywhere**:
+  the classifier (FNOL) and the gate (decision) re-read `authority_config` per call, so an
+  edit feeds the next claim and the next decision immediately (integration-tested both
+  ways).
+- **Audit-log immutability enforced at the data layer** (Flyway V7): a BEFORE UPDATE OR
+  DELETE trigger raises on `audit_log`, so raw edits are impossible for any caller — the
+  "reject UPDATE/DELETE" integration test can only pass with database enforcement.
+  TRUNCATE deliberately stays legal: it fires no row triggers and is the integration-test
+  reset path (no production code truncates the log).
+- **E2E journey 9 edits AUTO (POL-20002), never HOME.** HOME is used by journeys 1–8 and
+  the shared claims_e2e database accumulates across runs; AUTO is seeded (route L2) and
+  used by no other journey. Journey 9 re-routes AUTO to L1 through `/admin/authority`,
+  files a fresh AUTO FNOL and asserts it lands in exactly one L1 queue and never the L2
+  queue (classification reflected end to end), then restores AUTO to L2. It re-sets its own
+  state first, so an interrupted run cannot cascade into other journeys. The **gate-limit
+  effect stays at the integration layer** (raising HOME's L1 limit turns a would-be
+  escalation into a closure) — the aging-E2E precedent: browser E2E covers the
+  user-visible classification half; the money-threshold math is integration territory and
+  driving a full approve-through-new-limit journey would cost E2E seconds for what the
+  integration layer pins deterministically.
+- **Deliberately not built:** audit-log view and reassign UIs (no route-table row for
+  them — API-only this slice, like the compliance API surface the plan names); config edits
+  are not written to the audit log (the plan asks the log to record status changes and
+  decisions on claims; who edited a threshold is not a named requirement — revisit if the
+  compliance team wants a config-change trail, which would need an entity/key for config
+  rows); the frontend `/admin/authority` page is the only new route (plan route table).
+**Why:** Each choice reuses an existing rule or machinery instead of inventing a parallel
+one (least-loaded assignment, the row lock, the no-app_user supervisor identity, the
+404/400 conventions), keeps config-effect freshness structural (no cache to invalidate),
+makes the append-only promise a database guarantee rather than app discipline, and keeps
+the shared e2e database safe for every existing journey.
+**Deferred:** Config-change audit trail (above); named-adjuster reassign (build it when a
+requirement to hand a claim to a specific person appears); audit-log TRUNCATE hardening for
+production (build it when non-test code ever needs to truncate — it never should).
+
+---
+
 ### 2026-09-06 — Slice-6 fresh-context review findings applied (deepseek-v4-pro)
 
 **Context:** A fresh-context review of slice 6 (run on the strong model in a new agent

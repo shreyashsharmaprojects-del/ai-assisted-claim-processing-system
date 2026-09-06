@@ -32,6 +32,12 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(ex.getMessage()));
     }
 
+    @ExceptionHandler(com.claims.routing.ConfigNotFoundException.class)
+    public ResponseEntity<ErrorResponse> configNotFound(
+            com.claims.routing.ConfigNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(ex.getMessage()));
+    }
+
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> invalidRequest(InvalidRequestException ex) {
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));

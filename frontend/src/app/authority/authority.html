@@ -1,0 +1,56 @@
+<main data-testid="auth-page">
+  <h1>Authority settings</h1>
+  <p class="tagline">
+    Routing level and approval limits per product. A change applies to the next filed claim
+    (routing) and the next decision (limits).
+  </p>
+
+  @if (error(); as message) {
+    <p class="error" data-testid="auth-error" role="alert">{{ message }}</p>
+  }
+  @if (saved(); as message) {
+    <p class="saved" data-testid="auth-saved" role="status">{{ message }}</p>
+  }
+
+  @if (loaded()) {
+    <ul class="auth-list">
+      @for (row of rows(); track row.productCode) {
+        <li class="auth-row" data-testid="auth-row">
+          <strong class="auth-product" data-testid="auth-product">{{ row.productCode }}</strong>
+          <form class="auth-fields" (ngSubmit)="save(row)">
+            <label>
+              Route level
+              <select data-testid="auth-route" [(ngModel)]="row.routeLevel" name="route">
+                <option value="L1">L1</option>
+                <option value="L2">L2</option>
+              </select>
+            </label>
+            <label>
+              L1 limit (£)
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                data-testid="auth-l1"
+                [(ngModel)]="row.l1Text"
+                name="l1"
+              />
+            </label>
+            <label>
+              L2 limit (£)
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                data-testid="auth-l2"
+                [(ngModel)]="row.l2Text"
+                name="l2"
+              />
+            </label>
+            <button type="submit" data-testid="auth-save">Save</button>
+          </form>
+        </li>
+      }
+    </ul>
+  }
+</main>

@@ -24,6 +24,11 @@ export const routes: Routes = [
     loadComponent: () => import('./escalations/escalations').then((m) => m.Escalations),
   },
   {
+    path: 'admin/authority',
+    canActivate: [supervisorGuard],
+    loadComponent: () => import('./authority/authority').then((m) => m.Authority),
+  },
+  {
     path: 'claims/:claimNumber',
     canActivate: [internalGuard],
     loadComponent: () => import('./claim-detail/claim-detail').then((m) => m.ClaimDetail),

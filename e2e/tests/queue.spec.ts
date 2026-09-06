@@ -421,3 +421,90 @@ test('claimant sees the decision on the closed claim: approved amount, or denial
   expect(leaked, `internal fields leaked on a closed claimant wire: ${leaked.join(', ')}`)
     .toEqual([]);
 });
+
+/**
+ * Journey 9 (slice 7): the supervisor edits the authority config in /admin/authority —
+ * AUTO is re-routed L1 (it is seeded L2 and unused by every other journey, so the shared
+ * claims_e2e database stays safe) — and the very next FNOL against POL-20002 classifies
+ * L1: it lands in exactly one L1 adjuster's queue and never the L2 queue. AUTO is then
+ * restored to L2. The gate-limit effect of config edits is asserted at the integration
+ * layer (the aging-E2E precedent); this journey covers the user-visible classification
+ * half end to end.
+ */
+test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new level', async ({
+  browser,
+}) => {
+  const supervisorContext = await browser.newContext();
+  const supervisorPage = await supervisorContext.newPage();
+  await signInSupervisor(supervisorPage);
+  await supervisorPage.goto('/admin/authority');
+  await expect(supervisorPage.getByTestId('auth-page')).toBeVisible();
+
+  // Re-route AUTO to L1 through the editor.
+  const autoRow = supervisorPage.getByTestId('auth-row').filter({ hasText: 'AUTO' });
+  await autoRow.getByTestId('auth-route').selectOption('L1');
+  await autoRow.getByTestId('auth-save').click();
+  await expect(supervisorPage.getByTestId('auth-error')).toHaveCount(0);
+  await expect(autoRow.getByTestId('auth-route')).toHaveValue('L1');
+
+  // A fresh AUTO FNOL now classifies L1 (it was seeded L2): exactly one L1 adjuster holds
+  // it — never the L2 adjuster.
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  await claimantPage.getByTestId('fnol-policy-number').fill('POL-20002');
+  await claimantPage.getByTestId('fnol-holder-name').fill('Grace Hopper');
+  await claimantPage.getByTestId('fnol-holder-email').fill('grace.hopper@example.test');
+  await claimantPage.getByTestId('fnol-loss-date').fill('2026-09-01');
+  await claimantPage.getByTestId('fnol-loss-location').fill('Manchester');
+  await claimantPage
+    .getByTestId('fnol-loss-description')
+    .fill('Rear-ended at a roundabout.');
+  await claimantPage.getByTestId('fnol-submit').click();
+  await expect(claimantPage.getByTestId('claim-number')).toBeVisible();
+  const claimNumber = (await claimantPage.getByTestId('claim-number').textContent())!.trim();
+  await expect(claimantPage.getByTestId('claim-steps')).toContainText('Under review');
+  await claimantContext.close();
+
+  const oneContext = await browser.newContext();
+  const onePage = await oneContext.newPage();
+  await signInAdjuster(onePage, 'adjuster.one');
+  const oneHolds = await queueShows(onePage, claimNumber);
+  await oneContext.close();
+
+  const twoContext = await browser.newContext();
+  const twoPage = await twoContext.newPage();
+  await signInAdjuster(twoPage, 'adjuster.two');
+  const twoHolds = await queueShows(twoPage, claimNumber);
+  await twoContext.close();
+
+  expect(
+    oneHolds || twoHolds,
+    `the L1-routed AUTO claim ${claimNumber} must be in an L1 adjuster's queue`,
+  ).toBe(true);
+  expect(
+    oneHolds && twoHolds,
+    `claim ${claimNumber} must appear in only one L1 queue`,
+  ).toBe(false);
+
+  const threeContext = await browser.newContext();
+  const threePage = await threeContext.newPage();
+  await signInAdjuster(threePage, 'adjuster.three');
+  const threeHolds = await queueShows(threePage, claimNumber);
+  await threeContext.close();
+  expect(
+    threeHolds,
+    `the L2 queue must not contain the L1-routed AUTO claim ${claimNumber}`,
+  ).toBe(false);
+
+  // Restore AUTO to its seeded L2 routing so the shared e2e database stays clean for
+  // later runs (journey 9 re-sets its own state first, so an interrupted run cannot
+  // cascade into other journeys — nothing else touches AUTO).
+  await supervisorPage.goto('/admin/authority');
+  const restoredRow = supervisorPage.getByTestId('auth-row').filter({ hasText: 'AUTO' });
+  await restoredRow.getByTestId('auth-route').selectOption('L2');
+  await restoredRow.getByTestId('auth-save').click();
+  await expect(supervisorPage.getByTestId('auth-error')).toHaveCount(0);
+  await expect(restoredRow.getByTestId('auth-route')).toHaveValue('L2');
+  await supervisorContext.close();
+});
