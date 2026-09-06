@@ -8,7 +8,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * The public shape of a claim on claimant-facing surfaces. Structurally omits every
  * internal field (policy id, claimant subject, level internals, description, attachments,
- * remarks): this is where the visibility wall begins.
+ * claimant remarks): this is where the visibility wall begins.
  *
  * <p>Slice 6 grows the decision fields: {@code decision}, {@code indemnityAmount} (an
  * approval figure) and {@code decisionRemarks} (a denial's rationale, verbatim). They are
