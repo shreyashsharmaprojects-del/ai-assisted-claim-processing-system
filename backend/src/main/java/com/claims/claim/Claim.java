@@ -50,9 +50,6 @@ public class Claim {
     @Column(name = "claimant_remarks")
     private String claimantRemarks;
 
-    @Column(name = "created_at", insertable = false, updatable = false)
-    private Instant createdAt;
-
     @Column(name = "assigned_adjuster_id")
     private Long assignedAdjusterId;
 
@@ -118,10 +115,6 @@ public class Claim {
 
     public String getClaimantRemarks() {
         return claimantRemarks;
-    }
-
-    public Instant getCreatedAt() {
-        return createdAt;
     }
 
     public Long getAssignedAdjusterId() {

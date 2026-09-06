@@ -5,6 +5,29 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-3 review fixes (fresh-context agent review)
+
+**Context:** A fresh-context review of slice 3 (commit 82cb34e) found no blocking issues
+but six should-fix findings. All six were accepted and fixed.
+**Fixed:** (S1) The reserve is now validated against its `NUMERIC(14,2)` column before
+write — >2 decimal places and amounts over 999999999999.99 are rejected with a 400
+instead of the DB rounding silently (response/storage divergence) or the commit failing
+with a 500. (S2) The first `@RequestBody` endpoints gained client-error mapping:
+malformed/unreadable bodies and wrong-typed path values map to 400 and unsupported
+methods to 405 instead of the generic 500 catch-all. (S3) The supervisor-writes-note
+path — the case that justifies `internal_note.author_id` being nullable — is now covered
+by an integration test asserting a 200 with `author: null` and a NULL stored author.
+(S4) Per-endpoint negative coverage was added across status/reserve/notes/attachments:
+401 anonymous, 403 wrong role, and 404 unknown-claim on every endpoint, plus zero-reserve
+acceptance. (S5) The `RESERVE_SET` audit rows' before/after payloads are now asserted, not
+just counted. (S6) Dead DTO surface removed: `InternalClaimView.createdAt`,
+`AttachmentView.contentType`, and `NoteView.createdAt` had no consumer and were dropped
+along with the read-only `claim.created_at` entity mapping they existed for.
+**Open:** the review's six optional items were not applied (user scope) and are recorded
+in the Deferred section below; a strong-model pass remains optional.
+
+---
+
 ### 2026-09-06 — Slice-3 notes: author_id nullable; notes not audited
 
 **Context:** Flow 3 lets the assigned adjuster write internal notes on a claim. The plan
@@ -391,6 +414,22 @@ Keycloak) for the E2E job.
 ---
 
 ## Deferred
+
+### 2026-09-06 — Slice-3 review optional items
+
+**Considered:** Six optional cleanups from the slice-3 review: the unused `loaded()`
+signals in the two new components; simplifying a redundant second `app_user` lookup in
+`addNote` (already folded into the S6 fix); empty/NaN reserve submissions from the SPA
+(`Number()` of a blank box submits 0, NaN submits null); two stale javadocs (SecurityConfig
+and the claimant guard say "slice 1"/"the queue" only); the `£` + raw-number reserve
+display (currency formatting); extracting the E2E FNOL-form helper, now duplicated in three
+specs.
+**Why not now:** Cosmetic or low-risk; the user scoped the fix round to the should-fix
+findings.
+**Build it when:** the next slice (or a hardening pass) touches the same files — the E2E
+helper extraction in particular is due by the slice-4 journeys.
+
+---
 
 ### 2026-09-06 — Slice-2 review optional items
 

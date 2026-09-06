@@ -40,6 +40,9 @@ public class ClaimWorkService {
     private static final Logger log = LoggerFactory.getLogger(ClaimWorkService.class);
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** The claim.reserve_amount column is NUMERIC(14,2): nothing may exceed or out-scale it. */
+    private static final BigDecimal MAX_RESERVE = new BigDecimal("999999999999.99");
+
     private final ClaimRepository claims;
     private final PolicyRepository policies;
     private final AttachmentRepository attachments;
@@ -75,6 +78,14 @@ public class ClaimWorkService {
         if (amount == null || amount.signum() < 0) {
             throw new InvalidRequestException("Reserve amount must be zero or more.");
         }
+        if (amount.scale() > 2) {
+            // Reject rather than let the DB silently round: the response echoes the
+            // in-memory value, so rounding here would diverge response from storage.
+            throw new InvalidRequestException("Reserve amount may have at most 2 decimal places.");
+        }
+        if (amount.compareTo(MAX_RESERVE) > 0) {
+            throw new InvalidRequestException("Reserve amount is too large (maximum 999999999999.99).");
+        }
         BigDecimal before = claim.getReserveAmount();
         claim.setReserveAmount(amount);
         claims.save(claim);
@@ -96,8 +107,7 @@ public class ClaimWorkService {
         Long authorId = appUsers.findByKeycloakSub(actorSub).map(AppUser::getId).orElse(null);
         InternalNote note = notes.save(new InternalNote(claim.getId(), authorId, body.trim(), Instant.now()));
         return new InternalClaimView.NoteView(note.getId(), note.getBody(),
-                authorId == null ? null : appUsers.findById(authorId).map(AppUser::getDisplayName).orElse(null),
-                note.getCreatedAt());
+                displayNameOf(authorId));
     }
 
     /** The photo binary for an attachment of a visible claim. */
@@ -137,13 +147,12 @@ public class ClaimWorkService {
                                 + claim.getPolicyId()));
         List<InternalClaimView.AttachmentView> attachmentViews = attachments
                 .findByClaimIdOrderById(claim.getId()).stream()
-                .map(a -> new InternalClaimView.AttachmentView(
-                        a.getId(), a.getOriginalName(), a.getContentType()))
+                .map(a -> new InternalClaimView.AttachmentView(a.getId(), a.getOriginalName()))
                 .toList();
         List<InternalClaimView.NoteView> noteViews = notes
                 .findByClaimIdOrderByCreatedAtAscIdAsc(claim.getId()).stream()
                 .map(n -> new InternalClaimView.NoteView(n.getId(), n.getBody(),
-                        displayNameOf(n.getAuthorId()), n.getCreatedAt()))
+                        displayNameOf(n.getAuthorId())))
                 .toList();
         return new InternalClaimView(
                 claim.getClaimNumber(),
@@ -158,7 +167,6 @@ public class ClaimWorkService {
                 claim.getLossDescription(),
                 claim.getClaimantRemarks(),
                 claim.getReserveAmount(),
-                claim.getCreatedAt(),
                 displayNameOf(claim.getAssignedAdjusterId()),
                 attachmentViews,
                 noteViews);

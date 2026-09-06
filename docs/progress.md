@@ -7,21 +7,22 @@ seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**Slice 3 (adjuster works the claim & the visibility wall) is done and verified green.**
+**Slice 3 (adjuster works the claim & the visibility wall) is done, reviewed, and
+verified green.**
 An adjuster (or supervisor) opens a claim from the queue and gets the full internal view —
 policy + coverage, the loss, photos, the reserve, and internal notes; they can set/update
 the reserve and write internal notes. The claimant side gains a status screen for their
 own claim. The visibility wall is now load-bearing and asserted on the wire: reserve and
 notes are structurally absent from every claimant-facing response and screen (E2E journey
-2 checks screen AND network body). Backend **52 tests**, **6 E2E journeys** — all green.
-Slice 3 has NOT had its fresh-context review; that belongs in a new session.
+2 checks screen AND network body). Backend **56 tests**, **6 E2E journeys** — all green.
+A fresh-context agent review of slice 3 found no blocking findings; its six should-fix
+findings (S1–S6) are fixed and re-verified (a strong-model pass remains optional).
 
 Slice 2 was pushed to `origin`/`main` (commits 27561e7, 0106a6d) and the GitHub Actions
 run **passed all three jobs** (backend Testcontainers, frontend build, E2E compose) —
 2026-09-06. Slice 3 is committed locally, not yet pushed.
 
-Next up: Slice 4 (decision & the authority gate) — do not start without the user's go,
-and only after a fresh-session review of slice 3.
+Next up: Slice 4 (decision & the authority gate) — do not start without the user's go.
 
 ## Run it (canonical — Docker)
 
@@ -44,7 +45,7 @@ internal view with coverage, the reserve form, the notes box, and photo download
 ## Tests
 
 ```bash
-mvn -f backend/pom.xml test   # 52 tests: unit + integration (Testcontainers Postgres + Mailpit)
+mvn -f backend/pom.xml test   # 56 tests: unit + integration (Testcontainers Postgres + Mailpit)
 npm ci --prefix frontend && npm --prefix frontend run build
 docker compose up -d db mailpit keycloak            # once
 npm --prefix e2e test         # boots backend on :8082 against claims_e2e + Angular dev server; real Keycloak
@@ -57,7 +58,7 @@ npm --prefix e2e test         # boots backend on :8082 against claims_e2e + Angu
 | 0 | Walking skeleton | done | yes (external 2026-09-03) |
 | 1 | FNOL & claim number | done (2026-09-06) | yes — fresh-context agent review; fixes applied |
 | 2 | Assignment & adjuster queue | done (2026-09-06) | yes — fresh-context agent review; S1–S5 applied and re-verified |
-| 3 | Adjuster works the claim & the visibility wall | **done** (2026-09-06) | no — fresh-session review outstanding (workflow rule: never self-review) |
+| 3 | Adjuster works the claim & the visibility wall | **done** (2026-09-06) | yes — fresh-context agent review; should-fix S1–S6 applied and re-verified (strong-model pass optional) |
 | 4 | Decision & the authority gate | not started | no |
 
 Slice 3 delivered, per `docs/plan.md`: V5 (`claim.reserve_amount`, `internal_note`);
@@ -83,25 +84,30 @@ the product's core rule.
 
 ## Test counts
 
-Unit: 18 · Integration: 34 (incl. context smoke) · E2E: 6 · All green: yes (2026-09-06)
+Unit: 18 · Integration: 38 (incl. context smoke) · E2E: 6 · All green: yes (2026-09-06)
 
 - Unit 18: PolicyViewMapper 4 · ClaimClassifier 3 · LoadBalancer 5 · ClaimantClaimView 4 ·
   ClaimNumberFormatter 1 · AuditJson 1.
-- Integration 34: FnolApi 11 · AssignmentQueue 10 · ClaimWork 11 (slice 3: claimant status
-  wall on the wire, cross-claimant 404, full view for assignee/supervisor incl. coverage,
-  non-assignee 404 on full/reserve/notes/photo, reserve set/update + audit + negative
-  reject, notes append/order/validation, photo download as attachment) · PolicyApi 1 ·
+- Integration 38: FnolApi 11 · AssignmentQueue 10 · ClaimWork 15 (slice 3: claimant status
+  wall on the wire, cross-claimant 404, full view incl. coverage, non-assignee 404 on
+  full/reserve/notes/photo, reserve set/update + audit payloads + bounds/scale/zero
+  validation, notes append/order/validation + supervisor-null-author, photo download as
+  attachment, per-endpoint 401/403/404 matrix, client-error mapping) · PolicyApi 1 ·
   context smoke 1.
 - E2E 6: skeleton page · journey 1 (register → FNOL w/ photo → claim number) ·
   rejected-FNOL-stays-on-form · **journey 2** (claimant status screen: no reserve/notes on
   screen or wire) · **journey 3** (claim in exactly one L1 queue, never L2) · **journey 4**
   (assigned adjuster sets a reserve, adds a note, downloads the photo).
 
+Slice 3 has been through its fresh-context review (2026-09-06): no blocking findings; the
+six should-fix findings (S1–S6) are fixed and re-verified (see `docs/decisions.md`). The
+optional review items are recorded under Deferred, not applied.
+
 ## Blocked on
 
-- Nothing. Slice 3 review (fresh session) then Slice 4, both awaiting the user's go.
-  Slice-2 commits are on `origin`/`main` with a green CI run (2026-09-06). Slice 3 is
-  local only.
+- Nothing. Slice 4 awaits the user's go (slice 3 is reviewed, its S1–S6 fixes applied
+  and re-verified). Slice-2 commits are on `origin`/`main` with a green CI run
+  (2026-09-06). Slice 3 is local only.
 
 ## Notes for whoever picks this up
 

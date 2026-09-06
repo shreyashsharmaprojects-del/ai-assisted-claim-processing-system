@@ -4,11 +4,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
-/** Maps the slice-1 domain failures to HTTP responses with a message the user can act on. */
+/** Maps the slice-1..3 domain failures to HTTP responses with a message the user can act on. */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
@@ -32,6 +35,23 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> invalidRequest(InvalidRequestException ex) {
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
+    }
+
+    /**
+     * Client errors on the JSON endpoints (the first @RequestBody surface): a malformed or
+     * empty body, or a path variable of the wrong type, is the caller's fault — never a 500.
+     */
+    @ExceptionHandler({HttpMessageNotReadableException.class,
+            MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<ErrorResponse> unreadableRequest(Exception ex) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("The request could not be read: check the body and path values."));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> methodNotAllowed(HttpRequestMethodNotSupportedException ex) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(new ErrorResponse("Method not allowed on this endpoint."));
     }
 
     @ExceptionHandler(UnroutableException.class)

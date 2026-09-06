@@ -8,14 +8,12 @@ import { accessToken } from '../auth/auth.service';
 interface AttachmentView {
   id: number;
   originalName: string;
-  contentType: string;
 }
 
 interface NoteView {
   id: number;
   body: string;
   author: string | null;
-  createdAt: string;
 }
 
 interface InternalClaimView {
@@ -31,7 +29,6 @@ interface InternalClaimView {
   lossDescription: string;
   claimantRemarks: string | null;
   reserveAmount: number | null;
-  createdAt: string;
   assignedTo: string | null;
   attachments: AttachmentView[];
   notes: NoteView[];

@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -172,6 +173,59 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         assertTrue(updated.body().contains("\"reserveAmount\":1800.50"), updated.body());
         assertEquals(2, count("SELECT count(*) FROM audit_log WHERE action = 'RESERVE_SET' "
                 + "AND entity_id = ?", idOf(claimNumber)));
+
+        // The audit rows carry the before/after amounts, not just the fact of the change.
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT before::text AS before, after::text AS after FROM audit_log "
+                        + "WHERE action = 'RESERVE_SET' AND entity_id = ? ORDER BY id",
+                idOf(claimNumber));
+        assertEquals(2, rows.size());
+        assertEquals("{}", rows.get(0).get("before").toString(), "first set has no previous reserve");
+        // jsonb text output is spaced ("reserveAmount": 1500.00); assert on the values.
+        assertTrue(rows.get(0).get("after").toString().contains("1500.00"),
+                rows.get(0).toString());
+        assertTrue(rows.get(1).get("before").toString().contains("1500"),
+                "update's before shows the previous reserve: " + rows.get(1));
+        assertTrue(rows.get(1).get("after").toString().contains("1800.5"),
+                rows.get(1).toString());
+    }
+
+    @Test
+    void reserveRejectsOutOfBoundsAmountsAndAcceptsZero() throws Exception {
+        String claimNumber = fileHomeFnol();
+
+        HttpResponse<String> tooBig = putJson("/api/claims/" + claimNumber + "/reserve",
+                adjusterOneBearer(), "{\"amount\": 1000000000000}");
+        assertEquals(400, tooBig.statusCode(), tooBig.body());
+        assertTrue(tooBig.body().contains("too large"), tooBig.body());
+
+        HttpResponse<String> tooPrecise = putJson("/api/claims/" + claimNumber + "/reserve",
+                adjusterOneBearer(), "{\"amount\": 1.234}");
+        assertEquals(400, tooPrecise.statusCode(), tooPrecise.body());
+        assertTrue(tooPrecise.body().contains("2 decimal places"), tooPrecise.body());
+
+        // Zero is a legal reserve (the adjuster may have nothing set aside yet).
+        HttpResponse<String> zero = putJson("/api/claims/" + claimNumber + "/reserve",
+                adjusterOneBearer(), "{\"amount\": 0}");
+        assertEquals(200, zero.statusCode(), zero.body());
+        assertTrue(zero.body().contains("\"reserveAmount\":0"), zero.body());
+    }
+
+    @Test
+    void malformedBodiesAndBadPathValuesAreClientErrors() throws Exception {
+        String claimNumber = fileHomeFnol();
+
+        // Malformed JSON and empty bodies -> 400, never the 500 catch-all.
+        assertEquals(400, putJson("/api/claims/" + claimNumber + "/reserve",
+                adjusterOneBearer(), "{not json}").statusCode());
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/notes",
+                adjusterOneBearer(), "").statusCode());
+        // Non-numeric attachment id -> 400.
+        assertEquals(400, get("/api/claims/" + claimNumber + "/attachments/abc",
+                adjusterOneBearer()).statusCode());
+        // Wrong method on a known path -> 405.
+        assertEquals(405, delete("/api/claims/" + claimNumber + "/reserve",
+                adjusterOneBearer()).statusCode());
     }
 
     @Test
@@ -227,6 +281,64 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
                 "{\"body\": \"not mine to annotate\"}").statusCode());
     }
 
+    @Test
+    void supervisorMayWriteANoteRecordedWithoutAnAuthor() throws Exception {
+        // A supervisor token has no app_user (staff-cache) row, so their note has a null
+        // author — the case that makes internal_note.author_id nullable (see decisions).
+        String claimNumber = fileHomeFnol();
+
+        HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/notes",
+                JwtTestConfig.tokenFor("sub-supervisor-notes", "supervisor"),
+                "{\"body\": \"Escalation check: coverage verified.\"}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"author\":null"),
+                "a supervisor without a staff-cache row must not be assigned an author: " + response.body());
+        assertEquals(1, count("SELECT count(*) FROM internal_note WHERE claim_id = ? AND author_id IS NULL",
+                idOf(claimNumber)));
+
+        String full = get("/api/claims/" + claimNumber + "/full",
+                JwtTestConfig.tokenFor("sub-supervisor-1", "supervisor")).body();
+        assertTrue(full.contains("Escalation check"), full);
+    }
+
+    @Test
+    void perClaimEndpointsEnforceRolesAndUnknownClaimsConsistently() throws Exception {
+        String claimNumber = fileHomeFnolWithPhoto();
+        Long attachmentId = Long.parseLong(get("/api/claims/" + claimNumber + "/full",
+                adjusterOneBearer()).body()
+                .replaceAll(".*\"attachments\":\\[\\{\"id\":(\\d+).*", "$1"));
+
+        // Anonymous -> 401 on every per-claim endpoint.
+        assertEquals(401, get("/api/claims/" + claimNumber, null).statusCode());
+        assertEquals(401, get("/api/claims/" + claimNumber + "/full", null).statusCode());
+        assertEquals(401, putJson("/api/claims/" + claimNumber + "/reserve", null,
+                "{\"amount\": 1}").statusCode());
+        assertEquals(401, postJson("/api/claims/" + claimNumber + "/notes", null,
+                "{\"body\": \"x\"}").statusCode());
+        assertEquals(401, get("/api/claims/" + claimNumber + "/attachments/" + attachmentId,
+                null).statusCode());
+
+        // Wrong role -> 403: an adjuster has no business on the claimant endpoint, and a
+        // claimant has no business on the internal ones.
+        assertEquals(403, get("/api/claims/" + claimNumber, adjusterOneBearer()).statusCode());
+        assertEquals(403, get("/api/claims/" + claimNumber + "/full", claimantBearer()).statusCode());
+        assertEquals(403, putJson("/api/claims/" + claimNumber + "/reserve", claimantBearer(),
+                "{\"amount\": 1}").statusCode());
+        assertEquals(403, postJson("/api/claims/" + claimNumber + "/notes", claimantBearer(),
+                "{\"body\": \"x\"}").statusCode());
+        assertEquals(403, get("/api/claims/" + claimNumber + "/attachments/" + attachmentId,
+                claimantBearer()).statusCode());
+
+        // Unknown claim -> 404 on every endpoint, whatever the (authorized) role.
+        assertEquals(404, get("/api/claims/CLM-999999", claimantBearer()).statusCode());
+        assertEquals(404, get("/api/claims/CLM-999999/full", adjusterOneBearer()).statusCode());
+        assertEquals(404, putJson("/api/claims/CLM-999999/reserve", adjusterOneBearer(),
+                "{\"amount\": 1}").statusCode());
+        assertEquals(404, postJson("/api/claims/CLM-999999/notes", adjusterOneBearer(),
+                "{\"body\": \"x\"}").statusCode());
+        assertEquals(404, get("/api/claims/CLM-999999/attachments/1", adjusterOneBearer()).statusCode());
+    }
+
     // --- photos ----------------------------------------------------------------
 
     @Test
@@ -278,6 +390,15 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
 
     private HttpResponse<String> putJson(String path, String bearer, String body) throws Exception {
         return json("PUT", path, bearer, body);
+    }
+
+    private HttpResponse<String> delete(String path, String bearer) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path)).DELETE();
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> postJson(String path, String bearer, String body) throws Exception {
