@@ -60,6 +60,18 @@ form {
   margin: 0.1rem 0;
 }
 
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.outcome {
+  background: #e8f4e8;
+  border-radius: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+}
+
 .muted {
   color: #777;
 }

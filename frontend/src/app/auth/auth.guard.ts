@@ -24,3 +24,14 @@ export const internalGuard: CanActivateFn = async () => {
   }
   return true;
 };
+
+/** The escalation queue (/escalations) is supervisor-only (route-table row for slice 5). */
+export const supervisorGuard: CanActivateFn = async () => {
+  const authenticated = await ensureAuthenticated();
+  if (!authenticated || !hasRole('supervisor')) {
+    const router = inject(Router);
+    await router.navigate(['']);
+    return false;
+  }
+  return true;
+};

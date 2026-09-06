@@ -3,6 +3,9 @@
   <nav>
     <a routerLink="/claim/new" data-testid="nav-file-claim">File a claim</a>
     <a routerLink="/queue" data-testid="nav-queue">Adjuster queue</a>
+    @if (isSupervisor()) {
+      <a routerLink="/escalations" data-testid="nav-escalations">Escalations</a>
+    }
   </nav>
 </header>
 <router-outlet />

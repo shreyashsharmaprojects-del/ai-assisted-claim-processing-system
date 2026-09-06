@@ -60,6 +60,21 @@ public class Claim {
     @Column(name = "reserve_amount")
     private BigDecimal reserveAmount;
 
+    /** APPROVED | DENIED; null until the claim is decided (slice 4). */
+    @Column(name = "decision")
+    private String decision;
+
+    /** Claimant-visible remarks (denials carry the rationale as remarks); never internal notes. */
+    @Column(name = "decision_remarks")
+    private String decisionRemarks;
+
+    /** The indemnity figure; set once, at closure, by an approval. */
+    @Column(name = "indemnity_amount")
+    private BigDecimal indemnityAmount;
+
+    @Column(name = "closed_at")
+    private Instant closedAt;
+
     protected Claim() {
         // for JPA
     }
@@ -131,6 +146,57 @@ public class Claim {
 
     public void setReserveAmount(BigDecimal reserveAmount) {
         this.reserveAmount = reserveAmount;
+    }
+
+    public String getDecision() {
+        return decision;
+    }
+
+    public String getDecisionRemarks() {
+        return decisionRemarks;
+    }
+
+    public BigDecimal getIndemnityAmount() {
+        return indemnityAmount;
+    }
+
+    public Instant getClosedAt() {
+        return closedAt;
+    }
+
+    /**
+     * Approves an indemnity figure and closes the claim (slice 4). Call inside the decision
+     * transaction; the matching payment row is recorded by the caller.
+     */
+    public void approve(BigDecimal indemnityAmount, Instant at) {
+        this.decision = "APPROVED";
+        this.indemnityAmount = indemnityAmount;
+        this.status = "CLOSED";
+        this.closedAt = at;
+    }
+
+    /** Denies the claim and closes it; the remarks are the claimant-visible rationale. */
+    public void deny(String remarks, Instant at) {
+        this.decision = "DENIED";
+        this.decisionRemarks = remarks;
+        this.status = "CLOSED";
+        this.closedAt = at;
+    }
+
+    /**
+     * Moves the claim to the supervisor escalation state (no adjuster holds it). Used when a
+     * decision amount exceeds the L2 authority limit, or when no L2 adjuster is provisioned
+     * to take an escalation.
+     */
+    public void escalateToSupervisor() {
+        this.status = "ESCALATED_SUPERVISOR";
+        this.assignedAdjusterId = null;
+        this.assignedAt = null;
+    }
+
+    /** Escalation re-routes the claim at the higher level before it is re-assigned. */
+    public void setLevel(String level) {
+        this.level = level;
     }
 
     /**

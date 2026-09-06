@@ -23,6 +23,13 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
             case "UNDER_REVIEW" -> List.of(
                     "FNOL received — your claim is being routed to an adjuster",
                     "Under review — an adjuster has been assigned to your claim");
+            // Flow 6 (slice 5): while a claim waits on the supervisor the claimant sees the
+            // escalation — the aging timeline is claimant-visible. The decision display on
+            // CLOSED claims lands in slice 6.
+            case "ESCALATED_SUPERVISOR" -> List.of(
+                    "FNOL received — your claim is being routed to an adjuster",
+                    "Under review — an adjuster has been assigned to your claim",
+                    "Escalated — your claim is now being reviewed by a supervisor");
             default -> List.of();
         };
     }

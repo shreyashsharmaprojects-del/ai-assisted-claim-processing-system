@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { accessToken } from '../auth/auth.service';
+import { accessToken, hasRole } from '../auth/auth.service';
 
 interface AttachmentView {
   id: number;
@@ -34,7 +34,16 @@ interface InternalClaimView {
   notes: NoteView[];
 }
 
-/** The adjuster's claim screen (journey 4): full internal view, reserve, notes, photos. */
+/** The decision outcome returned by POST /decision (slice 4). */
+interface ClaimDecisionView {
+  claimNumber: string;
+  decision: 'APPROVED' | 'DENIED' | null;
+  indemnityAmount: number | null;
+  decisionRemarks: string | null;
+  escalatedTo: 'L2' | 'SUPERVISOR' | null;
+}
+
+/** The adjuster's claim screen (journeys 4–6): full internal view, reserve, notes, photos, decision. */
 @Component({
   imports: [FormsModule, RouterLink],
   selector: 'app-claim-detail',
@@ -49,9 +58,12 @@ export class ClaimDetail {
   protected readonly view = signal<InternalClaimView | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
+  protected readonly decisionResult = signal<string | null>(null);
 
   protected reserveInput = '';
   protected noteInput = '';
+  protected decisionAmount = '';
+  protected decisionRationale = '';
 
   constructor() {
     void this.load();
@@ -60,6 +72,28 @@ export class ClaimDetail {
   coverageText(): string {
     const coverage = this.view()?.coverage;
     return coverage == null ? '' : JSON.stringify(coverage, null, 2);
+  }
+
+  /**
+   * The decision panel shows to whoever can decide this claim right now: the assigned
+   * adjuster on an open claim (slice 4), or a supervisor on a supervisor-escalated claim
+   * (slice 5 — no adjuster holds an ESCALATED_SUPERVISOR claim, so only the supervisor's
+   * escalation surface sees it).
+   */
+  canDecide(): boolean {
+    if (this.decisionResult() != null) {
+      return false;
+    }
+    const status = this.view()?.status;
+    if (status === 'UNDER_REVIEW') {
+      return hasRole('adjuster_l1') || hasRole('adjuster_l2');
+    }
+    return status === 'ESCALATED_SUPERVISOR' && hasRole('supervisor');
+  }
+
+  /** True when this screen is the supervisor deciding an escalated claim (slice 5). */
+  private supervisorEscalationDecision(): boolean {
+    return this.view()?.status === 'ESCALATED_SUPERVISOR' && hasRole('supervisor');
   }
 
   async load() {
@@ -123,6 +157,63 @@ export class ClaimDetail {
     }
   }
 
+  async approve() {
+    await this.decide({
+      decision: 'APPROVED',
+      indemnityAmount: Number(this.decisionAmount),
+      rationale: this.decisionRationale.trim(),
+    });
+  }
+
+  async deny() {
+    await this.decide({ decision: 'DENIED', rationale: this.decisionRationale.trim() });
+  }
+
+  private async decide(body: {
+    decision: 'APPROVED' | 'DENIED';
+    indemnityAmount?: number;
+    rationale: string;
+  }) {
+    this.error.set(null);
+    this.decisionResult.set(null);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      return;
+    }
+    try {
+      // The supervisor's escalation decision is its own endpoint (slice 5); the assigned
+      // adjuster's decision is the slice-4 one.
+      const path = this.supervisorEscalationDecision()
+        ? `/api/claims/${this.claimNumber}/escalation-decision`
+        : `/api/claims/${this.claimNumber}/decision`;
+      const outcome = await firstValueFrom(
+        this.http.post<ClaimDecisionView>(path, body, { headers }),
+      );
+      this.decisionResult.set(this.describe(outcome));
+      if (outcome.escalatedTo == null) {
+        // The claim closed (approved/denied); the assignee can still open it, now CLOSED.
+        await this.load();
+      }
+    } catch (err) {
+      const message = (err as { error?: { message?: string } })?.error?.message;
+      this.error.set(message ?? 'Could not record the decision.');
+    }
+  }
+
+  private describe(outcome: ClaimDecisionView): string {
+    if (outcome.decision === 'APPROVED') {
+      return `Approved for ${formatAmount(outcome.indemnityAmount)} — claim closed.`;
+    }
+    if (outcome.decision === 'DENIED') {
+      const remarks = outcome.decisionRemarks == null ? '' : ` ${outcome.decisionRemarks}`;
+      return `Denied — claim closed.${remarks}`;
+    }
+    if (outcome.escalatedTo === 'SUPERVISOR') {
+      return 'This amount is above your authority — the claim has been escalated to a supervisor.';
+    }
+    return 'This amount is above your authority — the claim has been escalated to a Level 2 adjuster.';
+  }
+
   async download(attachment: AttachmentView) {
     const headers = await this.authHeaders();
     if (!headers) {
@@ -154,4 +245,8 @@ export class ClaimDetail {
     }
     return new HttpHeaders().set('Authorization', 'Bearer ' + token);
   }
+}
+
+function formatAmount(amount: number | null): string {
+  return amount == null ? '' : '£' + amount.toFixed(2);
 }

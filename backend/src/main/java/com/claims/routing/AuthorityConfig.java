@@ -1,5 +1,7 @@
 package com.claims.routing;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -8,9 +10,11 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
- * Routing parameters per product code. Slice 1 uses {@code route_level} (the complexity
- * parameter) to classify FNOL claims. The monetary thresholds for the authority gate are
- * added by the migration of the slice that first evaluates them (decision slice).
+ * Authority parameters per product code. {@code route_level} (the "complexity" parameter)
+ * classifies FNOL claims at intake (slice 1); {@code l1_limit_amount} and
+ * {@code l2_limit_amount} are the monetary thresholds the authority gate evaluates when the
+ * indemnity figure is known (slice 4). Limits are per-claim amounts — no aggregate
+ * exposure cap in v1 (see docs/decisions.md).
  */
 @Entity
 @Table(name = "authority_config")
@@ -26,6 +30,12 @@ public class AuthorityConfig {
     @Column(name = "route_level", nullable = false)
     private String routeLevel;
 
+    @Column(name = "l1_limit_amount", nullable = false)
+    private BigDecimal l1LimitAmount;
+
+    @Column(name = "l2_limit_amount", nullable = false)
+    private BigDecimal l2LimitAmount;
+
     protected AuthorityConfig() {
         // for JPA
     }
@@ -33,6 +43,14 @@ public class AuthorityConfig {
     public AuthorityConfig(String productCode, String routeLevel) {
         this.productCode = productCode;
         this.routeLevel = routeLevel;
+    }
+
+    public AuthorityConfig(String productCode, String routeLevel,
+            BigDecimal l1LimitAmount, BigDecimal l2LimitAmount) {
+        this.productCode = productCode;
+        this.routeLevel = routeLevel;
+        this.l1LimitAmount = l1LimitAmount;
+        this.l2LimitAmount = l2LimitAmount;
     }
 
     public Long getId() {
@@ -45,5 +63,13 @@ public class AuthorityConfig {
 
     public String getRouteLevel() {
         return routeLevel;
+    }
+
+    public BigDecimal getL1LimitAmount() {
+        return l1LimitAmount;
+    }
+
+    public BigDecimal getL2LimitAmount() {
+        return l2LimitAmount;
     }
 }

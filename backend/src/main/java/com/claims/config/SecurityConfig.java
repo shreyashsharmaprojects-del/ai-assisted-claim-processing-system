@@ -39,6 +39,18 @@ public class SecurityConfig {
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/notes")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                        // Slice 4: only the assigned adjuster decides. SUPERVISOR is excluded
+                        // here on purpose — the supervisor half of the decision flow (the
+                        // escalation-decision endpoint) is slice 5.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/decision")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2")
+                        // Slice 5: the supervisor's escalation surface — deciding an
+                        // ESCALATED_SUPERVISOR claim, and the queue of claims that need it.
+                        // No adjuster may act on either (403, never revealing a claim).
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/escalation-decision")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/escalations")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()

@@ -182,3 +182,149 @@ test('the assigned adjuster sets a reserve, adds an internal note and downloads 
 
   await holder.context().close();
 });
+
+/**
+ * Journey 5: the assigned L1 adjuster approves an indemnity within their authority limit.
+ * The claim closes and leaves their queue (payment + decision recorded at the API layer,
+ * journey-asserted here as the claim no longer being open).
+ */
+test('the adjuster approves a within-limit amount and the claim closes', async ({ browser }) => {
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  const claimNumber = await fileFnolWithPhoto(claimantPage);
+  await claimantContext.close();
+
+  const holder = await openClaimAsHolder(browser, claimNumber);
+
+  // Approve 1500.00 — a HOME claim held by an L1 adjuster, within the seeded L1 limit.
+  await holder.getByTestId('detail-decision-amount').fill('1500.00');
+  await holder.getByTestId('detail-decision-rationale').fill('Quotes verified; within my authority.');
+  await holder.getByTestId('detail-approve').click();
+
+  await expect(holder.getByTestId('detail-decision-result')).toBeVisible();
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('Approved');
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('closed');
+  // The claim is closed: no decision form remains.
+  await expect(holder.getByTestId('detail-approve')).toHaveCount(0);
+
+  // It has dropped out of the deciding adjuster's queue.
+  await expect(holder.getByTestId('detail-decision-result')).toBeVisible();
+  await holder.goto('/queue');
+  await expect(holder.getByTestId('queue-page')).toBeVisible();
+  const row = holder.getByTestId('queue-row').filter({ hasText: claimNumber });
+  await expect(row).toHaveCount(0);
+  await holder.context().close();
+});
+
+/**
+ * Journey 6: the assigned L1 adjuster tries to approve an amount above their authority —
+ * the approval is blocked and the claim escalates (re-assigned to the L2 adjuster rather
+ * than closed by the actor, who structurally cannot self-approve).
+ */
+test('an above-limit approval is blocked and escalated to the L2 adjuster', async ({ browser }) => {
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  const claimNumber = await fileFnolWithPhoto(claimantPage);
+  await claimantContext.close();
+
+  const holder = await openClaimAsHolder(browser, claimNumber);
+
+  // 5000.00 exceeds the seeded L1 limit (2500) but is within the L2 limit (10000): the
+  // approval must be blocked and the claim escalated to the least-loaded L2 adjuster.
+  await holder.getByTestId('detail-decision-amount').fill('5000.00');
+  await holder.getByTestId('detail-decision-rationale').fill('Large water damage claim.');
+  await holder.getByTestId('detail-approve').click();
+
+  await expect(holder.getByTestId('detail-decision-result')).toBeVisible();
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('above your authority');
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('Level 2');
+  await expect(holder.getByTestId('detail-decision-result')).not.toContainText('Approved');
+  // No approve button remains — the claim is out of this adjuster's hands.
+  await expect(holder.getByTestId('detail-approve')).toHaveCount(0);
+
+  // It is no longer in the L1 adjuster's queue…
+  await holder.goto('/queue');
+  await expect(holder.getByTestId('queue-page')).toBeVisible();
+  const l1Row = holder.getByTestId('queue-row').filter({ hasText: claimNumber });
+  await expect(l1Row).toHaveCount(0);
+  await holder.context().close();
+
+  // …and it has been reassigned to the (only) L2 adjuster's queue.
+  const l2Context = await browser.newContext();
+  const l2Page = await l2Context.newPage();
+  await signInAdjuster(l2Page, 'adjuster.three');
+  const l2Holds = await queueShows(l2Page, claimNumber);
+  expect(l2Holds, `the escalated claim ${claimNumber} must appear in the L2 adjuster's queue`)
+    .toBe(true);
+  await l2Context.close();
+});
+
+/**
+ * Signs in the provisioned supervisor (fixed realm subject; supervisors have no app_user
+ * row — their authority is the Keycloak role alone) and lands on the escalation queue.
+ */
+async function signInSupervisor(page: Page): Promise<void> {
+  await page.goto('/escalations');
+  await expect(page).toHaveURL(/realms\/claims/);
+  await page.locator('#username').fill('supervisor');
+  await page.locator('#password').fill('supervisor-Pass-123');
+  await page.locator('#kc-login').click();
+  await expect(page.getByTestId('escalations-page')).toBeVisible();
+}
+
+/**
+ * Journey 7: an L1 adjuster tries to approve an amount above even the L2 limit — the claim
+ * escalates to ESCALATED_SUPERVISOR (no adjuster holds it) — and the supervisor, who can
+ * see the escalation queue, approves it with a rationale. Payment + closure are recorded
+ * (asserted at the API layer); here the claim visibly closes and leaves the escalation
+ * queue.
+ */
+test('supervisor approves an escalated claim with rationale and it closes', async ({ browser }) => {
+  // Setup through the UI, like journey 6 but above the L2 limit: the claim escalates all
+  // the way to the supervisor, not to an L2 adjuster.
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  const claimNumber = await fileFnolWithPhoto(claimantPage);
+  await claimantContext.close();
+
+  const holder = await openClaimAsHolder(browser, claimNumber);
+  await holder.getByTestId('detail-decision-amount').fill('12000.00');
+  await holder.getByTestId('detail-decision-rationale').fill('Substantial structural damage.');
+  await holder.getByTestId('detail-approve').click();
+  await expect(holder.getByTestId('detail-decision-result')).toBeVisible();
+  await expect(holder.getByTestId('detail-decision-result')).toContainText('escalated to a supervisor');
+  // The claim is out of the adjuster's hands: no decision form remains.
+  await expect(holder.getByTestId('detail-approve')).toHaveCount(0);
+  await holder.context().close();
+
+  // The supervisor sees it in the escalation queue and opens it.
+  const supervisorContext = await browser.newContext();
+  const supervisorPage = await supervisorContext.newPage();
+  await signInSupervisor(supervisorPage);
+  const escalationRow = supervisorPage.getByTestId('esc-row').filter({ hasText: claimNumber });
+  await expect(escalationRow).toHaveCount(1);
+  await escalationRow.getByTestId('esc-open-claim').click();
+  await expect(supervisorPage.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(supervisorPage.getByTestId('detail-status')).toContainText('ESCALATED_SUPERVISOR');
+
+  // Approve with a rationale: the claim closes and leaves the escalation queue.
+  await supervisorPage.getByTestId('detail-decision-amount').fill('12000.00');
+  await supervisorPage.getByTestId('detail-decision-rationale').fill(
+    'Agreed under full authority.',
+  );
+  await supervisorPage.getByTestId('detail-approve').click();
+  await expect(supervisorPage.getByTestId('detail-decision-result')).toBeVisible();
+  await expect(supervisorPage.getByTestId('detail-decision-result')).toContainText('Approved');
+  await expect(supervisorPage.getByTestId('detail-decision-result')).toContainText('closed');
+  await expect(supervisorPage.getByTestId('detail-approve')).toHaveCount(0);
+
+  await supervisorPage.goto('/escalations');
+  await expect(supervisorPage.getByTestId('escalations-page')).toBeVisible();
+  await expect(
+    supervisorPage.getByTestId('esc-row').filter({ hasText: claimNumber }),
+  ).toHaveCount(0);
+  await supervisorContext.close();
+});

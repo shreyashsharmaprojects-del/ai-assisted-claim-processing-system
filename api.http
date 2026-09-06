@@ -74,3 +74,59 @@ Content-Type: application/json
 ### Download a photo attachment (assigned adjuster or SUPERVISOR; served as an attachment)
 GET {{host}}/api/claims/CLM-000001/attachments/1
 Authorization: Bearer {{token}}
+
+### Decide a claim (assigned ADJUSTER only — the authority gate)
+# Approve within the actor's level limit -> records the single payment and closes the claim
+# (rationale required). Above the actor's level -> never approved: the claim is escalated
+# to L2 (response: escalatedTo=L2, status stays UNDER_REVIEW under the new L2 assignee) or
+# to the supervisor (escalatedTo=SUPERVISOR, status ESCALATED_SUPERVISOR). DENIED always
+# closes with the rationale as the claimant-visible remarks.
+POST {{host}}/api/claims/CLM-000001/decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "decision": "APPROVED",
+  "indemnityAmount": 1500.00,
+  "rationale": "Quotes verified; within my authority."
+}
+
+### Decision: denial (closes the claim with remarks from the rationale)
+POST {{host}}/api/claims/CLM-000001/decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "decision": "DENIED",
+  "rationale": "Coverage excludes the reported damage."
+}
+
+### Supervisor escalation queue — claims in ESCALATED_SUPERVISOR (SUPERVISOR only; 403 for
+# adjusters/claimants). Auth: token from a supervisor session (DevTools -> Authorization).
+GET {{host}}/api/escalations
+Authorization: Bearer {{token}}
+
+### Supervisor escalation decision — approve (record payment + close) or deny (close with
+# remarks), on a claim in ESCALATED_SUPERVISOR. SUPERVISOR only; rationale required for
+# both. An approval is not amount-gated (highest authority); the payment records a NULL
+# authorizer (no supervisor app_user row) while the DECISION audit carries the subject.
+# The decision email fires on closure, like the adjuster decision.
+POST {{host}}/api/claims/CLM-000001/escalation-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "decision": "APPROVED",
+  "indemnityAmount": 12000.00,
+  "rationale": "Agreed under full authority."
+}
+
+### Escalation decision: denial (closes with the rationale as claimant-visible remarks)
+POST {{host}}/api/claims/CLM-000001/escalation-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "decision": "DENIED",
+  "rationale": "The reported damage is outside the policy coverage."
+}

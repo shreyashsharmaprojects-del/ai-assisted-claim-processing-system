@@ -124,6 +124,23 @@
           "temporary": false
         }
       ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000004",
+      "username": "supervisor",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Sam",
+      "lastName": "Whitfield",
+      "email": "sam.whitfield@claims.test",
+      "realmRoles": ["supervisor"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "supervisor-Pass-123",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

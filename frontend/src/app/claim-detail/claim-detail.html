@@ -101,6 +101,55 @@
       </form>
     </section>
 
+    <section class="panel" data-testid="detail-decision-panel">
+      <h2>Decision</h2>
+      @if (decisionResult(); as message) {
+        <p class="outcome" data-testid="detail-decision-result" role="status">{{ message }}</p>
+      }
+      @if (canDecide()) {
+        <p class="muted">Decide the claim: an indemnity amount is required to approve it.</p>
+        <form (ngSubmit)="approve()" data-testid="detail-decision-form">
+          <label for="decision-amount">Indemnity amount (£)</label>
+          <input
+            id="decision-amount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            data-testid="detail-decision-amount"
+            [(ngModel)]="decisionAmount"
+            name="decisionAmount"
+          />
+          <label for="decision-rationale">Rationale (required)</label>
+          <textarea
+            id="decision-rationale"
+            rows="3"
+            data-testid="detail-decision-rationale"
+            [(ngModel)]="decisionRationale"
+            name="decisionRationale"
+          ></textarea>
+          <div class="button-row">
+            <button
+              type="submit"
+              data-testid="detail-approve"
+              [disabled]="!decisionAmount || !decisionRationale.trim()"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              data-testid="detail-deny"
+              [disabled]="!decisionRationale.trim()"
+              (click)="deny()"
+            >
+              Deny
+            </button>
+          </div>
+        </form>
+      } @else if (claim.status === 'CLOSED') {
+        <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
+      }
+    </section>
+
     <section class="panel">
       <h2>Photos</h2>
       @if (claim.attachments.length === 0) {

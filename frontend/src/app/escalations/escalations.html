@@ -1,0 +1,47 @@
+<main data-testid="escalations-page">
+  <h1>Escalations</h1>
+  <p class="tagline">Claims waiting on a supervisor decision.</p>
+
+  @if (error(); as message) {
+    <p class="error" data-testid="esc-error" role="alert">{{ message }}</p>
+  } @else if (loaded()) {
+    @if (claims().length === 0) {
+      <p data-testid="esc-empty">No escalated claims right now.</p>
+    } @else {
+      <ul class="esc-list">
+        @for (claim of claims(); track claim.claimNumber) {
+          <li class="esc-row" data-testid="esc-row">
+            <div class="esc-head">
+              <strong data-testid="esc-claim-number">{{ claim.claimNumber }}</strong>
+              <span class="badge" data-testid="esc-status">{{ claim.status }}</span>
+            </div>
+            <dl>
+              <div>
+                <dt>Policy</dt>
+                <dd data-testid="esc-policy">{{ claim.policyNumber }}</dd>
+              </div>
+              <div>
+                <dt>Loss date</dt>
+                <dd data-testid="esc-loss-date">{{ claim.lossDate }}</dd>
+              </div>
+              <div>
+                <dt>Location</dt>
+                <dd data-testid="esc-loss-location">{{ claim.lossLocation }}</dd>
+              </div>
+              <div>
+                <dt>Description</dt>
+                <dd data-testid="esc-loss-description">{{ claim.lossDescription }}</dd>
+              </div>
+            </dl>
+            <a
+              class="open"
+              [routerLink]="['/claims', claim.claimNumber]"
+              data-testid="esc-open-claim"
+              >Review claim</a
+            >
+          </li>
+        }
+      </ul>
+    }
+  }
+</main>

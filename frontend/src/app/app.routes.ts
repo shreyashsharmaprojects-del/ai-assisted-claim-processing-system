@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { claimantGuard, internalGuard } from './auth/auth.guard';
+import { claimantGuard, internalGuard, supervisorGuard } from './auth/auth.guard';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./home/home').then((m) => m.Home) },
@@ -17,6 +17,11 @@ export const routes: Routes = [
     path: 'queue',
     canActivate: [internalGuard],
     loadComponent: () => import('./queue/queue').then((m) => m.Queue),
+  },
+  {
+    path: 'escalations',
+    canActivate: [supervisorGuard],
+    loadComponent: () => import('./escalations/escalations').then((m) => m.Escalations),
   },
   {
     path: 'claims/:claimNumber',

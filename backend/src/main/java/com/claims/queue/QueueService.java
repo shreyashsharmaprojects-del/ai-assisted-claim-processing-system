@@ -53,6 +53,15 @@ public class QueueService {
         return query("AND c.assigned_adjuster_id = ?", new Object[] {adjusterId});
     }
 
+    /**
+     * The supervisor's escalation queue (slice 5): claims in {@code ESCALATED_SUPERVISOR},
+     * oldest first. The same row shape as the team queue — the assignee is always null
+     * here (no adjuster holds an escalated claim).
+     */
+    public List<QueueClaimView> supervisorEscalationQueue() {
+        return query("AND c.status = 'ESCALATED_SUPERVISOR'", new Object[0]);
+    }
+
     private List<QueueClaimView> query(String extraWhere, Object[] args) {
         return jdbcTemplate.query(SELECT.formatted(extraWhere), ROW, args);
     }

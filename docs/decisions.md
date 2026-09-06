@@ -5,6 +5,189 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-5 fresh-context review findings applied (deepseek-v4-pro)
+
+**Context:** A fresh-context review of slice 5 (run on the strong model in a new agent
+session, per phase 05) found **no blocking issues**: the slice satisfies its acceptance
+criteria and every criterion has a test that fails on regression. One should-fix and three
+optionals were reported.
+**Fixed:** (S1) The aging comment in `application.properties` pointed at a nonexistent
+`src/test/resources/application.properties` — the exact file this slice learned must not
+exist (it shadows the main properties wholesale). The comment now names the real mechanism
+(the inherited `@DynamicPropertySource` on `ClaimTableResettingTest`) and warns against
+reintroducing the file. Comment-only; no re-verification needed.
+**Deferred (optional, no behavioral risk):**
+- (O1) `AgingService.reassignToL2` stamps `assigned_at` with the wall clock (inside
+  `ClaimAssigner.assign`) rather than the injected aging instant. Harmless — production
+  `now` equals the wall clock and tests only assert non-null — but it is the one
+  non-injected time in an otherwise deterministic pass. Build it when aging timestamps ever
+  need to be deterministic.
+- (O2) The escalation-decision and aging paths reuse slice 4's `FOR UPDATE` read but carry
+  no deterministic held-lock test of their own (their second-operation tests are
+  sequential). Not a real gap: slice 4 pins the identical lock deterministically
+  (`decisionBlocksWhileAnotherTransactionHoldsTheClaimRowLock`). Build it when those paths
+  diverge from the shared lock.
+- (O3) A supervisor opening a non-escalated team claim sees an empty "Decision" panel
+  heading (no `canDecide()`, not CLOSED). Correct behavior; only cosmetic. Build it when
+  the claim-detail screen copy is touched again.
+**Verified:** reviewer ran the targeted slice-5 classes (49 tests) + the frontend build,
+both green, and cross-checked the acceptance-criterion table against the tests.
+
+---
+
+### 2026-09-06 — Slice-5 decisions: supervisor escalation-decision, aging, and supervisor identity
+
+**Context:** docs/plan.md and the slice-5 brief left several shape questions open ("decide and
+record"): what the supervisor's no-self-approval obligation means when supervisors never
+create escalations; the eligibility/error rules for the escalation-decision endpoint; how a
+supervisor payment/audit records identity with no app_user row; how the supervisor is
+provisioned for E2E; and the exact aging-ladder semantics under clock jumps.
+**Decision:**
+- **A supervisor approval is not amount-gated, and no-self-approval is structural.**
+  `ESCALATED_SUPERVISOR` claims are produced only by an adjuster's above-L2 approval attempt
+  or the no-L2 fallback (slice 4) and by the aging job (slice 5). A supervisor can never be
+  an assigned adjuster (`app_user.level` is L1/L2-only) and never acts on the slice-4
+  decision endpoint, so no supervisor can be the actor on any path that escalates to them —
+  nobody decides an escalation they caused, the same structural reasoning as slice 4. No
+  extra check was written. *Revisit if* a Keycloak user could ever carry both an adjuster
+  role and supervisor, or the supervisor gains an adjuster-level acting surface.
+- **Eligibility and errors on `escalation-decision`.** Only claims actually in
+  `ESCALATED_SUPERVISOR` are decidable there: unknown claim → 404 (never reveals
+  existence); a claim in another open state → 400 "This claim is not awaiting a supervisor
+  decision" (a supervisor can see team claims, so the state — not existence — is the
+  problem, and the message is actionable); a decided claim → 400 "already been decided"
+  (mirrors slice 4). The request body reuses the slice-4 shape (`decision`/`rationale`/
+  `indemnityAmount`, rationale required for approve and deny, amount rules via
+  `AuthorityGate.validate`), and the response reuses `ClaimDecisionView` (`escalatedTo` is
+  always null — a supervisor decision closes).
+- **Supervisor payment + audit identity: NULL `authorized_by`, subject as audit actor.**
+  A supervisor token has no app_user row (the cache is L1/L2 adjusters only and the level
+  CHECK forbids a supervisor row), so a supervisor approval records the single payment with
+  `payment.authorized_by_id = NULL` while the `DECISION` audit row carries their Keycloak
+  subject as `actor_sub` (before = `{status: ESCALATED_SUPERVISOR, level}`). Same
+  nullable-author pattern as `internal_note.author_id` (slice-3 note decision) and the
+  actor-less system rows.
+- **Supervisor provisioned in Keycloak only** (the deferred slice-3/4 item, now triggered
+  by journey 7 needing a real supervisor login): `keycloak/realm-export.json` gains a
+  fixed-subject supervisor — id `10000000-0000-0000-0000-000000000004`, username
+  `supervisor`, role `supervisor`, dev password `supervisor-Pass-123` — with **no app_user
+  row** and no V-seed change. The realm-sync seam test still counts exactly the three
+  adjusters (it filters realm users by adjuster roles), and `app_user` still holds exactly
+  the provisioned adjusters.
+- **Aging-ladder semantics** (Flow 6, anchor = `claim.created_at`, i.e. FNOL):
+  - *3-day rung* — applies to claims still below the L2 tier (level L1, or `UNASSIGNED`):
+    the same funnel as the slice-4 L2 escalation — level becomes L2, the least-loaded L2
+    adjuster takes it via `ClaimAssigner`, and with no L2 adjuster provisioned it falls
+    back to `ESCALATED_SUPERVISOR` (level reverted) exactly like the slice-4 gap rule. A
+    claim already held at L2 is NOT re-pushed at day 3: it already satisfies the rung.
+  - *5-day rung* — applies to any open claim and **wins over the 3-day rung**: a single run
+    after a missed schedule or a clock jump lands the claim at the top of the ladder in one
+    idempotent move (never "L2 first, supervisor later").
+  - `CLOSED` and `ESCALATED_SUPERVISOR` claims are never re-touched. Every transition
+    writes a `CLAIM_ESCALATED` audit row with `actor_sub NULL` (a system action, like
+    `CLAIM_ASSIGNED`), before/after payloads matching the slice-4 escalation rows
+    (escalatedTo L2/SUPERVISOR + assignee), and a rationale naming the rung ("Aged at
+    least 3/5 days without a decision") so the trigger is self-describing in the immutable
+    log.
+- **Injecting the clock / keeping the cron out of tests.** The scheduled shell
+  (`AgingScheduler`, cron daily 03:00, `@EnableScheduling`,
+  `@ConditionalOnProperty("claims.aging.enabled")`) calls
+  `AgingService.ageClaims(Instant)`; the public method takes an explicit instant, which IS
+  the injection seam — tests pass fixed instants and never wait on a cron (no Clock bean:
+  one caller). Claim-writing integration classes disable the scheduler through an
+  inherited `@DynamicPropertySource` on `ClaimTableResettingTest`
+  (`claims.aging.enabled=false`), so a real scheduled run can never fire mid-suite against
+  backdated claims. `claim.created_at` is read via JDBC (it is not entity-mapped — the
+  slice-3 review removed the mapping); each candidate's row is then locked with the
+  slice-4 `FOR UPDATE` read and the step recomputed against the freshly locked state, so a
+  concurrent decision or a second job run never double-transitions a claim.
+- **Escalation queue shape.** `GET /api/escalations` (SUPERVISOR-only URL rule) reuses the
+  queue row shape via `QueueService.supervisorEscalationQueue()` (status filter, oldest
+  first, assignee always null) — no new escalation DTO.
+- **E2E journey 7 was added to `queue.spec.ts`** (existing file, per plan): a new spec
+  file would add a parallel worker's Keycloak traffic. The aging ladder itself stays at
+  the integration layer with the injected clock (plan: E2E for aging only if time
+  injection is cheap — it is not a user-visible journey here).
+**Why:** Each choice resolves an ambiguity the brief flagged, keeps the supervisor surface
+small by reusing the slice-4 machinery and shapes, and records identity the way the schema
+allows (no supervisor app_user row exists or may exist).
+**Deferred:** The aging E2E journey (clock injection in the browser is not cheap; the
+claimant-visible escalated step is asserted end to end only when a claim reaches
+`ESCALATED_SUPERVISOR`, which journey 7's fixture does produce). Decision *display* on
+closed claims remains slice 6 (`stepsFor` for CLOSED is unchanged; the escalated step for
+`ESCALATED_SUPERVISOR` lands now because Flow 6 makes aging claimant-visible).
+
+---
+
+### 2026-09-06 — Slice-4 fresh-context review findings applied (deepseek-v4-pro)
+
+**Context:** A fresh-context review of slice 4 (run on the strong model in a new agent
+session, per phase 05) found one blocking defect, two should-fix coverage gaps, and four
+optional cleanups. All were accepted and fixed in one round.
+**Fixed:** (B1) The no-L2-adjuster escalation fallback built its audit `after` payload with
+`Map.of`, which forbids null values — when `ClaimAssigner` returned null (no L2 adjuster
+provisioned) the documented fallback to `ESCALATED_SUPERVISOR` threw NPE and rolled the
+whole decision back, leaving the claim with the actor whose authority was rejected. The
+payload is now built with a null-tolerant map. (S1) The fallback path is now covered by an
+integration test that deletes the L2 adjuster, escalates an above-L1/within-L2 approval,
+and asserts `ESCALATED_SUPERVISOR` + no assignee + a `CLAIM_ESCALATED` audit row
+(`escalationAboveL1WithNoL2AdjusterProvisionedGoesToTheSupervisor`), restoring the L2
+adjuster in `finally` (the slice-2 gap-test pattern). (S2) The decision row lock's
+serialization claim is now pinned by a deterministic held-lock test: a raw connection holds
+`SELECT … FOR UPDATE` on the claim row and a concurrent decision must block until the lock
+is released (`decisionBlocksWhileAnotherTransactionHoldsTheClaimRowLock`) — it fails if the
+`PESSIMISTIC_WRITE` read were removed. (O1) `ClaimDecisionView.status` had no consumer
+(dropped; the wire result still carries decision/escalatedTo/indemnityAmount/remarks).
+(O2) The duplicate `DecisionRequest`/`ClaimDecisionInput` records collapsed into
+`ClaimDecisionInput` as the `@RequestBody` type. (O3) `CLAIM_ESCALATED` audit `before`
+payloads now record `assignedAdjusterId` on both the L2 and supervisor escalation paths.
+(O4) The no-L2 fallback now reverts the claim level before `escalateToSupervisor()`, so
+both routes to `ESCALATED_SUPERVISOR` leave the claim's routing level unchanged.
+**Verified:** decision integration class 12 tests green; full backend suite re-run green.
+
+---
+
+### 2026-09-06 — Slice-4 decisions on the decision endpoint's open choices
+
+**Context:** docs/plan.md and the slice-4 brief left several shape questions open ("decide
+and record"): where denial remarks come from; what an escalation to L2 does when no L2
+adjuster is provisioned; who is the actor on the escalation audit row; whether the
+claimant view grows decision fields in slice 4; and which E2E file carries journeys 5–6.
+**Decision:**
+- **DENIED remarks = the rationale.** The request body has one text field (`rationale`,
+  required for approve and deny alike); on a denial it is stored verbatim as the
+  claimant-visible `decision_remarks`. No separate remarks field. (A claimant-facing
+  remarks *rendering* is slice 6; the wall still holds — the field rides the claim row,
+  not any slice-4 claimant response.)
+- **Escalation to L2 with no L2 adjuster provisioned falls back to `ESCALATED_SUPERVISOR`.**
+  If the claim is above the actor's level but within the L2 limit, the system re-assigns to
+  the least-loaded L2 adjuster via `ClaimAssigner` (same row-lock as FNOL). If none exists
+  (the provisioning gap slice 2 pins for FNOL), the claim must not stay with an actor whose
+  authority was just rejected — it escalates to the supervisor with a warning instead.
+- **`CLAIM_ESCALATED` audit rows are attributed to the adjuster whose above-limit attempt
+  triggered them** (actor + rationale), unlike `CLAIM_ASSIGNED` (actor-less system action).
+  Rationale: an escalation is caused by a specific internal user deliberately requesting an
+  out-of-authority approval; recording who and why is the compliance-relevant fact. No
+  `DECISION` row is written for an escalation — nothing was decided.
+- **The claimant view stays unchanged in slice 4** (number/status/steps only). The plan's
+  claimant-view `decision`/`indemnity_amount`/`remarks` fields land in slice 6, which
+  renders them; shipping them now would be dead DTO surface with no consumer, and the
+  structural wall test pins the record's exact shape.
+- **E2E journeys 5 and 6 were added to `queue.spec.ts`**, not a new spec file. E2E is not
+  fully parallel because concurrent Keycloak registration flows are flaky; a new file would
+  add a new parallel worker's registration traffic. The helper duplication stays two copies
+  (fnol.spec + queue.spec), not three, so no extraction yet.
+- **Decision email is sent only on closure** (approve or deny), never on escalation — an
+  escalation is not a decision. Best-effort after commit, to the verified policy-holder
+  address, like the FNOL/assignment emails.
+- **Seed thresholds (V6): 2500.00 / 10000.00** for both seeded product codes (HOME, AUTO).
+  Uniform values keep the gate matrix and E2E amounts legible; per-product differentiation
+  is a config concern for slice 7, not seed data.
+**Why:** Each choice resolves an ambiguity the plan flagged, keeping the API body to one
+text field, the claimant surface clean until slice 6, and the audit trail attributable.
+
+---
+
 ### 2026-09-06 — Slice-3 review fixes (fresh-context agent review)
 
 **Context:** A fresh-context review of slice 3 (commit 82cb34e) found no blocking issues
@@ -422,12 +605,15 @@ signals in the two new components; simplifying a redundant second `app_user` loo
 `addNote` (already folded into the S6 fix); empty/NaN reserve submissions from the SPA
 (`Number()` of a blank box submits 0, NaN submits null); two stale javadocs (SecurityConfig
 and the claimant guard say "slice 1"/"the queue" only); the `£` + raw-number reserve
-display (currency formatting); extracting the E2E FNOL-form helper, now duplicated in three
+display (currency formatting); extracting the E2E FNOL-form helper, then duplicated in two
 specs.
 **Why not now:** Cosmetic or low-risk; the user scoped the fix round to the should-fix
 findings.
-**Build it when:** the next slice (or a hardening pass) touches the same files — the E2E
-helper extraction in particular is due by the slice-4 journeys.
+**Build it when:** slice 4 kept the FNOL/register helpers at two copies on purpose
+(journeys 5–6 joined `queue.spec.ts` rather than a new file, so no third copy appeared and
+the E2E worker count stayed flat — see the slice-4 decision entry). Extract the helpers only
+when a real third spec file needs them (e.g. a supervisor spec in slice 5), a hardening
+pass touches the same files, or the duplication otherwise grows past two copies.
 
 ---
 
@@ -444,7 +630,8 @@ in realm-export/docker-compose.
 **Why not now:** All are cosmetic or cross-slice concerns with no behavioral risk; the
 user scoped the fix round to the should-fix findings. Credential hardening is a
 pre-ship/hardening-phase checklist item, not a slice item.
-**Build it when:** slice 3 (or a hardening pass) touches the relevant file anyway.
+**Build it when:** a later slice (or a hardening pass) touches the relevant file anyway —
+none of these has become load-bearing through slice 4.
 
 ---
 

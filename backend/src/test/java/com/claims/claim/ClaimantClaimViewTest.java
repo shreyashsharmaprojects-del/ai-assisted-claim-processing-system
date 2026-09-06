@@ -49,6 +49,19 @@ class ClaimantClaimViewTest {
     }
 
     @Test
+    void escalatedStatusShowsTheEscalatedProcessStep() {
+        // Flow 6: while a claim waits on the supervisor, the claimant sees that it was
+        // escalated — FNOL received -> under review -> escalated (the decision display
+        // itself lands in slice 6).
+        List<String> steps = ClaimantClaimView.stepsFor("ESCALATED_SUPERVISOR");
+        assertEquals(3, steps.size());
+        assertTrue(steps.get(0).startsWith("FNOL received"));
+        assertTrue(steps.get(1).startsWith("Under review"));
+        assertTrue(steps.get(2).startsWith("Escalated"),
+                "an escalated claim tells the claimant it is with the supervisor");
+    }
+
+    @Test
     void unknownStatusYieldsNoSteps() {
         assertTrue(ClaimantClaimView.stepsFor("MYSTERY").isEmpty());
     }
