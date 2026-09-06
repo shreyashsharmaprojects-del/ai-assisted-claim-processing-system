@@ -18,11 +18,12 @@ notes are structurally absent from every claimant-facing response and screen (E2
 A fresh-context agent review of slice 3 found no blocking findings; its six should-fix
 findings (S1–S6) are fixed and re-verified (a strong-model pass remains optional).
 
-Slice 2 was pushed to `origin`/`main` (commits 27561e7, 0106a6d) and the GitHub Actions
-run **passed all three jobs** (backend Testcontainers, frontend build, E2E compose) —
-2026-09-06. Slice 3 is committed locally, not yet pushed.
+Slice 2 (27561e7, 0106a6d) and slice 3 (82cb34e, 31330e0) are both pushed to
+`origin`/`main`, and **both GitHub Actions runs passed all three jobs** (backend
+Testcontainers, frontend build, E2E compose) — 2026-09-06.
 
-Next up: Slice 4 (decision & the authority gate) — do not start without the user's go.
+Next up: **Slice 4 (decision & the authority gate)** — the product's core rule. Start it
+only with the user's go, then follow the Slice-4 brief below.
 
 ## Run it (canonical — Docker)
 
@@ -82,6 +83,50 @@ transaction. Needs V6 (`claim.decision/decision_remarks/indemnity_amount/closed_
 `payment`), the decision endpoint with rationale required, and the unit gate matrix —
 the product's core rule.
 
+## Starting Slice 4 (fresh session)
+
+Read first: `docs/plan.md` (slice 4 + the state-transition/authority-gate sections + the
+API table rows for `/decision`), `docs/requirements.md` (Flow 4), `docs/decisions.md`
+(all 2026-09-06 entries — the per-claim/per-payment authority semantics and the vertical
+slicing rule matter), and `rules/yagni.md` + `rules/testing-web.md`. Slice 3 is reviewed
+(S1–S6 applied); slice 4 does not need a fresh review of slice 3.
+
+**Scope (from the plan):** the authority gate is the core rule — get the unit matrix
+exhaustive. V6 migration adds `claim.decision`, `decision_remarks`, `indemnity_amount`,
+`closed_at`; `authority_config.l1_limit_amount` / `l2_limit_amount` (the amount thresholds,
+evaluated here for the first time — currently the table only has `route_level`); the
+`payment` table (one per claim, `amount == indemnity_amount`, unique on `claim_id`).
+`POST /api/claims/{claimNumber}/decision` is **assigned-adjuster only** (SUPERVISOR
+handles escalations in slice 5): body `{decision: APPROVED|DENIED, indemnityAmount?,
+rationale}` — rationale **required for both approve and deny** (400 without). APPROVED must
+be within the actor's level limit → record payment + audit (`DECISION` row with rationale)
++ close atomically (one transaction, `closed_at` = now) + decision email after commit
+(best-effort like the other emails, in the controller). Above-level APPROVED → the service
+escalates as a **system action**: if ≤ the L2 limit, re-assign to the least-loaded L2
+adjuster (reuse ClaimAssigner/its row-lock) and stay/re-enter UNDER_REVIEW at L2; if >
+the L2 limit → `ESCALATED_SUPERVISOR` (no adjuster). DENIED always closes (remarks from
+the rationale or a separate remarks field — decide and record). No actor may approve their
+own escalation (there is none yet in slice 4 — the no-self-approval matrix case comes from
+an L2 adjuster approving an L2-level claim within limit; the real no-self-approval applies
+to supervisor escalation, slice 5 — check the plan wording before coding).
+**Tests:** unit — the full gate matrix (amount vs level, skip-levels routing to L2 vs
+supervisor, denied path, rationale required) as a pure function with no DB; integration —
+decision endpoint (success + payment row + CLOSED + audit with rationale; above-level →
+blocked + escalated/re-assigned; missing rationale 400; non-assignee 404; claimant 403;
+single-payment uniqueness), decision email asserted at the integration layer (Mailpit);
+E2E — **journeys 5 and 6** (adjuster approves within limit → payment → closes; adjuster
+tries an above-limit approval → blocked + escalated). Reuse the truncating base
+(`ClaimTableResettingTest`) and the E2E FNOL/register helpers — the three-copies helper
+duplication is due for extraction here (see decisions.md Deferred).
+**Watch-outs:** statuses used so far are UNASSIGNED/UNDER_REVIEW; the ESCALATED_SUPERVISOR
+status only becomes visible claimant-visible "escalated" step in later slices; claimant
+view gains `indemnityAmount` only when APPROVED (slice 6 — the plan says include it when
+APPROVED; decide whether the field rides the view now as null or lands in slice 6, and
+record it); `payment.authorized_by_id` → app_user of the deciding adjuster;
+`decision_remarks` is claimant-visible (denials show it) while internal notes never are —
+the wall holds on CLOSED claims. Decision rows in audit_log need non-null `rationale` and
+a `DECISION`-action audit on every closure.
+
 ## Test counts
 
 Unit: 18 · Integration: 38 (incl. context smoke) · E2E: 6 · All green: yes (2026-09-06)
@@ -106,8 +151,8 @@ optional review items are recorded under Deferred, not applied.
 ## Blocked on
 
 - Nothing. Slice 4 awaits the user's go (slice 3 is reviewed, its S1–S6 fixes applied
-  and re-verified). Slice-2 commits are on `origin`/`main` with a green CI run
-  (2026-09-06). Slice 3 is local only.
+  and re-verified). Slice-2 and slice-3 commits are on `origin`/`main` with green CI
+  runs (2026-09-06).
 
 ## Notes for whoever picks this up
 
@@ -136,8 +181,12 @@ optional review items are recorded under Deferred, not applied.
   result links to the status screen. Photo downloads are fetch-blob + `<a download>`
   (auth header can't ride a plain link).
 - Backend: `ClaimWorkService` owns the internal surface; coverage read as JSON via JDBC
-  (`coverage::text`) — the policy entity stays unmapped. `claim.created_at` is now mapped
-  (read-only) because the full view shows it.
+  (`coverage::text`) — the policy entity stays unmapped, and `claim.created_at` is NOT
+  entity-mapped either (the queue and full-view reads that need it use JDBC; a read-only
+  mapping added mid-slice-3 was removed in the S6 review fix as dead surface). DTO fields
+  are consumer-checked: the slice-3 review removed uncalled fields
+  (`InternalClaimView.createdAt`, `AttachmentView.contentType`, `NoteView.createdAt`) —
+  keep the "every DTO field has a consumer" rule for slice 4's decision/payment shapes.
 - `api.http` has working examples for the new endpoints (claimant status, full, reserve,
   notes, attachment).
 - Keycloak/staff and slice-1/2 facts from before still hold (fixed adjuster subjects,
