@@ -22,21 +22,23 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.claims.TestcontainersConfiguration;
+import com.claims.support.ClaimTableResettingTest;
 import com.claims.support.JwtTestConfig;
 
 /**
  * FNOL acceptance: real HTTP multipart submissions through the real Spring context against
  * a real PostgreSQL, with a real SMTP capture (Mailpit via Testcontainers — the plan's
  * mail catcher) and signed test JWTs for auth. Schema and seed data come from Flyway.
+ * Claim tables are reset between tests by {@link ClaimTableResettingTest} so this class
+ * never observes claims left by an earlier class on the shared test database.
  */
 @Import({TestcontainersConfiguration.class, JwtTestConfig.class})
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class FnolApiIntegrationTest {
+class FnolApiIntegrationTest extends ClaimTableResettingTest {
 
     private static final String BOUNDARY = "----ClaimsTestBoundary42";
     private static final byte[] PHOTO = new byte[] {(byte) 0x89, 'P', 'N', 'G', 1, 2, 3, 4};
@@ -70,8 +72,6 @@ class FnolApiIntegrationTest {
     private Environment environment;
     @Autowired
     private ClaimRepository claims;
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
 
     private final HttpClient http = HttpClient.newHttpClient();
 

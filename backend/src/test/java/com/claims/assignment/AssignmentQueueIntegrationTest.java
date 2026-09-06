@@ -1,8 +1,9 @@
 package com.claims.assignment;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -14,14 +15,19 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import javax.sql.DataSource;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,23 +35,31 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.multipart.MultipartFile;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
 import com.claims.TestcontainersConfiguration;
+import com.claims.claim.ClaimService;
+import com.claims.claim.FnolInput;
+import com.claims.claim.FnolResult;
+import com.claims.staff.AppUser;
 import com.claims.staff.AppUserRepository;
+import com.claims.support.ClaimTableResettingTest;
 import com.claims.support.JwtTestConfig;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+
 /**
- * Slice-2 acceptance, run against a database this class alone controls: every test starts
- * by truncating the claim tables (and clearing the mailpit mailbox), so assignment
- * outcomes are deterministic from the V4 seeds — two L1 adjusters (ids 1,2) and one L2
- * adjuster (id 3), all with zero open claims. Real HTTP, real Postgres, real SMTP capture.
+ * Slice-2 acceptance, run against a database this class alone controls (see
+ * {@link ClaimTableResettingTest}: claim tables are truncated between tests, so assignment
+ * outcomes are deterministic from the V4 seeds — two L1 adjusters and one L2 adjuster, all
+ * with zero open claims). Real HTTP, real Postgres, real SMTP capture.
  */
 @Import({TestcontainersConfiguration.class, JwtTestConfig.class})
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class AssignmentQueueIntegrationTest {
+class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
 
     private static final String BOUNDARY = "----AssignmentTestBoundary99";
     private static final Pattern CLAIM_NUMBER = Pattern.compile("\"claimNumber\":\"(CLM-\\d{6})\"");
@@ -82,9 +96,11 @@ class AssignmentQueueIntegrationTest {
     @Autowired
     private Environment environment;
     @Autowired
-    private JdbcTemplate jdbcTemplate;
-    @Autowired
     private AppUserRepository appUsers;
+    @Autowired
+    private ClaimService claimService;
+    @Autowired
+    private DataSource dataSource;
 
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -93,8 +109,8 @@ class AssignmentQueueIntegrationTest {
     private Long l2;
 
     @BeforeEach
-    void resetState() throws Exception {
-        jdbcTemplate.execute("TRUNCATE claim, attachment, audit_log RESTART IDENTITY CASCADE");
+    void resetMailboxAndLoadAdjusters() throws Exception {
+        // Claim tables were already truncated by the shared base's @BeforeEach.
         http.send(HttpRequest.newBuilder(URI.create(mailpitUrl() + "/api/v1/messages")).DELETE().build(),
                 HttpResponse.BodyHandlers.discarding());
         l1One = appUsers.findByKeycloakSub(SUB_L1_ONE).orElseThrow().getId();
@@ -144,36 +160,108 @@ class AssignmentQueueIntegrationTest {
     }
 
     @Test
-    void simultaneousFnosToTheSameLevelCannotDoubleAssign() throws Exception {
-        ExecutorService pool = Executors.newFixedThreadPool(2);
-        try {
-            List<Callable<HttpResponse<String>>> tasks = List.of(
-                    () -> post("/api/claims", claimantBearer("sub-racer-a"), fnolBody("POL-10001",
-                            "Ada Lovelace", "ada.lovelace@example.test")),
-                    () -> post("/api/claims", claimantBearer("sub-racer-b"), fnolBody("POL-10001",
-                            "Ada Lovelace", "ada.lovelace@example.test")));
-            List<HttpResponse<String>> responses = pool.invokeAll(tasks).stream()
-                    .map(future -> {
-                        try {
-                            return future.get();
-                        } catch (Exception ex) {
-                            throw new IllegalStateException(ex);
-                        }
-                    })
-                    .toList();
-
-            for (HttpResponse<String> response : responses) {
-                assertEquals(201, response.statusCode(), response.body());
+    void assignmentWaitsForAnotherTransactionHoldingTheLevelLock() throws Exception {
+        // A deterministic race test: hold the L1 candidates' rows locked on a raw
+        // connection, then file an L1 FNOL on another thread. The claim's assignment must
+        // block behind that lock — if ClaimAssigner's SELECT ... FOR UPDATE were removed,
+        // the FNOL would complete while the lock is still held and this test fails. (An
+        // HTTP-level two-thread test cannot force the two transactions to overlap, so it
+        // would pass even with the lock gone.)
+        try (Connection holder = dataSource.getConnection()) {
+            holder.setAutoCommit(false);
+            try (Statement lock = holder.createStatement()) {
+                lock.execute("SELECT id FROM app_user WHERE level = 'L1' ORDER BY id FOR UPDATE");
             }
-            Long assigneeA = assigneeOf(extractClaimNumber(responses.get(0)));
-            Long assigneeB = assigneeOf(extractClaimNumber(responses.get(1)));
-            assertNotNull(assigneeA);
-            assertNotNull(assigneeB);
-            assertNotEquals(assigneeA, assigneeB,
-                    "concurrent FNOLs must serialize on assignment and land on different adjusters");
-        } finally {
-            pool.shutdownNow();
+
+            ExecutorService pool = Executors.newSingleThreadExecutor();
+            try {
+                Future<FnolResult> pending = pool.submit(
+                        () -> claimService.fileFnol(fnolInput("sub-claimant-lock")));
+
+                // The lock is still held, so the assignment step cannot have finished.
+                Thread.sleep(500);
+                assertFalse(pending.isDone(),
+                        "assignment must block while another transaction holds the level lock");
+
+                holder.commit(); // release the lock; the FNOL's assignment proceeds
+                FnolResult result = pending.get(10, TimeUnit.SECONDS);
+                assertEquals("UNDER_REVIEW", result.view().status());
+                assertNotNull(assigneeOf(result.view().claimNumber()));
+            } finally {
+                pool.shutdownNow();
+            }
         }
+    }
+
+    @Test
+    void claimForALevelWithNoProvisionedAdjusterStaysUnassignedWithoutEmailOrAssignmentAudit()
+            throws Exception {
+        // Simulate a provisioning gap: no L2 adjuster exists, so an L2 claim cannot be
+        // assigned. The claim must still be created (FNOL number returned) and stay
+        // UNASSIGNED — with no CLAIM_ASSIGNED row and no assignment email.
+        AppUser l2Adjuster = appUsers.findByKeycloakSub(SUB_L2).orElseThrow();
+        appUsers.delete(l2Adjuster);
+        try {
+            HttpResponse<String> response = post("/api/claims", claimantBearer("sub-claimant-gap"),
+                    fnolBody("POL-20002", "Grace Hopper", "grace.hopper@example.test"));
+            assertEquals(201, response.statusCode(), response.body());
+            assertTrue(response.body().contains("\"status\":\"UNASSIGNED\""), response.body());
+
+            String claimNumber = extractClaimNumber(response);
+            Long claimId = idOf(claimNumber);
+            assertEquals("UNASSIGNED", statusOf(claimNumber));
+            assertNull(assigneeOf(claimNumber));
+            assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'CLAIM_CREATED' "
+                    + "AND entity_id = ?", claimId));
+            assertEquals(0, count("SELECT count(*) FROM audit_log WHERE action = 'CLAIM_ASSIGNED' "
+                    + "AND entity_id = ?", claimId));
+
+            String inbox = get(mailpitUrl() + "/api/v1/messages");
+            assertTrue(inbox.contains(claimNumber), inbox);
+            assertTrue(!inbox.contains("is now with an adjuster"),
+                    "no assignment email when there is no assignee: " + inbox);
+        } finally {
+            // Restore the seeded L2 adjuster so later tests see the full staff (fresh id,
+            // same identity — the V4 seed state this class's contract relies on).
+            appUsers.save(new AppUser(SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2"));
+        }
+    }
+
+    @Test
+    void seededAdjusterCacheMatchesTheProvisionedRealmStaff() throws Exception {
+        // S2/S4 seam check: app_user.keycloak_sub/level/identity are hand-synced with
+        // keycloak/realm-export.json (V4 seeds mirror the imported realm users). This test
+        // pins that sync so a drift between the two files — which would silently mis-route
+        // claims or empty a queue — fails here instead of in production.
+        JsonNode realm = new ObjectMapper().readTree(realmExportFile().toFile());
+        List<JsonNode> staff = new ArrayList<>();
+        for (JsonNode user : realm.path("users")) {
+            List<String> roles = new ArrayList<>();
+            for (JsonNode role : user.path("realmRoles")) {
+                roles.add(role.asText());
+            }
+            if (roles.contains("adjuster_l1") || roles.contains("adjuster_l2")) {
+                staff.add(user);
+            }
+        }
+        assertEquals(3, staff.size(), "the realm export must provision exactly the V4 staff");
+
+        for (JsonNode user : staff) {
+            AppUser cache = appUsers.findByKeycloakSub(user.get("id").asText()).orElseThrow(
+                    () -> new AssertionError("no app_user row for realm user "
+                            + user.get("username").asText()));
+            boolean l1 = false;
+            for (JsonNode role : user.path("realmRoles")) {
+                l1 = l1 || "adjuster_l1".equals(role.asText());
+            }
+            assertEquals(l1 ? "L1" : "L2", cache.getLevel(),
+                    "app_user.level must mirror the provisioned Keycloak role");
+            assertEquals(user.get("email").asText(), cache.getEmail());
+            assertEquals(user.get("firstName").asText() + " " + user.get("lastName").asText(),
+                    cache.getDisplayName());
+        }
+        assertEquals(3, appUsers.count(),
+                "app_user must hold exactly the provisioned staff, nothing more");
     }
 
     // --- queue -----------------------------------------------------------------
@@ -233,6 +321,24 @@ class AssignmentQueueIntegrationTest {
                 "policyNumber", "POL-10001",
                 "holderName", "Ada Lovelace",
                 "holderEmail", "ada.lovelace@example.test"), claimantSub);
+    }
+
+    /** Service-level FNOL for the lock test (no HTTP, no controller, so no emails). */
+    private static FnolInput fnolInput(String claimantSub) {
+        return new FnolInput("POL-10001", "Ada Lovelace", "ada.lovelace@example.test",
+                "2026-09-01", "London", "Storm damage to the property.", null,
+                claimantSub, List.<MultipartFile>of());
+    }
+
+    private static Path realmExportFile() {
+        // Surefire runs with the module directory as cwd; also accept the repo root.
+        Path fromModule = Path.of("../keycloak/realm-export.json");
+        if (Files.exists(fromModule)) {
+            return fromModule;
+        }
+        Path fromRepo = Path.of("keycloak/realm-export.json");
+        assertTrue(Files.exists(fromRepo), "keycloak/realm-export.json not found next to the backend module");
+        return fromRepo;
     }
 
     private String fileFnol(Map<String, String> fields, String claimantSub) throws Exception {

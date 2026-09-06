@@ -5,6 +5,32 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-2 review fixes (fresh-context agent review)
+
+**Context:** A fresh-context review of slice 2 (commit 27561e7) found no blocking issues
+but five should-fix findings. All five were accepted and fixed in a follow-up commit.
+**Fixed:** (S1) The two-thread HTTP concurrency test could pass even with the
+`FOR UPDATE` lock removed (no barrier forced the transactions to overlap); it was
+replaced with a deterministic test that holds the level's candidate rows locked on a raw
+connection and asserts the FNOL's assignment blocks until the lock is released — it fails
+if the lock disappears. (S2/S4) The hand-synced seam between `app_user` seeds (V4) and the
+provisioned Keycloak users (`keycloak/realm-export.json`) is now pinned by an integration
+test that cross-checks every staff user (subject, level, email, display name) against the
+realm export; and an adjuster token whose subject has no `app_user` row now logs a warning
+instead of silently returning an empty queue. (S3) The no-adjuster-of-level provisioning
+gap (claim stays UNASSIGNED, no CLAIM_ASSIGNED row, no assignment email) is now covered by
+an integration test that deletes the L2 adjuster and restores it in `finally`. (S5) The
+per-test truncation of claim/attachment/audit_log moved from a per-class convention into a
+shared base (`ClaimTableResettingTest`) that every claim-writing integration class extends.
+**Optional items from the review were deliberately not applied** (user scope): tie-break
+comparator style, the phantom UNASSIGNED status in the CLAIM_CREATED audit payload, the
+public queue nav link, `QueueClaimView.createdAt`, step copy, E2E spec duplication, and
+dev-credential hardening — see the Deferred section below.
+**Open:** a strong-model pass remains optional (this review used the in-harness
+fresh-context agent, like slice 1).
+
+---
+
 ### 2026-09-06 — Slice-2 assignment runs inside the FNOL transaction
 
 **Context:** Plan slice 2: new claims move to UNDER_REVIEW and are load-balanced to the
@@ -93,6 +119,23 @@ the actor) would misattribute the action.
 ---
 
 ## Deferred
+
+### 2026-09-06 — Slice-2 review optional items
+
+**Considered:** Seven optional cleanups from the slice-2 review: replacing
+`LoadBalancer`'s load-bearing `.sorted()` with an explicit id `thenComparing`; recording
+the CLAIM_CREATED audit payload with the final (UNDER_REVIEW) status instead of the
+momentary UNASSIGNED state; hiding the "Adjuster queue" nav link from the public;
+dropping `QueueClaimView.createdAt` (no consumer yet); fixing UNDER_REVIEW step copy that
+contradicts the received step; extracting the duplicated E2E `registerClaimant` helper;
+hardening the dev-only plaintext credentials (Keycloak admin/admin, adjuster passwords)
+in realm-export/docker-compose.
+**Why not now:** All are cosmetic or cross-slice concerns with no behavioral risk; the
+user scoped the fix round to the should-fix findings. Credential hardening is a
+pre-ship/hardening-phase checklist item, not a slice item.
+**Build it when:** slice 3 (or a hardening pass) touches the relevant file anyway.
+
+---
 
 ### 2026-09-06 — app_user auto-population on login; supervisor Keycloak user
 

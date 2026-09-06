@@ -7,18 +7,20 @@ seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**Slice 2 (assignment & the adjuster queue) is done and verified green.** FNOL now
-assigns every new claim, inside the creating transaction, to the least-loaded adjuster of
-its level (fewest open claims, lowest `app_user.id` on ties — row-locked so concurrent
+**Slice 2 (assignment & the adjuster queue) is done, reviewed, and verified green.** FNOL
+now assigns every new claim, inside the creating transaction, to the least-loaded adjuster
+of its level (fewest open claims, lowest `app_user.id` on ties — row-locked so concurrent
 FNOLs cannot double-assign), moves it to UNDER_REVIEW, records a CLAIM_ASSIGNED audit row,
 and emails the claimant who their adjuster is. Adjusters (and supervisors) get a queue:
 `GET /api/queue` returns own claims for an adjuster and the whole team for a supervisor,
-oldest first; the SPA has a `/queue` screen behind an internal-role guard. Backend **39
-tests**, **4 E2E journeys** — all green. Slice 2 has NOT had its fresh-context review;
-that belongs in a new session (see below).
+oldest first; the SPA has a `/queue` screen behind an internal-role guard. Backend **41
+tests**, **4 E2E journeys** — all green. A fresh-context agent review of slice 2 found no
+blocking findings; its five should-fix findings (S1–S5) are fixed and re-verified (a
+strong-model pass remains optional). Everything is committed locally; nothing has been
+pushed (CI unverified by the user's choice).
 
 Next up: Slice 3 (adjuster works the claim & the visibility wall) — do not start without
-the user's go, and only after a fresh-session review of slice 2.
+the user's go.
 
 ## Run it (canonical — Docker)
 
@@ -41,7 +43,7 @@ because 8080 on this machine is taken.
 ## Tests
 
 ```bash
-mvn -f backend/pom.xml test   # 39 tests: unit + integration (Testcontainers Postgres + Mailpit)
+mvn -f backend/pom.xml test   # 41 tests: unit + integration (Testcontainers Postgres + Mailpit)
 npm ci --prefix frontend && npm --prefix frontend run build
 docker compose up -d db mailpit keycloak            # once
 npm --prefix e2e test         # boots backend on :8082 against claims_e2e + Angular dev server; real Keycloak
@@ -53,7 +55,7 @@ npm --prefix e2e test         # boots backend on :8082 against claims_e2e + Angu
 |---|---|---|---|
 | 0 | Walking skeleton | done | yes (external 2026-09-03) |
 | 1 | FNOL & claim number | done (2026-09-06) | yes — fresh-context agent review; fixes applied (strong-model pass optional) |
-| 2 | Assignment & adjuster queue | **done** (2026-09-06) | no — fresh-session review outstanding (workflow rule: never self-review) |
+| 2 | Assignment & adjuster queue | **done** (2026-09-06) | yes — fresh-context agent review; should-fix S1–S5 applied and re-verified (strong-model pass optional) |
 | 3 | Adjuster works the claim & the visibility wall | not started | no |
 
 Slice 2 delivered, per `docs/plan.md`: `app_user` staff cache (V4) seeded with two L1 +
@@ -81,22 +83,27 @@ integration case rides in with the full view.
 
 ## Test counts
 
-Unit: 18 · Integration: 21 (incl. context smoke) · E2E: 4 · All green: yes (2026-09-06)
+Unit: 18 · Integration: 23 (incl. context smoke) · E2E: 4 · All green: yes (2026-09-06)
 
 - Unit 18: PolicyViewMapper 4 · ClaimClassifier 3 · LoadBalancer 5 (slice 2) ·
   ClaimantClaimView 4 · ClaimNumberFormatter 1 · AuditJson 1.
-- Integration 21: FnolApi 11 · AssignmentQueue 8 (slice 2: load-balance + tie-break
-  determinism, L2 routing, audit + assignment email, two-thread no-double-assign, queue
-  own-vs-team/order/empty/auth) · PolicyApi 1 · context smoke 1.
+- Integration 23: FnolApi 11 · AssignmentQueue 10 (slice 2: load-balance + tie-break
+  determinism, L2 routing, audit + assignment email, deterministic lock-blocking test,
+  provisioning-gap path, realm↔seed sync, queue own-vs-team/order/empty/auth) ·
+  PolicyApi 1 · context smoke 1.
 - E2E 4: skeleton page · journey 1 (Keycloak register → FNOL w/ photo → claim number) ·
   rejected-FNOL-stays-on-form · **journey 3** (filed claim appears in exactly one L1
   adjuster queue, never the L2 queue).
 
+Slice 2 has been through its fresh-context review (2026-09-06): no blocking findings; the
+five should-fix findings (S1–S5) are fixed and re-verified (see `docs/decisions.md`).
+The optional review items are recorded under Deferred, not applied.
+
 ## Blocked on
 
-- Nothing. Slice 3 awaits the user's go and a fresh-session review of slice 2. CI state
-  for the slice-2 branch: **not yet pushed** — backend + frontend + E2E verified locally
-  exactly as the CI jobs run them; push to `origin`/`main` triggers GitHub Actions.
+- Nothing. Slice 3 awaits the user's go. CI state for the slice-2 commits: **not yet
+  pushed** — backend (41) + frontend build + E2E (4 journeys) verified locally exactly as
+  the CI jobs run them; pushing to `origin`/`main` triggers GitHub Actions.
 
 ## Notes for whoever picks this up
 
@@ -110,9 +117,10 @@ Unit: 18 · Integration: 21 (incl. context smoke) · E2E: 4 · All green: yes (2
   cross-tenant 404 semantics arrive with slice-3 detail endpoints.
 - Assignment facts: seeded adjusters are ids 1/2 (L1) and 3 (L2) on a fresh database
   (V4 insert order); first L1 FNOL → id 1 (tie-break), balancing alternates from there.
-  `AssignmentQueueIntegrationTest` truncates `claim`/`attachment`/`audit_log` between
-  tests so its outcomes are deterministic; the other integration classes don't truncate
-  (their assertions are per-claim), so don't add cross-test-global assertions there.
+  Every claim-writing integration class extends `ClaimTableResettingTest`
+  (com.claims.support), which truncates `claim`/`attachment`/`audit_log` between tests so
+  no class observes another's claims on the shared Testcontainers database; don't add a
+  claim-writing integration class that skips the base.
 - E2E is **not** fully parallel (concurrent Keycloak registration flows are flaky);
   Playwright workers still parallelize across files. Journey 3 deliberately asserts
   "exactly one L1 adjuster holds the claim" instead of predicting *which* one, because
