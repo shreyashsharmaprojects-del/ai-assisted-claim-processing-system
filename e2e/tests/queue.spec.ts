@@ -498,8 +498,9 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   ).toBe(false);
 
   // Restore AUTO to its seeded L2 routing so the shared e2e database stays clean for
-  // later runs (journey 9 re-sets its own state first, so an interrupted run cannot
-  // cascade into other journeys — nothing else touches AUTO).
+  // later runs. Journey 9 re-routes AUTO to L1 idempotently at its start (a no-op when an
+  // earlier run left it there), so an interrupted run cannot cascade into other journeys —
+  // nothing else touches AUTO.
   await supervisorPage.goto('/admin/authority');
   const restoredRow = supervisorPage.getByTestId('auth-row').filter({ hasText: 'AUTO' });
   await restoredRow.getByTestId('auth-route').selectOption('L2');

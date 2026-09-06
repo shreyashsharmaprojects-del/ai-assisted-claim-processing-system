@@ -46,11 +46,15 @@ shape + validation; V7 trigger as the immutability enforcement point; E2E journe
 the gate-limit effect stays at the integration layer; no config-edit audit trail, no audit/
 reassign UI) are recorded in `docs/decisions.md` (2026-09-06 slice-7 entry).
 
-Backend **138 tests** (54 unit + 84 integration) and **11 E2E journeys** — all green
+Backend **139 tests** (54 unit + 85 integration) and **11 E2E journeys** — all green
 (2026-09-06, full local run: `mvn test` + Playwright against compose Keycloak/Mailpit).
-Slice 7 has NOT yet had its fresh-context review (that belongs to a new session on the
-strong model, per the workflow). **The approved slice list is now complete** — after slice
-7's review the remaining workflow phase is 06 (pre-ship hardening), not another slice.
+Slice 7 went through its fresh-context review (2026-09-06, deepseek-v4-pro in a new agent
+session, per the workflow): **no blocking and no should-fix findings**; all four optionals
+were accepted and applied (O1: the authority editor shows the NUMERIC(14,2) scale via
+`.toFixed(2)`; O2: journey-9 wording fixed in the spec + docs; O3: redundant
+`configs.save` dropped; O4: the stranded-UNASSIGNED-claim reassign test added — see
+`docs/decisions.md`, 2026-09-06 slice-7 review entry). **The approved slice list is now
+complete** — the remaining workflow phase is 06 (pre-ship hardening), not another slice.
 
 ## Run it (canonical — Docker)
 
@@ -100,7 +104,7 @@ JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm --prefix e2e test
 | 4 | Decision & the authority gate | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; B1 + S1–S2 + O1–O4 applied and re-verified |
 | 5 | Supervisor escalation & aging | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking; should-fix S1 applied, optionals deferred |
 | 6 | Claimant decision & notification | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking/should-fix; optional O1 applied, O2 deferred |
-| 7 | Compliance & admin | **done** (2026-09-06) | no — review belongs to a fresh session |
+| 7 | Compliance & admin | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking/should-fix; optionals O1–O4 applied |
 
 Slice 7 delivered, per `docs/plan.md`: the supervisor's authority-config editor
 (GET/PUT `/api/config/authority`, route `/admin/authority`), the claim audit-log view
@@ -115,16 +119,17 @@ eligibility/error rules; config edit shape + validation (L1 ≤ L2 etc.); V7 tri
 append-only enforcement; journey 9 on AUTO with the gate effect at the integration layer;
 audit view/reassign API-only; config edits not audit-logged (deferred).
 
-## Starting the review / hardening pass (fresh session)
+## Starting the hardening pass (fresh session)
 
-Slice 7 is done and green but NOT reviewed; per the workflow, run its fresh-context review
-first (deepseek-v4-pro in a new agent session, phase 05, on the slice-7 diff). After that,
-the approved plan's slice list is complete — the remaining workflow phase is 06 (pre-ship
-hardening), not another slice. Docs for review: `docs/plan.md`, `docs/requirements.md`,
-`docs/decisions.md` (2026-09-06 slice-7 entry), `rules/yagni.md` +
-`rules/testing-web.md`; the diff is `git diff <slice-6 tip>..HEAD`.
+Slice 7 is done and reviewed (fresh-context, deepseek-v4-pro — no blocking or should-fix
+findings; optionals O1–O4 applied; see `docs/decisions.md`, 2026-09-06 slice-7 review
+entry). The approved plan's slice list is complete — the remaining workflow phase is 06
+(pre-ship hardening), not another slice. Docs for the hardening pass: `docs/plan.md`,
+`docs/requirements.md` (the non-goals and hardening-relevant rows),
+`docs/decisions.md` (the Deferred sections), and `rules/yagni.md` +
+`rules/testing-web.md`.
 
-**Slice-7 shape recap for the reviewer:** config surface lives in the `routing` package
+**Slice-7 shape recap:** config surface lives in the `routing` package
 (`AuthorityConfigController`/`Service`/`View`, `ConfigNotFoundException`, setters added to
 the previously read-only `AuthorityConfig` entity); claim admin lives in `claim`
 (`ClaimAdminController`/`Service`, `AuditEntryView`, `ClaimAssigneeView`, `ReassignRequest`
@@ -134,24 +139,24 @@ nav link. E2E journey 9 in `queue.spec.ts`. `api.http` documents all four endpoi
 
 ## Test counts
 
-Unit: 54 · Integration: 84 (incl. context smoke) · E2E: 11 · All green: yes (2026-09-06)
+Unit: 54 · Integration: 85 (incl. context smoke) · E2E: 11 · All green: yes (2026-09-06)
 
-- Unit 54 (unchanged this slice — validation/eligibility is integration-tested, like the
+- Unit 54 (unchanged since slice 6 — validation/eligibility is integration-tested, like the
   reserve path): PolicyViewMapper 4 · ClaimClassifier 3 · LoadBalancer 5 ·
   ClaimantClaimView 9 · ClaimNumberFormatter 1 · AuditJson 1 · AuthorityGate 16 ·
   AgingPolicy 15.
-- Integration 84: FnolApi 11 · AssignmentQueue 10 · ClaimWork 15 · ClaimDecision 13 ·
+- Integration 85: FnolApi 11 · AssignmentQueue 10 · ClaimWork 15 · ClaimDecision 13 ·
   EscalationDecision 9 · **AuthorityConfig 7** (slice 7: GET lists seeded rows; SUPERVISOR
   auth matrix on GET+PUT; PUT updates + stores; raising HOME's L1 limit turns a would-be
   escalation into a closure (gate effect, config restored in `finally`); re-routing AUTO to
   L1 makes the next AUTO FNOL classify L1 (restored); PUT validation 400s incl. L1>L2 with
-  the row untouched; unknown product 404) · **ClaimAdmin 9** (slice 7: audit read oldest-
+  the row untouched; unknown product 404) · **ClaimAdmin 10** (slice 7: audit read oldest-
   first with actor + rationale + JSON payloads; audit endpoint SUPERVISOR-only + 404;
   append-only — raw UPDATE/DELETE rejected at the data layer, INSERT still works; reassign
   L1 → the other L1 adjuster + CLAIM_REASSIGNED audit + old holder loses access; reassign to
   L2 re-levels onto the L2 adjuster; decided/ESCALATED_SUPERVISOR/invalid-level 400s; no-L2-
-  provisioned 400 with `finally` restore; 401/403 matrix; unknown claim 404) · Aging 8 ·
-  PolicyApi 1 · context smoke 1.
+  provisioned 400 with `finally` restore; the stranded-UNASSIGNED-claim reassign (review
+  optional O4); 401/403 matrix; unknown claim 404) · Aging 8 · PolicyApi 1 · context smoke 1.
 - E2E 11: skeleton page · journey 1 · rejected-FNOL-stays-on-form · journey 2 (claimant
   status: no reserve/notes on screen or wire) · journey 3 (claim in exactly one L1 queue,
   never L2) · journey 4 (adjuster works a claim) · journey 5 (within-limit approval closes)
@@ -161,14 +166,14 @@ Unit: 54 · Integration: 84 (incl. context smoke) · E2E: 11 · All green: yes (
   supervisor re-routes AUTO to L1 in /admin/authority; a fresh AUTO FNOL lands in exactly
   one L1 queue and never L2; AUTO restored to L2).
 
-Slice 6 is reviewed (fresh-context, deepseek-v4-pro — no blocking or should-fix; see
-`docs/decisions.md`). Slices 4–5 likewise (deepseek-v4-pro; slice-5 no blocking). Slice 7
-is green but unreviewed.
+Slices 6 and 7 are reviewed (fresh-context, deepseek-v4-pro — no blocking or should-fix;
+see `docs/decisions.md`, 2026-09-06 review entries). Slices 4–5 likewise (deepseek-v4-pro;
+slice-5 no blocking). All plan slices are delivered.
 
 ## Blocked on
 
-- Nothing. All plan slices are delivered; slice 7 awaits its fresh-context review, then the
-  hardening phase.
+- Nothing. All plan slices are delivered and reviewed; the remaining phase is 06 (pre-ship
+  hardening), on the user's go.
 
 ## Notes for whoever picks this up
 
@@ -196,10 +201,11 @@ is green but unreviewed.
 - Postgres **jsonb normalizes stored numeric scale**: an audit payload recorded as 1500.00
   reads back as 1500.0 (see the ClaimAdmin audit test comment). Don't assert trailing-zero
   scales on jsonb payloads.
-- E2E journey 9 owns AUTO (POL-20002) in the shared claims_e2e DB: it re-sets AUTO to L1 at
-  its start and restores L2 at its end, so an interrupted run cannot cascade (no other
-  journey touches AUTO). Never point journey-9-style config edits at HOME — journeys 1–8
-  assume HOME routes L1 with 2500/10000 limits.
+- E2E journey 9 owns AUTO (POL-20002) in the shared claims_e2e DB: it re-routes AUTO to L1
+  idempotently at its start (a no-op when an earlier run left it there) and restores L2 at
+  its end, so an interrupted run cannot cascade (no other journey touches AUTO). Never point
+  journey-9-style config edits at HOME — journeys 1–8 assume HOME routes L1 with
+  2500/10000 limits.
 - Scheduler determinism: `AgingScheduler` is `@ConditionalOnProperty("claims.aging.enabled")`
   (main properties: true, cron daily 03:00, `@EnableScheduling`); `ClaimTableResettingTest`
   disables it in claim-writing tests via an inherited `@DynamicPropertySource`. Do NOT

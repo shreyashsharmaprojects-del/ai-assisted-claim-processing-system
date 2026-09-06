@@ -55,8 +55,8 @@ export class Authority {
         rows.map((row) => ({
           productCode: row.productCode,
           routeLevel: row.routeLevel,
-          l1Text: String(row.l1LimitAmount),
-          l2Text: String(row.l2LimitAmount),
+          l1Text: row.l1LimitAmount.toFixed(2),
+          l2Text: row.l2LimitAmount.toFixed(2),
         })),
       );
     } catch {

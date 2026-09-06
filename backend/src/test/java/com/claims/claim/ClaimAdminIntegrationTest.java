@@ -1,6 +1,7 @@
 package com.claims.claim;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,6 +48,7 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     private static final String BOUNDARY = "----ClaimAdminBoundary3";
 
     private static final String SUB_L1_ONE = "10000000-0000-0000-0000-000000000001";
+    private static final String SUB_L1_TWO = "10000000-0000-0000-0000-000000000002";
     private static final String SUB_L2 = "10000000-0000-0000-0000-000000000003";
     private static final String SUB_SUPERVISOR = "10000000-0000-0000-0000-000000000004";
     private static final String CLAIMANT = "sub-claimant-admin";
@@ -286,6 +288,41 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
         }
     }
 
+    @Test
+    void aSupervisorCanReassignAStrandedUnassignedClaim() throws Exception {
+        // A claim left UNASSIGNED by the FNOL provisioning gap (no L1 adjuster existed at
+        // filing time) is exactly what a supervisor reassign rescues — it must be accepted,
+        // handed to the least-loaded L1 adjuster once one exists, and audited with a null
+        // previous holder.
+        String claimNumber;
+        appUsersDeleteL1s();
+        try {
+            claimNumber = fileHomeFnol();
+            assertEquals("UNASSIGNED", jdbcTemplate.queryForObject(
+                    "SELECT status FROM claim WHERE claim_number = ?", String.class, claimNumber),
+                    "with no L1 adjuster provisioned the FNOL stays UNASSIGNED");
+            assertNull(jdbcTemplate.queryForObject(
+                    "SELECT assigned_adjuster_id FROM claim WHERE claim_number = ?",
+                    Long.class, claimNumber));
+        } finally {
+            appUsersRestoreL1s();
+        }
+
+        // Both L1 adjusters are back (fresh ids, same identities); the stranded claim can
+        // now be handed out — the lowest-id adjuster of the level wins the tie at zero open
+        // claims, i.e. the restored adjuster.one (Priya Sharma).
+        HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/reassign",
+                supervisorBearer(), "{\"level\":\"L1\"}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":\"UNDER_REVIEW\""), response.body());
+        assertTrue(response.body().contains("\"level\":\"L1\""), response.body());
+        assertTrue(response.body().contains("\"assignedTo\":\"Priya Sharma\""), response.body());
+
+        String audit = get("/api/claims/" + claimNumber + "/audit", supervisorBearer()).body();
+        assertTrue(audit.contains("\"action\":\"CLAIM_REASSIGNED\""), audit);
+        assertTrue(audit.contains("\"assignedTo\":\"Priya Sharma\""), audit);
+    }
+
     // --- helpers --------------------------------------------------------------
 
     private void approve(String claimNumber, String amount, String rationale) throws Exception {
@@ -332,6 +369,22 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     private void appUsersRestoreL2() {
         jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                 + "VALUES (?, ?, ?, ?)", SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2");
+    }
+
+    /** Removes both L1 adjusters so an FNOL has no one to assign to; pair with restore. */
+    private void appUsersDeleteL1s() {
+        jdbcTemplate.update("DELETE FROM app_user WHERE keycloak_sub IN (?, ?)",
+                SUB_L1_ONE, SUB_L1_TWO);
+    }
+
+    /** Restores the two seeded L1 adjusters (fresh ids, same identities as the V4 seed). */
+    private void appUsersRestoreL1s() {
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                + "VALUES (?, ?, ?, ?)", SUB_L1_ONE, "Priya Sharma",
+                "priya.sharma@claims.test", "L1");
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                + "VALUES (?, ?, ?, ?)", SUB_L1_TWO, "Marcus Webb",
+                "marcus.webb@claims.test", "L1");
     }
 
     private long count(String sql, Object... args) {

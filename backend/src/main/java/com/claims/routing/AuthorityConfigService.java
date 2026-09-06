@@ -45,12 +45,12 @@ public class AuthorityConfigService {
         AuthorityConfig config = configs.findByProductCode(productCode)
                 .orElseThrow(() -> new ConfigNotFoundException(
                         "No authority configuration exists for product " + productCode + "."));
-        // AuthorityConfig is read-only by design elsewhere; the supervisor edit is the one
-        // write path, so the row gains its setters here (slice 7).
+        // The row is a managed entity (fetched in this transaction); dirty checking persists
+        // the setters on commit.
         config.setRouteLevel(routeLevel);
         config.setL1LimitAmount(l1LimitAmount);
         config.setL2LimitAmount(l2LimitAmount);
-        return AuthorityConfigView.from(configs.save(config));
+        return AuthorityConfigView.from(config);
     }
 
     /** @return a user-actionable message, or {@code null} when the three params are legal. */

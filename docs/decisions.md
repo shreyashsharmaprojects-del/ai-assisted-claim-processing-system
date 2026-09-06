@@ -5,6 +5,36 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-7 fresh-context review findings applied (deepseek-v4-pro)
+
+**Context:** A fresh-context review of slice 7 (run on the strong model in a new agent
+session, per phase 05) found **no blocking and no should-fix issues**: the slice satisfies
+its acceptance criteria, every criterion has a test that fails on regression, and the
+scope question ("what was built that the plan didn't ask for?") came back empty beyond the
+brief + recorded decisions. The no-cache config read and the data-layer append-only
+guarantee were verified in code, not just asserted.
+**Applied (optionals, all four accepted by the user):**
+- (O1) The `/admin/authority` editor seeded its amount inputs with `String(number)`, which
+  dropped trailing zeros (2500.00 → "2500"); it now seeds with `.toFixed(2)` so the editor
+  shows the stored NUMERIC(14,2) scale.
+- (O2) Journey-9 wording: the spec comment and both docs said journey 9 "re-sets its own
+  state first"; it actually re-routes AUTO to L1 idempotently at its start and restores L2
+  at its end. Reworded in `queue.spec.ts`, this entry's sibling slice-7 entry, and
+  `docs/progress.md`. Wording only — the safety property (AUTO untouched by other
+  journeys; an interrupted run self-heals) was already correct.
+- (O3) `AuthorityConfigService.update` dropped its redundant `configs.save(config)` — the
+  row is a managed entity and dirty checking persists the setters on commit. Behavior
+  unchanged (re-verified by the config integration class).
+- (O4) New integration test `aSupervisorCanReassignAStrandedUnassignedClaim`
+  (ClaimAdminIntegrationTest): an FNOL left UNASSIGNED by the no-L1-adjuster provisioning
+  gap is reassigned to the least-loaded L1 adjuster once adjusters are restored, with the
+  null previous-holder audit branch pinned (ClaimAdmin 9 → 10 tests).
+**Verified:** reviewer re-ran the targeted slice-7 classes (16 tests at review time) +
+frontend build, both green; after the optionals the full backend suite (139 tests incl.
+the new 10th ClaimAdmin test) and frontend build were re-run green.
+
+---
+
 ### 2026-09-06 — Slice-7 decisions: config editor, reassign, and the immutable audit view
 
 **Context:** docs/plan.md slice 7 left several shape questions open ("decide and record"):
@@ -51,8 +81,9 @@ how E2E journey 9 edits config without poisoning the shared e2e database for jou
   the shared claims_e2e database accumulates across runs; AUTO is seeded (route L2) and
   used by no other journey. Journey 9 re-routes AUTO to L1 through `/admin/authority`,
   files a fresh AUTO FNOL and asserts it lands in exactly one L1 queue and never the L2
-  queue (classification reflected end to end), then restores AUTO to L2. It re-sets its own
-  state first, so an interrupted run cannot cascade into other journeys. The **gate-limit
+  queue (classification reflected end to end), then restores AUTO to L2. Journey 9 re-routes
+  AUTO to L1 idempotently at its start (a no-op when an earlier run left it there), so an
+  interrupted run cannot cascade into other journeys. The **gate-limit
   effect stays at the integration layer** (raising HOME's L1 limit turns a would-be
   escalation into a closure) — the aging-E2E precedent: browser E2E covers the
   user-visible classification half; the money-threshold math is integration territory and
