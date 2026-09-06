@@ -5,6 +5,32 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-06 — Slice-6 fresh-context review findings applied (deepseek-v4-pro)
+
+**Context:** A fresh-context review of slice 6 (run on the strong model in a new agent
+session, per phase 05) found **no blocking and no should-fix issues**: the slice satisfies
+its acceptance criteria, every criterion has a test that fails on regression, and the
+scope question ("what was built that the plan didn't ask for?") came back empty beyond the
+brief + recorded decisions.
+**Applied (optional):** (O1) The `ClaimantClaimView` javadoc's first paragraph listed
+"remarks" among the internal fields the view "structurally omits", which reads
+ambiguously next to the newly exposed `decisionRemarks` component — it meant the
+claimant's FNOL remarks. The list item now says "claimant remarks". Comment-only; no
+re-verification needed.
+**Deferred (optional, no behavioral risk):** (O2) The journey-8 E2E wire-leak capture
+(`watchClaimantWire` in `queue.spec.ts`) reads each claimant-status response in an
+un-awaited `page.on('response')` handler and asserts the captured list only at the end —
+mirrors the pre-existing journey-2 pattern and cannot produce false *failures*, but it is
+a latent false *negative* (a body not yet read would silently miss a leak; the real wall
+guarantee lives in the deterministic integration/structural assertions). Build it when
+`queue.spec.ts` is next touched: collect the status response via an awaited
+`page.waitForResponse`/route capture instead.
+**Verified:** reviewer re-ran the targeted slice-6 classes (31 tests: ClaimantClaimView 9,
+ClaimDecision 13, EscalationDecision 9) + the frontend build, both green, and
+cross-checked the Flow-5 acceptance-criterion table against the tests.
+
+---
+
 ### 2026-09-06 — Slice-6 decisions: the closed claim's claimant view (decision display)
 
 **Context:** Slice 4 deferred the claimant-view decision fields here deliberately, and the

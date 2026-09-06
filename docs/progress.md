@@ -42,9 +42,14 @@ per closure actor to those same tests.
 
 Backend **122 tests** (54 unit + 68 integration) and **10 E2E journeys** — all green
 (2026-09-06, full local run: `mvn test` + Playwright against compose Keycloak/Mailpit).
-Slice 6 has NOT yet had its fresh-context review (that belongs to a new session on the
-strong model, per the workflow). Next up: **Slice 7 (compliance & admin)** — start only with
-the user's go.
+Slice 6 went through its fresh-context review (2026-09-06, deepseek-v4-pro in a new agent
+session, per the workflow): **no blocking and no should-fix findings**; the optional O1
+(javadoc clarity — the view's opening comment listed bare "remarks" next to the new
+`decisionRemarks` component; it now says "claimant remarks") was applied as a comment-only
+commit, and the optional O2 (journey-8 E2E wire-capture handler is un-awaited, inherited
+from the journey-2 pattern — latent false-negative, not a flake) was deferred to when
+`queue.spec.ts` is next touched. Next up: **Slice 7 (compliance & admin)** — start only
+with the user's go.
 
 ## Run it (canonical — Docker)
 
@@ -93,7 +98,7 @@ JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm --prefix e2e test
 | 3 | Adjuster works the claim & the visibility wall | **done** (2026-09-06) | yes — fresh-context agent review; should-fix S1–S6 applied and re-verified |
 | 4 | Decision & the authority gate | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; B1 + S1–S2 + O1–O4 applied and re-verified |
 | 5 | Supervisor escalation & aging | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking; should-fix S1 applied, optionals deferred |
-| 6 | Claimant decision & notification | **done** (2026-09-06) | no — review belongs to a fresh session |
+| 6 | Claimant decision & notification | **done, reviewed** (2026-09-06) | yes — fresh-context review on deepseek-v4-pro; no blocking/should-fix; optional O1 applied, O2 deferred |
 | 7 | Compliance & admin | not started | no |
 
 Slice 6 delivered, per `docs/plan.md`: the claimant-facing half of Flow 5 — the CLOSED
@@ -114,11 +119,12 @@ duplicated, and the closed-claim access rule re-pinned.
 
 ## Starting Slice 7 (fresh session)
 
-Read first: `docs/plan.md` (slice 7 + the API-table rows it adds + the route table),
+Slice 6 is done and reviewed (fresh-context, deepseek-v4-pro — no blocking or should-fix
+findings; optional O1 applied as a comment-only commit, O2 deferred). Read first:
+`docs/plan.md` (slice 7 + the API-table rows it adds + the route table),
 `docs/requirements.md` (Flow 7 / compliance rows), `docs/decisions.md` (2026-09-06 slice-6
-and slice-4/5 entries), and `rules/yagni.md` + `rules/testing-web.md`. Slice 6 is done and
-green but has NOT been reviewed; per the workflow, review it first in a fresh-context session
-on the strong model (deepseek-v4-pro) before or alongside slice 7.
+and slice-4/5 entries), and `rules/yagni.md` + `rules/testing-web.md`. Slice 7 is ready to
+start on the user's go.
 
 **Slice-7 scope (from the plan, with the current state of each piece):**
 1. **Compliance & admin** — supervisor edits authority config, views the audit log, and
@@ -177,13 +183,14 @@ Unit: 54 · Integration: 68 (incl. context smoke) · E2E: 10 · All green: yes (
   adjuster-approval fixture, the remarks verbatim on an adjuster-denial fixture — with
   journey-2-style wire-leak capture on the closed claims).
 
-Slice 6 is green but unreviewed. Slices 4–5 went through their fresh-context reviews (see
-`docs/decisions.md`, 2026-09-06 review entries; slice-5 no blocking findings).
+Slice 6 went through its fresh-context review (see `docs/decisions.md`, 2026-09-06
+slice-6 review entry): no blocking or should-fix findings; optional O1 applied as a
+comment-only commit, O2 deferred. Slices 4–5 likewise had their fresh-context reviews
+(deepseek-v4-pro; slice-5 no blocking findings).
 
 ## Blocked on
 
-- Nothing. Slice 6 is done and green; slice 7 awaits the user's go (and slice 6's
-  fresh-context review comes first, in a new session).
+- Nothing. Slice 6 is done and reviewed; slice 7 awaits the user's go.
 
 ## Notes for whoever picks this up
 
