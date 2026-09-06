@@ -63,10 +63,10 @@ Unit: 12 · Integration: 13 (incl. context smoke) · E2E: 3 · All green: yes (2
 
 ## Blocked on
 
-- Nothing. Slice 2 awaits the user's go. CI (`.github/workflows/ci.yml`) is authored for
-  the full compose stack but has never run — the repo still has no git remote; the first
-  push should be watched (the workflow's compose/Keycloak steps were fixed during review
-  but remain unexecuted until then).
+- Nothing. Slice 2 awaits the user's go. CI is **green**: the repo was pushed to
+  `https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system`
+  (public, remote `origin`, branch `main`) and the first GitHub Actions run passed all
+  three jobs (backend Testcontainers, frontend build, E2E full compose stack).
 
 ## Notes for whoever picks this up
 
