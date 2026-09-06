@@ -18,7 +18,14 @@ import org.springframework.security.web.SecurityFilterChain;
 /**
  * OIDC resource server. Roles come from the Keycloak realm ({@code realm_access.roles}:
  * claimant, adjuster_l1, adjuster_l2, supervisor) and map to ROLE_* authorities.
- * Slice 1 protects the FNOL endpoint for CLAIMANT; the skeleton page stays public.
+ *
+ * <p>The URL rules encode the whole surface's authorization matrix: the claimant surface
+ * (FNOL + own-claim status), the internal work surface (queue, full view, reserve, notes,
+ * attachments), the decision endpoints (assigned adjuster vs supervisor escalation), and
+ * the supervisor admin surface (escalation queue, authority config, reassign, audit).
+ * Only {@code GET /api/policies} and the health endpoint are public; everything else is
+ * authenticated, and object-level authorization (404 for non-assignee / cross-tenant)
+ * lives in the services, not here.
  */
 @Configuration
 @EnableWebSecurity
@@ -66,6 +73,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .anyRequest().authenticated())
                 // CSRF is disabled because this is a stateless bearer-token API: there are no
                 // cookies to forge, so CSRF protection would only reject legitimate clients.

@@ -45,4 +45,16 @@ class PolicyApiIntegrationTest {
                 "holder email must never reach the public policy view: " + body);
         assertFalse(body.contains("sum_insured"), "coverage must never reach the public policy view: " + body);
     }
+
+    @Test
+    void healthEndpointIsPublicAndReportsUp() throws Exception {
+        int port = Integer.parseInt(environment.getProperty("local.server.port"));
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/health")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        // Public liveness probe: no auth required, reports UP.
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("UP"), "health response should report UP: " + response.body());
+    }
 }
