@@ -1,0 +1,69 @@
+<main>
+  <h1>Report a loss</h1>
+
+  @if (result(); as view) {
+    <section class="result" data-testid="fnol-result">
+      <h2>Your claim has been received</h2>
+      <p>
+        Your claim number is
+        <strong data-testid="claim-number">{{ view.claimNumber }}</strong>.
+      </p>
+      <ul data-testid="claim-steps">
+        @for (step of view.steps; track step) {
+          <li>{{ step }}</li>
+        }
+      </ul>
+      <p class="muted">A confirmation email will be sent to the policyholder address.</p>
+    </section>
+  } @else {
+    @if (error(); as message) {
+      <p class="error" data-testid="fnol-error" role="alert">{{ message }}</p>
+    }
+
+    <form class="form-card" (ngSubmit)="submit()">
+      <fieldset>
+        <legend>Your policy</legend>
+
+        <label for="policyNumber">Policy number</label>
+        <input id="policyNumber" name="policyNumber" type="text" data-testid="fnol-policy-number"
+               [(ngModel)]="policyNumber" autocomplete="off" required />
+
+        <label for="holderName">Policyholder name</label>
+        <input id="holderName" name="holderName" type="text" data-testid="fnol-holder-name"
+               [(ngModel)]="holderName" required />
+
+        <label for="holderEmail">Policyholder email</label>
+        <input id="holderEmail" name="holderEmail" type="email" data-testid="fnol-holder-email"
+               [(ngModel)]="holderEmail" required />
+      </fieldset>
+
+      <fieldset>
+        <legend>What happened</legend>
+
+        <label for="lossDate">Date of loss</label>
+        <input id="lossDate" name="lossDate" type="date" data-testid="fnol-loss-date"
+               [(ngModel)]="lossDate" required />
+
+        <label for="lossLocation">Location</label>
+        <input id="lossLocation" name="lossLocation" type="text" data-testid="fnol-loss-location"
+               [(ngModel)]="lossLocation" required />
+
+        <label for="lossDescription">What happened?</label>
+        <textarea id="lossDescription" name="lossDescription" rows="4"
+                  data-testid="fnol-loss-description" [(ngModel)]="lossDescription" required></textarea>
+
+        <label for="remarks">Remarks (optional)</label>
+        <textarea id="remarks" name="remarks" rows="2" data-testid="fnol-remarks"
+                  [(ngModel)]="remarks"></textarea>
+
+        <label for="photos">Evidence photos</label>
+        <input id="photos" name="photos" type="file" accept="image/*" multiple
+               data-testid="fnol-photos" (change)="onPhotosSelected($event)" />
+      </fieldset>
+
+      <button type="submit" data-testid="fnol-submit" [disabled]="submitting()">
+        {{ submitting() ? 'Submitting…' : 'Submit claim' }}
+      </button>
+    </form>
+  }
+</main>

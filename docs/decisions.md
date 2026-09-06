@@ -1,0 +1,283 @@
+# Decisions
+
+Short records of choices that would otherwise get re-argued, plus the things we decided
+not to build. Newest first.
+
+## Decisions
+
+### 2026-09-06 — Slice-1 review fixes (fresh-context agent review)
+
+**Context:** A fresh-context review of slice 1 found one blocking CI issue and eight
+should-fix items. All were accepted and fixed; this entry records the consequential ones
+and the optional items deliberately left open.
+**Fixed:** CI E2E job now starts Keycloak (`docker compose up -d db mailpit keycloak` +
+realm poll — previously Keycloak never started, first run would be red). E2E backend runs
+on a **dedicated port 8082** with `claims_e2e` env and `reuseExistingServer: false`, so a
+developer's dev-claims backend on 8081 can never absorb E2E writes (frontend uses
+`proxy.e2e.conf.json`). Policy numbers are matched leniently (trim + uppercase) with
+holder details case-insensitive. Photo validation happens before any file write, and the
+claim upload directory is deleted when the transaction rolls back. Multipart limits sit
+above the app-level photo caps so the app (not the multipart layer) returns readable
+errors; `MaxUploadSizeExceededException` maps to a 400. Audit payloads are built with
+Jackson (Boot 4 = Jackson 3, `tools.jackson`) instead of string concatenation.
+`/api/policies` permitAll narrowed to GET. The integration test now asserts internal
+fields (`claimantSub`, `policyId`, `lossDescription`, `level`) are absent from the wire
+body, and a wrong-role (adjuster) 403 test pins the CLAIMANT mapping. E2E gained the
+rejected-FNOL-stays-on-form journey (E2E is no longer fully parallel — concurrent Keycloak
+registration flows are flaky). Dead code removed: unused `mockito-core` dependency,
+`ClaimRepository.findByClaimNumber` (no caller), `logout()` in the SPA auth service.
+**Deferred / open:** (a) attachment serving guidance for slice 3 — serve with
+`Content-Disposition: attachment` and consider magic-byte sniffing rather than trusting
+the client content type (stored-XSS vector when photos can be rendered); (b) Keycloak
+compose healthcheck — CI polls the realm endpoint instead; add a healthcheck if `--wait`
+should cover Keycloak; (c) `api.http` FNOL template is unexecuted until a token is
+pasted — verify once against a running app.
+**Revisit if:** any listed item becomes load-bearing in its slice.
+
+---
+
+### 2026-09-06 — Slice-1 schema: vertical, with two plan additions
+
+**Context:** FNOL needed a `claim` table, an `attachment` table, and `authority_config`
+(route level per product code). The approved plan model lists far more claim/authority
+columns than slice 1 writes.
+**Decision:** Each table carries only the columns the slice writes; columns the plan
+specifies for later slices arrive through later ALTER migrations. Two additions beyond
+the plan model, both approved: `claim.claimant_remarks` TEXT (Flow 1 says the claimant
+"adds remarks"; the plan model had no home for them — internal, never on claimant-facing
+surfaces) and a `claim_number_seq` used for `CLM-%06d` claim numbers.
+**Why:** Vertical slicing keeps schema churn matched to code; remarks need a home today.
+**Rejected:** Full plan schema now (dead columns); remarks folded into loss_description
+(loses the distinction the form implies).
+**Revisit if:** a later slice wants a different claim-number format (migration would add a
+new sequence/column, never edit existing rows).
+
+---
+
+### 2026-09-06 — FNOL email is best-effort, after commit
+
+**Context:** Flow 1 requires the FNOL email; claims must never be lost to a mail outage.
+**Decision:** The email sends after the claim transaction commits, in the controller; any
+send failure is logged and the claim stands. Tests assert delivery against Mailpit
+(Testcontainers in the integration suite — the plan's captured mailbox; Mailpit also runs
+in compose for dev).
+**Why:** Claim creation is the regulated event; a notification failure must not roll it back.
+**Rejected:** Sending inside the claim transaction (email failure rolls back a valid claim).
+**Revisit if:** email delivery guarantees are required (then a queue/retry would be the answer).
+
+---
+
+### 2026-09-06 — Keycloak wiring lands in slice 1 (resolves C2 deferral)
+
+**Context:** C2 deferred the Keycloak dev container to the slice that wires auth.
+**Decision:** Slice 1 wires it: compose runs Keycloak 26.3 (host :8090; host :8080 is taken
+by an unrelated process) importing the `claims` realm from `keycloak/realm-export.json`
+(claimant self-registration on; realm roles claimant/adjuster_l1/adjuster_l2/supervisor;
+self-registered users default to `claimant`). Spring Boot is an OIDC resource server
+(issuer `http://localhost:8090/realms/claims`) mapping `realm_access.roles` to `ROLE_*`;
+Angular uses the public SPA client `claims-frontend` (authorization-code + PKCE).
+`POST /api/claims` requires `ROLE_CLAIMANT`. Integration tests mint HS256-signed test
+JWTs (no Keycloak needed in unit/integration runs); E2E registers through the real realm.
+**Why:** Retires the stack's riskiest unknown with real verification, per plan sequencing.
+**Rejected:** Mock-only auth in tests (would not exercise the realm import or SPA flow).
+**Revisit if:** token lifetimes, refresh handling, or internal-user provisioning need work
+(slice 2+ provisions adjusters).
+
+---
+
+### 2026-09-06 — E2E runs on a dedicated database (implements S1 deferral)
+
+**Context:** The S1 review deferral said to give E2E its own database once journeys write.
+**Decision:** Slice 1 journeys write, so this is now built: compose bootstraps a
+`claims_e2e` database (`docker/db-init`), and Playwright boots the backend with
+`SPRING_DATASOURCE_URL` pointing at `claims_e2e` (Flyway migrates it on boot). Dev
+`claims` data is never touched by E2E. CI starts the full compose stack (db + Mailpit +
+Keycloak) for the E2E job.
+**Why:** E2E creates claims; the old pattern (shared dev DB) was the exact bug S1 flagged.
+**Rejected:** Continuing against the dev DB now that journeys write.
+**Revisit if:** nothing — this is the standing arrangement.
+
+---
+
+### 2026-09-03 — Slice-0 audit-log writer timing: slice 1, not slice 4 (C1)
+
+**Context:** The plan says the audit-log mechanism is "laid down in the skeleton, not a bolted-on slice," and requirements say every status change and every decision is logged. Status changes begin at FNOL (slice 1: claim created) and assignment (slice 2), before any decision exists.
+**Decision:** Slice 0 ships the `audit_log` table DDL only. The append-only writer service lands in **slice 1** with the first write — emitting the "claim created" entry — and is used by every later state change. It must not wait for slice 4's first decision, or slices 1–3 ship unlogged and need a retrofit.
+**Why:** The skeleton has no writes, so a writer would be dead code now; but it must exist before slice 1's first write, not before slice 4's first decision.
+**Rejected:** A slice-0 writer with no caller (speculative); a writer deferred to slice 4 (unlogged slices 1–3).
+**Revisit if:** nothing — timing is fixed by the slice order in `docs/plan.md`.
+
+---
+
+### 2026-09-03 — Integration test database: Testcontainers, with a dedicated fallback (C3)
+
+**Context:** This sandbox has no usable Docker daemon, so Testcontainers cannot run here. Integration tests still must run against a real PostgreSQL (per the existing Testcontainers decision — never H2).
+**Decision:** Integration tests use a Testcontainers `postgres:16-alpine` container whenever Docker is available (CI, normal dev machines). When it is not, `TestcontainersConfiguration` falls back to a **dedicated** test database from `TEST_DB_URL` (default `jdbc:postgresql://localhost:5432/claims_test`, user `claims`), never the dev `claims` database — integration tests truncate between tests and must not touch dev data. Local verification here ran PostgreSQL 16.15 from downloaded binaries (`/tmp/pg16`) serving both `claims` and `claims_test`.
+**Why:** One test code path, real Postgres in both modes, zero risk to dev data.
+**Rejected:** Pointing the fallback at the dev database (tests truncate it); H2.
+**Revisit if:** Docker becomes available in this environment (then the fallback is simply never taken).
+
+---
+
+### 2026-09-03 — Authority is per-claim; no aggregate exposure cap
+
+**Context:** The gate needed an unambiguous operand (indemnity vs payment, per-claim vs per-adjuster).
+**Decision:** The gate compares the claim's single `indemnity_amount` against the acting level's limit; `payment.amount == indemnity_amount` (one payment per claim). No per-adjuster aggregate exposure cap in v1.
+**Why:** One payment per claim makes per-claim and per-payment identical; no aggregate cap was in requirements.
+**Rejected:** A per-adjuster running-total cap (not requested).
+**Revisit if:** partial payments or aggregate limits become requirements.
+
+---
+
+### 2026-09-03 — Classification via per-product-code route_level
+
+**Context:** Requirements said classification uses "estimated amount and complexity" keyed on product code, but the claimant supplies neither at FNOL.
+**Decision:** `authority_config` holds `route_level` (L1|L2) per product code — the "complexity" routing parameter — plus `l1_limit_amount`/`l2_limit_amount` as the monetary thresholds evaluated at decision time.
+**Why:** No amount is available at FNOL; the product code's routing level is the only honest classification input.
+**Rejected:** Claimant-entered estimated amount at FNOL (not in the flow); free-text complexity field.
+**Revisit if:** a real estimate/complexity input is introduced at intake.
+
+---
+
+### 2026-09-03 — Escalation-to-L2 is system re-assignment, not a new status
+
+**Context:** `ESCALATED_L2` had no API surface or assignment rule.
+**Decision:** An above-level (but ≤ L2-limit) decision re-assigns the claim to the least-loaded L2 adjuster; level → L2; status returns to `UNDER_REVIEW`. Only above-L2 becomes `ESCALATED_SUPERVISOR`.
+**Why:** Reuses the existing assignment rule; the original adjuster structurally can't self-approve (level changes, assignee changes).
+**Rejected:** A separate ESCALATED_L2 status + L2 escalation queue (more states, more surface).
+**Revisit if:** L2 pickup needs its own queue distinct from normal caseload.
+
+---
+
+### 2026-09-03 — Unauthorized access returns 404
+
+**Context:** Cross-tenant and non-assignee access needed a defined response.
+**Decision:** 404 (not 403) for any claim the caller has no right to see.
+**Why:** 403 reveals that a claim number exists — a leak through the visibility wall.
+**Rejected:** 403 (leaks existence).
+**Revisit if:** a requirement emerges to disclose existence (unlikely).
+
+---
+
+### 2026-09-03 — Load-balance tie-break: lowest user id
+
+**Context:** "Fewest open claims" is under-determined when adjusters tie.
+**Decision:** Assign to the level-appropriate adjuster with the fewest open claims; ties broken by lowest `app_user.id`.
+**Why:** Deterministic, testable, no extra state.
+**Rejected:** Random, oldest assignment (nondeterministic/hard to assert).
+**Revisit if:** a business preference for tie-breaking emerges.
+
+---
+
+### 2026-09-03 — Roles live in Keycloak only; no in-app user provisioning
+
+**Context:** Needed three roles plus a per-adjuster level for routing and the authority gate. The plan initially had a local `app_user.level` column and a supervisor provisioning UI.
+**Decision:** Keycloak is the single source of truth for identity and roles (`CLAIMANT`, `ADJUSTER_L1`, `ADJUSTER_L2`, `SUPERVISOR`). `app_user` is a thin cache (subject → display name/email) auto-populated on login, only so claims can hold an assignee FK.
+**Why:** Avoids two sources of truth that drift; cuts a whole screen and endpoint surface from v1.
+**Rejected:** Local level column + `/admin/users` provisioning UI.
+**Revisit if:** a non-Keycloak internal identity source appears, or claims must be assigned to staff before they've logged in once.
+
+---
+
+### 2026-09-03 — FNOL policy identification: match number + holder details
+
+**Context:** Claimant must file against a seeded policy, but there's no policy-admin integration to verify ownership.
+**Decision:** Claimant enters policy number + policyholder name/email; the system matches against the seeded policy row and rejects on mismatch.
+**Why:** One match field keeps it honest without building an integration.
+**Rejected:** No verification (pick any policy — pure demo); supervisor pre-links identities (manual).
+**Revisit if:** a policy-admin integration arrives.
+
+---
+
+### 2026-09-03 — Photo storage: filesystem
+
+**Context:** Claimant uploads evidence photos at FNOL; hosting unspecified.
+**Decision:** Files on disk (configurable upload dir), path stored in DB.
+**Why:** Small book; photos are evidence, not a CDN; keeps Postgres lean and streaming simple.
+**Rejected:** Postgres bytea/LO (self-contained but bloats DB and streams poorly); S3/MinIO (dependency we don't need yet).
+**Revisit if:** hosting moves somewhere ephemeral or photo volume spikes.
+
+---
+
+### 2026-09-03 — SPA↔backend auth: public SPA with PKCE + resource server
+
+**Context:** Angular SPA + Spring Boot + Keycloak.
+**Decision:** Angular holds a Keycloak access token (public client, PKCE) and calls Spring Boot as a resource server that validates the JWT and maps roles.
+**Why:** Standard, fewer moving parts; nothing worth protecting beyond PKCE here.
+**Rejected:** BFF with server sessions (extra hop + state).
+**Revisit if:** a client secret becomes necessary or a second non-browser client appears.
+
+---
+
+### 2026-09-03 — Integration test DB: Testcontainers Postgres
+
+**Context:** Integration tests need a real database per the test strategy.
+**Decision:** Testcontainers spins a real Postgres per test class; schema from Flyway; reset by truncate.
+**Why:** Real Postgres behavior (constraints, JSONB, uniqueness) instead of H2's approximation.
+**Rejected:** H2 in Postgres-compat mode (lies about Postgres).
+**Revisit if:** container runtime unavailable in CI.
+
+---
+
+## Deferred
+
+### 2026-09-03 — E2E database isolation (review finding S1, follow-up)
+
+**Considered:** Giving the Playwright-booted backend its own isolated database (separate
+Spring profile or `claims_e2e`) so E2E never touches dev data, per review finding S1.
+**Why not now:** Slice-0 E2E is read-only (asserts the seeded policy row is visible) and
+the CI E2E job already runs against an ephemeral per-run Postgres service container. The
+spec no longer asserts an exact row count, so future seed additions won't break it. Real
+pollution risk starts when E2E journeys first *write* (slice 1 FNOL creates claims).
+**Build it when:** slice 1 adds E2E journeys that create data — give E2E its own database
+then, not before.
+
+---
+
+### 2026-09-03 — Hardcoded dev credentials (review finding O7)
+
+**Considered:** Moving `claims`/`claims` out of `application.properties` and
+`docker-compose.yml` into environment variables.
+**Why not now:** Local-dev-only skeleton; both files agree on the same value and nothing
+non-local deploys yet. Secrets-in-env is enforced later by the hardening phase checklist.
+**Build it when:** any non-local deployment or shared environment appears.
+
+---
+
+### 2026-09-03 — Keycloak dev container (C2)
+
+**Considered:** Adding a Keycloak service with a realm import to `docker-compose.yml` during slice 0 ("Keycloak wired" in the plan's slice-0 line).
+**Why not now:** `03-skeleton.md` says don't build auth, and the slice-0 read path needs only Postgres. A Keycloak container nothing connects to is ahead of schedule.
+**Build it when:** slice 1 wires real auth (claimant registration/login, Spring Security resource server). Keep `docker-compose.yml` Postgres-only until then.
+
+---
+
+### 2026-09-03 — Reopening / appeals
+
+**Considered:** Allow a decided claim to be reopened (appeals/reconsideration).
+**Why not now:** One-way flow to closure is much simpler; no appeal process defined yet.
+**Build it when:** an appeal/reconsideration process is actually specified.
+
+---
+
+### 2026-09-03 — Multiple / partial payments per claim
+
+**Considered:** Partial payments (initial + supplement) against one claim.
+**Why not now:** Complicates the authority gate (cumulative totals) and closure; v1 is one payment per claim.
+**Build it when:** supplements/partial payments become a real business need.
+
+---
+
+### 2026-09-03 — SMS notifications, mobile app, real-time updates
+
+**Considered:** SMS delivery, a native mobile app, websocket live updates.
+**Why not now:** Email-only + responsive web + pull-to-refresh covers v1; each adds surface and flake.
+**Build it when:** claimants demonstrably need push or live updates, or field adjusters need offline/native.
+
+---
+
+### 2026-09-03 — Object storage (S3/MinIO)
+
+**Considered:** Storing evidence photos in object storage.
+**Why not now:** One storage need (claimant photos), no scale problem yet.
+**Build it when:** hosting is ephemeral or photo volume grows.

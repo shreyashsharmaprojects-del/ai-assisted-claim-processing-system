@@ -1,0 +1,43 @@
+# Working examples for the API. Load in VS Code (REST Client) or IntelliJ (HTTP Client).
+# The backend runs on :8081 in dev; the SPA proxy also forwards /api there.
+@host = http://localhost:8081
+
+### Walking-skeleton page data: seeded policies (public)
+GET {{host}}/api/policies
+
+### FNOL — file a claim (CLAIMANT only, 401 without a token)
+# Auth: the SPA signs the user in via Keycloak (authorization-code + PKCE, public client
+# "claims-frontend", realm "claims", http://localhost:8090). There is no password grant,
+# so for ad-hoc requests grab an access token from a browser session on http://localhost:4200
+# (DevTools -> Network -> any /api/claims request -> Authorization header) and paste it below.
+# @token = <paste access token here>
+POST {{host}}/api/claims
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----ApiHttpBoundary
+
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="policyNumber"\r
+\r
+POL-10001\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="holderName"\r
+\r
+Ada Lovelace\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="holderEmail"\r
+\r
+ada.lovelace@example.test\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="lossDate"\r
+\r
+2026-09-06\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="lossLocation"\r
+\r
+London\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="lossDescription"\r
+\r
+Kitchen flooded after a pipe burst.\r
+# (photos are optional — add a part like the text ones above, name "photos", to upload)
+------ApiHttpBoundary--\r

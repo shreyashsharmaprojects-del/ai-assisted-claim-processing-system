@@ -1,0 +1,76 @@
+{
+  "realm": "claims",
+  "enabled": true,
+  "displayName": "Claims Processing",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "defaultRole": {
+    "id": "default-roles-claims",
+    "name": "default-roles-claims",
+    "description": "${role_default-roles}",
+    "composite": true,
+    "clientRole": false,
+    "containerId": "claims"
+  },
+  "roles": {
+    "realm": [
+      {
+        "id": "claimant",
+        "name": "claimant",
+        "description": "Self-registered claimant"
+      },
+      {
+        "id": "adjuster_l1",
+        "name": "adjuster_l1"
+      },
+      {
+        "id": "adjuster_l2",
+        "name": "adjuster_l2"
+      },
+      {
+        "id": "supervisor",
+        "name": "supervisor"
+      },
+      {
+        "id": "default-roles-claims",
+        "name": "default-roles-claims",
+        "description": "${role_default-roles}",
+        "composite": true,
+        "clientRole": false,
+        "containerId": "claims",
+        "composites": {
+          "realm": [
+            "claimant"
+          ]
+        }
+      }
+    ],
+    "client": {}
+  },
+  "clients": [
+    {
+      "clientId": "claims-frontend",
+      "name": "Claims SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:4200/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:4200/*"
+      }
+    }
+  ]
+}

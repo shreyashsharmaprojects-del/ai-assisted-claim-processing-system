@@ -1,0 +1,20 @@
+<main>
+  <h1>Claims Processing System</h1>
+  <p class="tagline">Report a loss or track your claim — sign in to file a claim.</p>
+
+  @if (error(); as message) {
+    <p data-testid="policy-error">{{ message }}</p>
+  } @else {
+    <ul data-testid="policy-list">
+      @for (policy of policies(); track policy.policyNumber) {
+        <li data-testid="policy-row">
+          <span class="number" data-testid="policy-number">{{ policy.policyNumber }}</span>
+          <span data-testid="policy-product">{{ policy.productCode }}</span>
+          <span data-testid="policy-holder">{{ policy.holderName }}</span>
+        </li>
+      } @empty {
+        <li data-testid="policy-empty">No policies found.</li>
+      }
+    </ul>
+  }
+</main>

@@ -1,0 +1,13 @@
+{
+  "name": "claims-processing-system",
+  "private": true,
+  "scripts": {
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "backend": "mvn -f backend/pom.xml spring-boot:run",
+    "backend:test": "mvn -f backend/pom.xml test",
+    "frontend": "npm --prefix frontend start",
+    "frontend:build": "npm --prefix frontend run build",
+    "e2e": "npm --prefix e2e test"
+  }
+}
