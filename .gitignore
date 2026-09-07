@@ -21,3 +21,9 @@ uploads/
 # Local secrets and generated Keycloak realm (copy .env.example -> .env, then render)
 .env
 keycloak/realm-export.json
+
+# Python PDF build libs (reportlab lives here; recreated by pip --target=.pylibs)
+.pylibs/
+
+# Demo preview renders (regenerate: pdftoppm -png -r 55 demo/ClaimFlow-Demo.pdf demo/preview-page)
+demo/preview-*
