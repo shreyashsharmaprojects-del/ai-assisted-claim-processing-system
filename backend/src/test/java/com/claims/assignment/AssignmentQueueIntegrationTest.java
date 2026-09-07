@@ -122,13 +122,17 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
 
     @Test
     void l1FnosAreLoadBalancedWithLowestIdAsTieBreak() throws Exception {
+        Long aisha = appUsers
+                .findByKeycloakSub("10000000-0000-0000-0000-000000000005").orElseThrow()
+                .getId();
         List<Long> assignees = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             String claimNumber = fileHomeFnol("sub-claimant-" + i);
             assignees.add(assigneeOf(claimNumber));
         }
-        // Equal loads -> lowest id; then the other is least loaded; then equal again.
-        assertEquals(List.of(l1One, l1Two, l1One), assignees);
+        // Three L1 adjusters now (V2-1 staff): equal loads -> lowest id, then the next
+        // least loaded, then the third. The tie-break rule itself is unchanged.
+        assertEquals(List.of(l1One, l1Two, aisha), assignees);
     }
 
     @Test
@@ -199,8 +203,9 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
         // Simulate a provisioning gap: no L2 adjuster exists, so an L2 claim cannot be
         // assigned. The claim must still be created (FNOL number returned) and stay
         // UNASSIGNED — with no CLAIM_ASSIGNED row and no assignment email.
-        AppUser l2Adjuster = appUsers.findByKeycloakSub(SUB_L2).orElseThrow();
-        appUsers.delete(l2Adjuster);
+        List<AppUser> l2s = appUsers.findAll().stream()
+                .filter(user -> "L2".equals(user.getLevel())).toList();
+        appUsers.deleteAll(l2s);
         try {
             HttpResponse<String> response = post("/api/claims", claimantBearer("sub-claimant-gap"),
                     fnolBody("POL-20002", "Grace Hopper", "grace.hopper@example.test"));
@@ -221,9 +226,11 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
             assertTrue(!inbox.contains("is now with an adjuster"),
                     "no assignment email when there is no assignee: " + inbox);
         } finally {
-            // Restore the seeded L2 adjuster so later tests see the full staff (fresh id,
-            // same identity — the V4 seed state this class's contract relies on).
+            // Restore the seeded L2 adjusters so later tests see the full staff (fresh
+            // ids, same identities — the V4/V13 seed state this class relies on).
             appUsers.save(new AppUser(SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2"));
+            appUsers.save(new AppUser("10000000-0000-0000-0000-000000000006", "Rahul Singh",
+                    "rahul.singh@claims.test", "L2"));
         }
     }
 
@@ -240,27 +247,32 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
             for (JsonNode role : user.path("realmRoles")) {
                 roles.add(role.asText());
             }
-            if (roles.contains("adjuster_l1") || roles.contains("adjuster_l2")) {
+            if (roles.contains("adjuster_l1") || roles.contains("adjuster_l2")
+                    || roles.contains("adjuster_l3")) {
                 staff.add(user);
             }
         }
-        assertEquals(3, staff.size(), "the realm export must provision exactly the V4 staff");
+        assertEquals(6, staff.size(), "the realm export must provision exactly the V2-1 staff");
 
         for (JsonNode user : staff) {
             AppUser cache = appUsers.findByKeycloakSub(user.get("id").asText()).orElseThrow(
                     () -> new AssertionError("no app_user row for realm user "
                             + user.get("username").asText()));
-            boolean l1 = false;
+            String expectedLevel = "L2";
             for (JsonNode role : user.path("realmRoles")) {
-                l1 = l1 || "adjuster_l1".equals(role.asText());
+                if ("adjuster_l1".equals(role.asText())) {
+                    expectedLevel = "L1";
+                } else if ("adjuster_l3".equals(role.asText())) {
+                    expectedLevel = "L3";
+                }
             }
-            assertEquals(l1 ? "L1" : "L2", cache.getLevel(),
+            assertEquals(expectedLevel, cache.getLevel(),
                     "app_user.level must mirror the provisioned Keycloak role");
             assertEquals(user.get("email").asText(), cache.getEmail());
             assertEquals(user.get("firstName").asText() + " " + user.get("lastName").asText(),
                     cache.getDisplayName());
         }
-        assertEquals(3, appUsers.count(),
+        assertEquals(6, appUsers.count(),
                 "app_user must hold exactly the provisioned staff, nothing more");
     }
 

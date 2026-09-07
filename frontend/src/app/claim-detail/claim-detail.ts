@@ -5,6 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { accessToken, hasRole } from '../auth/auth.service';
 import { badgeClass } from '../ui';
+import { formatDate, formatMoney } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 
 interface AttachmentView {
@@ -75,6 +76,14 @@ export class ClaimDetail {
   protected statusBadge(status: string): string {
     return badgeClass(status);
   }
+
+  protected lossDateText(): string {
+    return formatDate(this.view()?.lossDate);
+  }
+
+  protected reserveText(): string {
+    return formatMoney(this.view()?.reserveAmount);
+  }
   protected readonly decisionResult = signal<string | null>(null);
   protected readonly savingReserve = signal(false);
   protected readonly savingNote = signal(false);
@@ -117,7 +126,7 @@ export class ClaimDetail {
     }
     const status = this.view()?.status;
     if (status === 'UNDER_REVIEW') {
-      return hasRole('adjuster_l1') || hasRole('adjuster_l2');
+      return hasRole('adjuster_l1') || hasRole('adjuster_l2') || hasRole('adjuster_l3');
     }
     return status === 'ESCALATED_SUPERVISOR' && hasRole('supervisor');
   }
@@ -304,7 +313,7 @@ export class ClaimDetail {
 
   private describe(outcome: ClaimDecisionView): string {
     if (outcome.decision === 'APPROVED') {
-      return `Approved for ${formatAmount(outcome.indemnityAmount)} — claim closed.`;
+      return `Approved for ${formatMoney(outcome.indemnityAmount)} — claim closed.`;
     }
     if (outcome.decision === 'DENIED') {
       const remarks = outcome.decisionRemarks == null ? '' : ` ${outcome.decisionRemarks}`;
@@ -347,10 +356,6 @@ export class ClaimDetail {
     }
     return new HttpHeaders().set('Authorization', 'Bearer ' + token);
   }
-}
-
-function formatAmount(amount: number | null): string {
-  return amount == null ? '' : '£' + amount.toFixed(2);
 }
 
 function actionClass(action: string): string {

@@ -1373,3 +1373,40 @@ non-local deploys yet. Secrets-in-env is enforced later by the hardening phase c
 **Considered:** Storing evidence photos in object storage.
 **Why not now:** One storage need (claimant photos), no scale problem yet.
 **Build it when:** hosting is ephemeral or photo volume grows.
+
+---
+
+### 2026-09-07 — V2-1: remaining benefit derived, never stored
+
+**Considered:** Storing `remaining_sum_insured` / per-cover remaining counters on the
+policy row, decremented at each decision.
+**Why not now:** Stored counters drift under concurrent decisions and need lock
+discipline; the cockpit reads are cheap aggregates (sum of prior non-DENIED net
+payables) and always consistent with the audit log. Locked in `docs/plan-v2.md`:
+limits constrain assessment/approval, never FNOL rejection; one cover's exhaustion
+never exhausts the others.
+**Build it when:** cockpit reads show up in slow-query logs at real policy volumes.
+
+---
+
+### 2026-09-07 — V2-1: queue resolves the adjuster by Keycloak subject, not email
+
+**Considered:** Looking up `app_user` by the JWT email claim (survives user
+re-creation in Keycloak).
+**Why not now:** Subjects are stable across realm re-imports (template UUIDs); email
+lookup would let a realm email change silently re-home an adjuster's queue. The
+close-out proved the failure mode: Admin-API-created users get random subs and see
+empty queues with a loud server WARN. Kept subject mapping + the WARN log.
+**Build it when:** a carrier brings its own IdP where subject stability can't be
+guaranteed — then treat it as an identity-migration project, not a lookup tweak.
+
+---
+
+### 2026-09-07 — V2-1: E2E import journey generates its CSV per run
+
+**Considered:** A static 3-row fixture committed to the repo.
+**Why not now:** Reruns trip on "already exists" after any partial run imports the
+rows; per-run unique policy numbers keep the journey idempotent with zero cleanup
+coupling. The BOGUS row keeps its static number (always rejected, never persisted).
+**Build it when:** never — generated-per-run is the pattern for any journey that
+writes unique-keyed rows.

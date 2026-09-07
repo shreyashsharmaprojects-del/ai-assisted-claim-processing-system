@@ -1,0 +1,34 @@
+/* V2-1 cockpit: shared panel/table/banner recipes from styles.css; no new tokens. */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+
+.summary-grid .label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.terms-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+}
+
+.terms-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+}
+
+.terms-list dt {
+  color: var(--text-muted);
+}

@@ -56,7 +56,7 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
     // The realm-provisioned supervisor (fixed subject, no app_user row — see decisions.md).
     private static final String SUB_SUPERVISOR = "10000000-0000-0000-0000-000000000004";
 
-    private static final String ABOVE_L2 = "12000.00";
+    private static final String ABOVE_L2 = "1200000.00";  // V2-1: exceeds HLTH-PLUS L2 (400000)
 
     private static final GenericContainer<?> MAILPIT = new GenericContainer<>(
             DockerImageName.parse("axllent/mailpit:v1.22"))
@@ -345,8 +345,17 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
     /** An FNOL claim pushed to ESCALATED_SUPERVISOR by an above-L2 approval (slice-4 flow). */
     private String escalatedClaimNumber() throws Exception {
         String claimNumber = fileHomeFnol();
+        String holder = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        String level = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertTrue(escalation.body().contains("\"escalatedTo\":\"SUPERVISOR\""),

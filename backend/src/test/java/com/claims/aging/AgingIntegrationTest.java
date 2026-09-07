@@ -104,7 +104,8 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
         // land the claim on the supervisor, never leave it with an unanswered rung.
         String claimNumber = fileHomeFnol("sub-aging-gap");
         backdate(claimNumber, NOW.minus(3, ChronoUnit.DAYS));
-        appUsers.findByKeycloakSub(SUB_L2).ifPresent(appUsers::delete);
+        appUsers.findAll().stream().filter(user -> "L2".equals(user.getLevel())).toList()
+                .forEach(appUsers::delete);
         try {
             assertEquals(1, agingService.ageClaims(NOW));
             assertEquals("ESCALATED_SUPERVISOR", statusOf(claimNumber));
@@ -115,6 +116,9 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
         } finally {
             jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                     + "VALUES (?, ?, ?, ?)", SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2");
+            jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                    + "VALUES (?, ?, ?, ?)", "10000000-0000-0000-0000-000000000006",
+                    "Rahul Singh", "rahul.singh@claims.test", "L2");
         }
     }
 
@@ -190,9 +194,11 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
     @Test
     void supervisorEscalatedClaimsAreNeverReAged() {
         String claimNumber = fileHomeFnol("sub-aging-esc");
+        // V2-1: POL-10001 is HLTH-PLUS (L3 1000000) — 1200000 clears every adjuster
+        // limit, so the claim goes straight to the supervisor.
         decisionService.decide(claimNumber, SUB_L1_ONE,
-                new ClaimDecisionInput("APPROVED", new BigDecimal("12000.00"),
-                        "above the L2 limit"));
+                new ClaimDecisionInput("APPROVED", new BigDecimal("1200000.00"),
+                        "above the L3 limit"));
         assertEquals("ESCALATED_SUPERVISOR", statusOf(claimNumber));
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'CLAIM_ESCALATED' "
                 + "AND entity_id = ?", idOf(claimNumber)));

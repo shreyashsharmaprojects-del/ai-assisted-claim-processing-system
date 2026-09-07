@@ -3,12 +3,14 @@ import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
+import { formatDate, formatMoney } from '../format';
 import { serverMessage } from '../toasts';
 
 interface ClaimantClaimView {
   claimNumber: string;
   status: string;
   steps: string[];
+  lossDate?: string | null;
   /** Present only once the claim is decided (omitted from the wire when null). */
   decision?: 'APPROVED' | 'DENIED' | null;
   indemnityAmount?: number | null;
@@ -40,8 +42,13 @@ export class ClaimStatus {
 
   /** The approved amount, rendered in pounds with two decimals. */
   protected approvedAmountText(): string {
-    const amount = this.view()?.indemnityAmount;
-    return amount == null ? '' : '£' + amount.toFixed(2);
+    return formatMoney(this.view()?.indemnityAmount);
+  }
+
+  /** Filing date line under the banner; the wire may omit it on older backends. */
+  protected filedText(): string {
+    const lossDate = this.view()?.lossDate;
+    return lossDate ? formatDate(lossDate) : 'recently';
   }
 
   async load() {

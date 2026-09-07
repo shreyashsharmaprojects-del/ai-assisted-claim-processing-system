@@ -1,0 +1,132 @@
+<main class="page" data-testid="policy-detail-page">
+  <p class="breadcrumb" data-testid="policy-detail-crumb">
+    <a routerLink="/">Home</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <a routerLink="/policies">My policies</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">Policy detail</span>
+  </p>
+  @if (error(); as message) {
+    <p class="notice notice--error" data-testid="policy-detail-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="policy-detail-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="policy-detail-loading" aria-label="Loading policy">
+          @for (row of [1, 2, 3, 4]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--l"></span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  } @else if (notFound()) {
+    <div class="state-panel" data-testid="policy-detail-not-found">
+      <p class="state-panel__title">Policy not found</p>
+      <p class="state-panel__body">This policy does not exist or is not linked to your account.</p>
+      <a routerLink="/policies" class="btn btn--secondary">Back to my policies</a>
+    </div>
+  } @else if (detail(); as d) {
+    <div class="page-banner">
+      <div class="page-banner__main">
+        <div class="page-banner__title-row">
+          <h1 data-testid="policy-detail-number">{{ d.policy.policyNumber }}</h1>
+          <span class="{{ statusBadge(d.policy.status) }}" data-testid="policy-detail-status">{{ d.policy.status }}</span>
+        </div>
+        <p class="page-banner__sub" data-testid="policy-detail-product">
+          {{ d.policy.productDisplayName }} · {{ d.policy.productCode }} · {{ d.policy.productFamily }}
+        </p>
+      </div>
+      <div class="page-banner__aside">
+        <a routerLink="/claim/new" class="btn btn--primary" data-testid="policy-detail-file">
+          File a claim
+        </a>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="panel__header"><h2>Cover summary</h2></div>
+      <div class="summary-grid">
+        <div><span class="label">Sum insured</span><strong data-testid="policy-detail-sum">{{ money(d.policy.sumInsured) }}</strong></div>
+        <div><span class="label">Remaining benefit</span><strong data-testid="policy-detail-remaining">{{ money(d.policy.remainingBenefit) }}</strong></div>
+        <div><span class="label">Valid</span><strong>{{ validText(d.policy) }}</strong></div>
+        <div><span class="label">Covers opted</span><strong data-testid="policy-detail-cover-count">{{ d.covers.length }}</strong></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header"><h2>Covers</h2></div>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">Cover</th>
+              <th scope="col" class="num">Sub-limit</th>
+              <th scope="col" class="num">Remaining</th>
+              <th scope="col" class="num">Deductible</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (cover of d.covers; track cover.coverCode) {
+              <tr data-testid="policy-detail-cover">
+                <td data-testid="policy-detail-cover-code">
+                  <strong>{{ cover.displayName }}</strong>
+                  <span class="muted">{{ cover.coverCode }}</span>
+                </td>
+                <td class="num" data-testid="policy-detail-cover-limit">{{ money(cover.subLimit) }}</td>
+                <td class="num" data-testid="policy-detail-cover-remaining">{{ money(cover.remainingSubLimit) }}</td>
+                <td class="num">{{ money(cover.deductibleDefault) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel__header"><h2>Terms</h2></div>
+      <div class="terms-grid">
+        <div>
+          <h3>Rating parameters</h3>
+          @if (ratingEntries().length === 0) {
+            <p class="muted">No rating details on file.</p>
+          } @else {
+            <dl class="terms-list" data-testid="policy-detail-rating">
+              @for (entry of ratingEntries(); track entry[0]) {
+                <div><dt>{{ entry[0] }}</dt><dd>{{ entry[1] ?? '—' }}</dd></div>
+              }
+            </dl>
+          }
+        </div>
+        <div>
+          <h3>What is covered</h3>
+          @if ((d.clauses?.covered ?? []).length === 0) {
+            <p class="muted">No covered items listed.</p>
+          }
+          <ul data-testid="policy-detail-covered">
+            @for (item of d.clauses?.covered ?? []; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+          <h3>What is not covered</h3>
+          @if ((d.clauses?.excluded ?? []).length === 0) {
+            <p class="muted">No exclusions listed.</p>
+          }
+          <ul data-testid="policy-detail-excluded">
+            @for (item of d.clauses?.excluded ?? []; track item) {
+              <li>{{ item }}</li>
+            }
+          </ul>
+          @if (d.clauses?.scope) {
+            <h3>Scope</h3>
+            <p data-testid="policy-detail-scope">{{ d.clauses?.scope }}</p>
+          }
+        </div>
+      </div>
+    </section>
+  }
+</main>

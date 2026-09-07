@@ -32,6 +32,10 @@
         "name": "adjuster_l2"
       },
       {
+        "id": "adjuster_l3",
+        "name": "adjuster_l3"
+      },
+      {
         "id": "supervisor",
         "name": "supervisor"
       },
@@ -118,6 +122,57 @@
       "lastName": "Kowalski",
       "email": "ines.kowalski@claims.test",
       "realmRoles": ["adjuster_l2"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__ADJUSTER_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000005",
+      "username": "adjuster.four",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Aisha",
+      "lastName": "Verma",
+      "email": "aisha.verma@claims.test",
+      "realmRoles": ["adjuster_l1"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__ADJUSTER_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000006",
+      "username": "adjuster.five",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rahul",
+      "lastName": "Singh",
+      "email": "rahul.singh@claims.test",
+      "realmRoles": ["adjuster_l2"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__ADJUSTER_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000007",
+      "username": "adjuster.six",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Meera",
+      "lastName": "Nair",
+      "email": "meera.nair@claims.test",
+      "realmRoles": ["adjuster_l3"],
       "credentials": [
         {
           "type": "password",

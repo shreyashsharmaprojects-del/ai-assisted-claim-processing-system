@@ -44,6 +44,9 @@ class QueuePaginationIntegrationTest extends ClaimTableResettingTest {
     @Autowired
     private Environment environment;
 
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplateForEscalation;
+
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Test
@@ -178,9 +181,19 @@ class QueuePaginationIntegrationTest extends ClaimTableResettingTest {
     }
 
     private void escalateAboveL2(String claimNumber) throws Exception {
+        // V2-1: decide as whoever holds the claim (fresh DB: first filing lands on
+        // adjuster.one), with an amount above the HLTH-PLUS L2 limit (400000).
+        String holder = jdbcTemplateForEscalation.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        String level = jdbcTemplateForEscalation.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(),
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":12000.00,"
+                JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":1200000.00,"
                         + "\"rationale\":\"Exceptional loss.\"}");
         assertEquals(200, escalation.statusCode(), escalation.body());
     }

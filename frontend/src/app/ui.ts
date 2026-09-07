@@ -19,6 +19,7 @@ export function statusKind(status: string | null | undefined): StatusKind {
     case 'SENT':
       return 'success';
     case 'DENIED':
+    case 'EXPIRED':
     case 'FAILED':
       return 'danger';
     case 'PENDING':

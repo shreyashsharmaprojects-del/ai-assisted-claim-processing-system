@@ -1,6 +1,5 @@
 <main class="page" data-testid="claim-detail-page">
-  @if (error(); as message) {
-    <p class="notice notice--error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
+  @if (error(); as message) {    <p class="notice notice--error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
     <button type="button" class="btn btn--secondary retry" data-testid="claim-detail-retry" (click)="load()">
       Try again
     </button>
@@ -16,6 +15,12 @@
       </div>
     </div>
   } @else if (view(); as claim) {
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a routerLink="/queue">My queue</a>
+      <span class="breadcrumb__sep" aria-hidden="true">›</span>
+      <span class="mono" aria-current="page">{{ claim.claimNumber }}</span>
+    </nav>
+
     <!-- Banner card: identity + status + key facts -->
     <div class="page-banner">
       <div class="page-banner__main">
@@ -77,7 +82,7 @@
           </div>
           <div>
             <p class="stat__label">Loss date</p>
-            <p class="stat__value num" data-testid="detail-loss-date">{{ claim.lossDate }}</p>
+            <p class="stat__value num" data-testid="detail-loss-date">{{ lossDateText() }}</p>
           </div>
         </div>
         <div class="stat">
@@ -90,10 +95,42 @@
           <div>
             <p class="stat__label">Current reserve</p>
             <p class="stat__value num" data-testid="detail-reserve-value">
-              {{ claim.reserveAmount == null ? '—' : '£' + claim.reserveAmount.toFixed(2) }}
+              {{ reserveText() }}
             </p>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Summary strip: the facts a supervisor asks first, one dense row -->
+    <div class="summary-strip" aria-label="Claim summary">
+      <div class="summary-cell">
+        <p class="summary-cell__label">Status</p>
+        <p class="summary-cell__value"><span class="{{ statusBadge(claim.status) }}">{{ claim.status }}</span></p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Level</p>
+        <p class="summary-cell__value">{{ claim.level }}</p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Loss date</p>
+        <p class="summary-cell__value num">{{ lossDateText() }}</p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Reserve</p>
+        <p class="summary-cell__value num">{{ reserveText() }}</p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Owner</p>
+        <p class="summary-cell__value">{{ claim.assignedTo ?? '—' }}</p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Photos</p>
+        <p class="summary-cell__value num">{{ claim.attachments.length }}</p>
+      </div>
+      <div class="summary-cell">
+        <p class="summary-cell__label">Notes</p>
+        <p class="summary-cell__value num">{{ claim.notes.length }}</p>
       </div>
     </div>
 
@@ -114,7 +151,7 @@
             <dl class="kv-list">
               <div class="kv">
                 <dt class="kv__label">Date of loss</dt>
-                <dd class="kv__value num" data-testid="detail-loss-date-field">{{ claim.lossDate }}</dd>
+                <dd class="kv__value num" data-testid="detail-loss-date-field">{{ lossDateText() }}</dd>
               </div>
               <div class="kv">
                 <dt class="kv__label">Location</dt>
@@ -147,6 +184,11 @@
             <p class="muted reserve-hint">
               An internal estimate of what this claim may cost — never shown to the claimant.
             </p>
+            @if (claim.reserveAmount != null) {
+              <p class="reserve-current">
+                Current reserve <strong class="num">{{ reserveText() }}</strong>
+              </p>
+            }
             <form (ngSubmit)="saveReserve()" class="inline-form">
               <div class="field">
                 <label for="reserve">New reserve (£)</label>
@@ -188,14 +230,14 @@
             @if (claim.notes.length === 0) {
               <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
             } @else {
-              <ul class="note-list" data-testid="detail-note-list">
+              <ol class="timeline" data-testid="detail-note-list">
                 @for (note of claim.notes; track note.id) {
-                  <li class="note-item" data-testid="detail-note-item">
-                    <p class="note-item__body">{{ note.body }}</p>
-                    <p class="note-item__meta">{{ note.author ?? 'Internal' }}</p>
+                  <li class="timeline__item timeline__item--note" data-testid="detail-note-item">
+                    <p class="timeline__body">{{ note.body }}</p>
+                    <p class="timeline__meta">{{ note.author ?? 'Internal' }}</p>
                   </li>
                 }
-              </ul>
+              </ol>
             }
             <form (ngSubmit)="addNote()" class="field" style="margin-top: var(--space-4)">
               <label for="note">Add a note</label>
@@ -409,13 +451,13 @@
               } @else if (auditTrail().length === 0) {
                 <p class="muted" data-testid="detail-audit-empty">No audit entries yet.</p>
               } @else {
-                <ol class="audit-list" data-testid="detail-audit-list">
+                <ol class="timeline" data-testid="detail-audit-list">
                   @for (entry of auditTrail(); track entry.id) {
-                    <li class="audit-item" data-testid="detail-audit-item">
-                      <span class="{{ auditActionLabel(entry.action) }}" data-testid="detail-audit-action">{{ entry.action }}</span>
-                      <span class="audit-item__meta" data-testid="detail-audit-meta">{{ entry.createdAt }}</span>
+                    <li class="timeline__item" data-testid="detail-audit-item">
+                      <p class="timeline__body"><span class="{{ auditActionLabel(entry.action) }}" data-testid="detail-audit-action">{{ entry.action }}</span></p>
+                      <p class="timeline__meta" data-testid="detail-audit-meta">{{ entry.createdAt }}</p>
                       @if (entry.rationale) {
-                        <p class="audit-item__rationale" data-testid="detail-audit-rationale">{{ entry.rationale }}</p>
+                        <p class="timeline__rationale" data-testid="detail-audit-rationale">{{ entry.rationale }}</p>
                       }
                     </li>
                   }

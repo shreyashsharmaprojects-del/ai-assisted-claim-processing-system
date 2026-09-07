@@ -35,15 +35,36 @@ public class JwtTestConfig {
     }
 
     public static String tokenFor(String subject, String... roles) {
+        return tokenWithClaims(subject, null, roles);
+    }
+
+    /**
+     * V2-1 cockpit tests need an {@code email} claim (ownership is by holder email).
+     * Pass entries as {@code "email:addr@example.test"} alongside roles; anything
+     * without the {@code email:} prefix stays a role.
+     */
+    public static String tokenWithClaims(String subject, String email, String... roles) {
+        List<String> roleList = new java.util.ArrayList<>();
+        String emailClaim = email;
+        for (String role : roles) {
+            if (role.startsWith("email:")) {
+                emailClaim = role.substring("email:".length());
+            } else {
+                roleList.add(role);
+            }
+        }
         NimbusJwtEncoder encoder = new NimbusJwtEncoder(new ImmutableSecret<>(SECRET));
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder builder = JwtClaimsSet.builder()
                 .issuer("test")
                 .subject(subject)
                 .issuedAt(Instant.now())
                 .expiresAt(Instant.now().plusSeconds(300))
-                .claim("realm_access", Map.of("roles", List.of(roles)))
-                .build();
-        return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+                .claim("realm_access", Map.of("roles", List.copyOf(roleList)));
+        if (emailClaim != null && !emailClaim.isBlank()) {
+            builder.claim("email", emailClaim);
+        }
+        return encoder.encode(JwtEncoderParameters.from(header, builder.build()))
+                .getTokenValue();
     }
 }

@@ -43,16 +43,19 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/claims/*").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
                                 "/api/claims/*/attachments/*")
-                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         .requestMatchers(HttpMethod.PUT, "/api/claims/*/reserve")
-                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/notes")
-                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         // Slice 4: only the assigned adjuster decides. SUPERVISOR is excluded
                         // here on purpose — the supervisor half of the decision flow (the
                         // escalation-decision endpoint) is slice 5.
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/decision")
-                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3")
                         // Slice 5: the supervisor's escalation surface — deciding an
                         // ESCALATED_SUPERVISOR claim, and the queue of claims that need it.
                         // No adjuster may act on either (403, never revealing a claim).
@@ -76,17 +79,27 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/audit")
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
-                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         // Policy reference carries holder names: authenticated staff and
-                        // claimants only (never anonymous). The E2E readiness probe uses
-                        // /api/health instead.
+                        // claimants may read the legacy list (V1 contract); the cockpit
+                        // detail route sits below. Order matters: /mine + /admin first —
+                        // Spring matches in declaration order, and /admin would
+                        // otherwise fall into the /* detail rule.
+                        .requestMatchers(HttpMethod.GET, "/api/policies/mine")
+                                .hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/policies/admin")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/policies").authenticated()
+                        // V2-1 cockpit: own policy detail for claimants; internal roles
+                        // keep coverage context via the same route.
+                        .requestMatchers(HttpMethod.GET, "/api/policies/*")
+                                .hasAnyRole("CLAIMANT", "ADJUSTER_L1", "ADJUSTER_L2",
+                                        "ADJUSTER_L3", "SUPERVISOR")
                         // R1 policy admin + R2 outbox: supervisor-only surfaces. Adjusters and
                         // claimants are blocked before any policy/outbox logic runs (403).
                         .requestMatchers(HttpMethod.POST, "/api/policies",
                                 "/api/policies/import", "/api/policies/*/retire")
-                                .hasRole("SUPERVISOR")
-                        .requestMatchers(HttpMethod.GET, "/api/policies/admin")
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/outbox")
                                 .hasRole("SUPERVISOR")

@@ -22,13 +22,22 @@
           <span class="{{ statusBadge(claim.status) }}" data-testid="claim-status-state">{{ claim.status }}</span>
         </div>
         <p class="page-banner__sub">
-          The public record of your claim — this page shows where it stands as it moves
+          Filed {{ filedText() }}. This page shows where the claim stands as it moves
           through review.
         </p>
       </div>
     </div>
 
-    <section class="panel">
+    <ol class="tracker" aria-label="Claim progress" data-testid="claim-status-steps">
+      @for (step of claim.steps; track step; let last = $last) {
+        <li class="tracker__step" [class.is-done]="!last" [class.is-current]="last" [attr.aria-current]="last ? 'step' : null">
+          <span class="tracker__dot" aria-hidden="true"></span>
+          <span class="tracker__label">{{ step }}</span>
+        </li>
+      }
+    </ol>
+
+    <section class="panel panel--timeline">
       <div class="panel__header">
         <div class="panel__head-icon">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -39,7 +48,7 @@
         <h2>Progress</h2>
       </div>
       <div class="panel__body">
-        <ol class="steps" data-testid="claim-status-steps">
+        <ol class="steps">
           @for (step of claim.steps; track step) {
             <li>
               <span class="step-index">{{ $index + 1 }}</span>

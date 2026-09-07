@@ -23,7 +23,7 @@ export const claimantGuard: CanActivateFn = async () => {
 export const internalGuard: CanActivateFn = async () => {
   const router = inject(Router);
   const authenticated = await ensureAuthenticated();
-  const internalRoles = ['adjuster_l1', 'adjuster_l2', 'supervisor'];
+  const internalRoles = ['adjuster_l1', 'adjuster_l2', 'adjuster_l3', 'supervisor'];
   if (!authenticated || !internalRoles.some(hasRole)) {
     await router.navigate(['']);
     return false;

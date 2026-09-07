@@ -1,0 +1,102 @@
+<main class="page" data-testid="cockpit-page">
+  <p class="breadcrumb" data-testid="cockpit-crumb">
+    <a routerLink="/">Home</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">My policies</span>
+  </p>
+  <div class="page-banner">
+    <div class="page-banner__main">
+      <div class="page-banner__title-row">
+        <h1>My policies</h1>
+        @if (loaded() && policies().length > 0) {
+          <span class="chip">{{ policies().length }} active</span>
+        }
+      </div>
+      <p class="page-banner__sub">
+        Your cover in one place. Open a policy to see its covers, limits, and terms, then file a claim.
+      </p>
+    </div>
+  </div>
+
+  @if (error(); as message) {
+    <p class="notice notice--error" data-testid="cockpit-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="cockpit-retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="cockpit-loading" aria-label="Loading your policies">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  } @else {
+    <section class="panel">
+      <div class="panel__header">
+        <h2>Your policies</h2>
+        <span class="panel__count">{{ policies().length }}</span>
+      </div>
+
+      @if (policies().length === 0) {
+        <div class="state-panel" data-testid="cockpit-empty">
+          <p class="state-panel__title">No policies found</p>
+          <p class="state-panel__body">
+            We could not link any policies to this account. Check that your account email
+            matches your policyholder email.
+          </p>
+          <a routerLink="/claim/new" class="btn btn--secondary">File a claim</a>
+        </div>
+      } @else {
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Policy</th>
+                <th scope="col">Product</th>
+                <th scope="col">Status</th>
+                <th scope="col" class="num">Sum insured</th>
+                <th scope="col" class="num">Remaining</th>
+                <th scope="col">Valid</th>
+                <th scope="col"><span class="sr-only">Open</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (policy of policies(); track policy.policyNumber) {
+                <tr data-testid="cockpit-row">
+                  <td class="cell-id" data-testid="cockpit-number">
+                    <a [routerLink]="['/policies', policy.policyNumber]">{{ policy.policyNumber }}</a>
+                  </td>
+                  <td data-testid="cockpit-product">
+                    <span class="chip">{{ policy.productCode }}</span>
+                    <span class="muted">{{ policy.productDisplayName }}</span>
+                  </td>
+                  <td>
+                    <span class="{{ statusBadge(policy.status) }}" data-testid="cockpit-status">{{ policy.status }}</span>
+                  </td>
+                  <td class="num" data-testid="cockpit-sum">{{ sumText(policy) }}</td>
+                  <td class="num" data-testid="cockpit-remaining">{{ remainingText(policy) }}</td>
+                  <td data-testid="cockpit-valid">{{ validText(policy) }}</td>
+                  <td class="td-action">
+                    <a
+                      class="btn btn--secondary btn--sm"
+                      [routerLink]="['/policies', policy.policyNumber]"
+                      data-testid="cockpit-open"
+                      >Open</a
+                    >
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
+</main>

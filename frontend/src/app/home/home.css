@@ -3,3 +3,37 @@
   gap: var(--space-2);
   margin-bottom: var(--space-6);
 }
+
+/* How-it-works strip: three plain steps in one row, no invented metrics. */
+.how-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 720px) {
+  .how-steps {
+    grid-template-columns: 1fr;
+  }
+}
+
+.how-step {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.how-step__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--gray-800);
+}
+
+.how-step__body {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}

@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { isAuthenticated, onSessionChange } from '../auth/auth.service';
 import { badgeClass } from '../ui';
+import { formatDate, formatMoney } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 import { normalizePage, pageParams } from '../paged';
 
@@ -58,7 +59,11 @@ export class MyClaims implements OnDestroy {
   }
 
   protected amountText(row: MyClaimRow): string {
-    return row.indemnityAmount == null ? '' : '£' + row.indemnityAmount.toFixed(2);
+    return formatMoney(row.indemnityAmount);
+  }
+
+  protected lossDateText(row: MyClaimRow): string {
+    return formatDate(row.lossDate);
   }
 
   constructor() {

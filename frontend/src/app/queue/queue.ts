@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
+import { ageInDays, formatDate } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 import { normalizePage, pageParams } from '../paged';
 
@@ -18,7 +19,7 @@ export interface QueueClaimView {
   assignedTo: string | null;
 }
 
-type StatusFilter = 'ALL' | 'UNDER_REVIEW' | 'UNASSIGNED' | 'ESCALATED';
+type StatusFilter = 'ALL' | 'UNDER_REVIEW' | 'UNASSIGNED' | 'ESCALATED' | 'BREACHING';
 type SortKey = 'OLDEST' | 'NEWEST';
 
 const PAGE_SIZE = 25;
@@ -48,6 +49,62 @@ export class Queue implements OnDestroy {
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
+  }
+
+  /** Aging signal in days from filing, for the Age + SLA columns. */
+  protected ageDays(claim: QueueClaimView): number | null {
+    return ageInDays(claim.lossDate || claim.createdAt);
+  }
+
+  protected ageText(claim: QueueClaimView): string {
+    const days = this.ageDays(claim);
+    if (days == null) {
+      return '—';
+    }
+    return days === 0 ? 'Today' : `${days} days`;
+  }
+
+  /**
+   * SLA column: On track (neutral) -> Due soon, 3-4 days (warning) ->
+   * Breaching, 5+ days (danger). Urgency lives in this one dedicated column,
+   * never as full-row tinting. Thresholds match the backend aging rules
+   * (L2 at 3 days, supervisor at 5 days).
+   */
+  protected slaBadge(claim: QueueClaimView): string {
+    const days = this.ageDays(claim);
+    if (days == null || days < 3) {
+      return 'badge badge--neutral';
+    }
+    if (days < 5) {
+      return 'badge badge--warning';
+    }
+    return 'badge badge--danger';
+  }
+
+  protected slaText(claim: QueueClaimView): string {
+    const days = this.ageDays(claim);
+    if (days == null) {
+      return '—';
+    }
+    if (days < 3) {
+      return 'On track';
+    }
+    if (days < 5) {
+      return 'Due soon';
+    }
+    return 'Breaching';
+  }
+
+  protected lossDateText(claim: QueueClaimView): string {
+    return formatDate(claim.lossDate);
+  }
+
+  /** Claims at 3+ days, for the banner stat and the Breaching SLA view. */
+  protected breachingCount(): number {
+    return this.claims().filter((claim) => {
+      const days = ageInDays(claim.lossDate || claim.createdAt);
+      return days != null && days >= 3;
+    }).length;
   }
 
   constructor() {
@@ -86,6 +143,12 @@ export class Queue implements OnDestroy {
       }
       if (filter === 'ESCALATED' && !claim.status.startsWith('ESCALATED')) {
         return false;
+      }
+      if (filter === 'BREACHING') {
+        const days = ageInDays(claim.lossDate || claim.createdAt);
+        if (days == null || days < 3) {
+          return false;
+        }
       }
       if (!q) {
         return true;
@@ -148,7 +211,11 @@ export class Queue implements OnDestroy {
     this.error.set(null);
     try {
       const target = reset ? 0 : this.page() + 1;
-      const status = this.statusFilter() === 'ESCALATED' ? '' : this.statusFilter();
+      // Breaching SLA is a client-side aging view; the server knows the other filters.
+      const status =
+        this.statusFilter() === 'ESCALATED' || this.statusFilter() === 'BREACHING'
+          ? ''
+          : this.statusFilter();
       const body = await firstValueFrom(
         this.http.get<QueueClaimView[] | import('../paged').Page<QueueClaimView>>('/api/queue', {
           params: pageParams(target, PAGE_SIZE, this.query(), status),

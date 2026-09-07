@@ -19,6 +19,34 @@
     </div>
   </div>
 
+  <section class="panel how-it-works" aria-label="How it works">
+    <div class="panel__body">
+      <ol class="how-steps">
+        <li class="how-step">
+          <span class="step-index" aria-hidden="true">1</span>
+          <div>
+            <p class="how-step__title">File the loss</p>
+            <p class="how-step__body">Two steps: your policy, then what happened.</p>
+          </div>
+        </li>
+        <li class="how-step">
+          <span class="step-index" aria-hidden="true">2</span>
+          <div>
+            <p class="how-step__title">Get a claim number</p>
+            <p class="how-step__body">Issued immediately, with what happens next.</p>
+          </div>
+        </li>
+        <li class="how-step">
+          <span class="step-index" aria-hidden="true">3</span>
+          <div>
+            <p class="how-step__title">Track to decision</p>
+            <p class="how-step__body">Follow the claim from filing to outcome.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
   <section class="panel">
     <div class="panel__header">
       <div class="panel__head-icon">
@@ -32,7 +60,7 @@
         <span class="panel__count">Reference</span>
       </span>
     </div>
-    <div class="panel__body panel__body--tight">
+    <div class="panel__body panel__body--flush">
       @if (error(); as message) {
         <p class="notice notice--error" data-testid="policy-error" role="alert">{{ message }}</p>
         <button type="button" class="btn btn--secondary retry" data-testid="policy-retry" (click)="load()">

@@ -54,7 +54,7 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     private static final String CLAIMANT = "sub-claimant-admin";
 
     private static final String WITHIN_L1 = "1500.00";
-    private static final String ABOVE_L2 = "12000.00";
+    private static final String ABOVE_L2 = "1200000.00";  // V2-1: exceeds HLTH-PLUS L2 (400000)
 
     private static final GenericContainer<?> MAILPIT = new GenericContainer<>(
             DockerImageName.parse("axllent/mailpit:v1.22"))
@@ -177,8 +177,14 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
                 response.body());
         assertTrue(response.body().contains("\"status\":\"UNDER_REVIEW\""), response.body());
         assertTrue(response.body().contains("\"level\":\"L1\""), response.body());
-        assertTrue(response.body().contains("\"assignedTo\":\"Marcus Webb\""),
-                "the reassign picks the least-loaded L1 adjuster (adjuster.two): "
+        // Three L1 adjusters now (V2-1 staff): the reassign picks a least-loaded one
+        // that is not the current holder.
+        String newAssignee = jdbcTemplate.queryForObject(
+                "SELECT a.display_name FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        assertTrue("Marcus Webb".equals(newAssignee) || "Aisha Verma".equals(newAssignee),
+                "the reassign picks a least-loaded L1 adjuster, not the holder: "
                         + response.body());
 
         // The audit records the supervisor as the actor with the before/after assignees.
@@ -186,18 +192,22 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
         assertTrue(audit.contains("\"action\":\"CLAIM_REASSIGNED\""), audit);
         assertTrue(audit.contains("\"actorSub\":\"" + SUB_SUPERVISOR + "\""), audit);
         assertTrue(audit.contains("Priya Sharma"), audit);
-        assertTrue(audit.contains("Marcus Webb"), audit);
+        assertTrue(audit.contains(newAssignee), audit);
 
         // The claim leaves the original holder's hands and is visible to the new one.
         assertEquals(404, get("/api/claims/" + claimNumber + "/full", adjusterOneBearer())
                 .statusCode());
+        String newSub = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         assertEquals(200, get("/api/claims/" + claimNumber + "/full",
-                JwtTestConfig.tokenFor("10000000-0000-0000-0000-000000000002", "adjuster_l1"))
+                JwtTestConfig.tokenFor(newSub, "adjuster_l1"))
                 .statusCode());
     }
 
     @Test
-    void supervisorReassignsToL2RelevelsTheClaimOntoTheL2Adjuster() throws Exception {
+    void supervisorReassignsToL2RelevelsTheClaimOntoAnL2Adjuster() throws Exception {
         String claimNumber = fileHomeFnol();
         assertEquals("L1", jdbcTemplate.queryForObject(
                 "SELECT level FROM claim WHERE claim_number = ?", String.class, claimNumber));
@@ -206,7 +216,12 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
                 supervisorBearer(), "{\"level\":\"L2\"}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"level\":\"L2\""), response.body());
-        assertTrue(response.body().contains("\"assignedTo\":\"Ines Kowalski\""), response.body());
+        String newAssignee = jdbcTemplate.queryForObject(
+                "SELECT a.display_name FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        assertTrue("Ines Kowalski".equals(newAssignee) || "Rahul Singh".equals(newAssignee),
+                "the reassign picks a least-loaded L2 adjuster: " + response.body());
 
         // The claim's routing level follows its new holder (aging/gate coherence).
         assertEquals("L2", jdbcTemplate.queryForObject(
@@ -244,9 +259,9 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
         String path = "/api/claims/" + claimNumber + "/reassign";
 
-        HttpResponse<String> bad = postJson(path, supervisorBearer(), "{\"level\":\"L3\"}");
+        HttpResponse<String> bad = postJson(path, supervisorBearer(), "{\"level\":\"L4\"}");
         assertEquals(400, bad.statusCode(), bad.body());
-        assertTrue(bad.body().contains("L1 or L2"), bad.body());
+        assertTrue(bad.body().contains("L1, L2, or L3"), bad.body());
 
         HttpResponse<String> missing = postJson(path, supervisorBearer(), "{}");
         assertEquals(400, missing.statusCode(), missing.body());
@@ -289,8 +304,7 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     }
 
     @Test
-    void aSupervisorCanReassignAStrandedUnassignedClaim() throws Exception {
-        // A claim left UNASSIGNED by the FNOL provisioning gap (no L1 adjuster existed at
+    void aSupervisorCanReassignAStrandedUnassignedClaim() throws Exception {        // A claim left UNASSIGNED by the FNOL provisioning gap (no L1 adjuster existed at
         // filing time) is exactly what a supervisor reassign rescues — it must be accepted,
         // handed to the least-loaded L1 adjuster once one exists, and audited with a null
         // previous holder.
@@ -326,15 +340,33 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     // --- helpers --------------------------------------------------------------
 
     private void approve(String claimNumber, String amount, String rationale) throws Exception {
+        String holder = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        String level = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         HttpResponse<String> decision = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + amount + ",\"rationale\":\"" + rationale + "\"}");
         assertEquals(200, decision.statusCode(), decision.body());
     }
 
     private void escalateAboveL2(String claimNumber) throws Exception {
+        String holder = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        String level = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertEquals("ESCALATED_SUPERVISOR", jdbcTemplate.queryForObject(
@@ -360,24 +392,26 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
                         + "WHERE c.claim_number = ?", String.class, claimNumber);
     }
 
-    /** Removes the L2 adjuster to simulate the provisioning gap; pair with restore. */
+    /** Removes all L2 adjusters to simulate the provisioning gap; pair with restore. */
     private void appUsersDeleteL2() {
-        jdbcTemplate.update("DELETE FROM app_user WHERE keycloak_sub = ?", SUB_L2);
+        jdbcTemplate.update("DELETE FROM app_user WHERE level = 'L2'");
     }
 
-    /** Restores the seeded L2 adjuster (fresh id, same identity as the V4 seed). */
+    /** Restores the seeded L2 adjusters (fresh ids, same identities as the seeds). */
     private void appUsersRestoreL2() {
         jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                 + "VALUES (?, ?, ?, ?)", SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2");
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                + "VALUES (?, ?, ?, ?)", "10000000-0000-0000-0000-000000000006",
+                "Rahul Singh", "rahul.singh@claims.test", "L2");
     }
 
-    /** Removes both L1 adjusters so an FNOL has no one to assign to; pair with restore. */
+    /** Removes all L1 adjusters so an FNOL has no one to assign to; pair with restore. */
     private void appUsersDeleteL1s() {
-        jdbcTemplate.update("DELETE FROM app_user WHERE keycloak_sub IN (?, ?)",
-                SUB_L1_ONE, SUB_L1_TWO);
+        jdbcTemplate.update("DELETE FROM app_user WHERE level = 'L1'");
     }
 
-    /** Restores the two seeded L1 adjusters (fresh ids, same identities as the V4 seed). */
+    /** Restores the seeded L1 adjusters (fresh ids, same identities as the seeds). */
     private void appUsersRestoreL1s() {
         jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                 + "VALUES (?, ?, ?, ?)", SUB_L1_ONE, "Priya Sharma",
@@ -385,6 +419,9 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
         jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                 + "VALUES (?, ?, ?, ?)", SUB_L1_TWO, "Marcus Webb",
                 "marcus.webb@claims.test", "L1");
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                + "VALUES (?, ?, ?, ?)", "10000000-0000-0000-0000-000000000005",
+                "Aisha Verma", "aisha.verma@claims.test", "L1");
     }
 
     private long count(String sql, Object... args) {

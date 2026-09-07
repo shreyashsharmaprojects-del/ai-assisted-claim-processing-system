@@ -3,6 +3,7 @@ import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
+import { ageInDays, formatDate } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 import { normalizePage, pageParams } from '../paged';
 
@@ -44,6 +45,51 @@ export class Escalations implements OnDestroy {
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
+  }
+
+  protected ageText(claim: QueueClaimView): string {
+    const days = ageInDays(claim.lossDate || claim.createdAt);
+    if (days == null) {
+      return '—';
+    }
+    return days === 0 ? 'Today' : `${days} days`;
+  }
+
+  /** Same SLA column recipe as the adjuster queue: urgency in one column. */
+  protected slaBadge(claim: QueueClaimView): string {
+    const days = ageInDays(claim.lossDate || claim.createdAt);
+    if (days == null || days < 3) {
+      return 'badge badge--neutral';
+    }
+    if (days < 5) {
+      return 'badge badge--warning';
+    }
+    return 'badge badge--danger';
+  }
+
+  protected slaText(claim: QueueClaimView): string {
+    const days = ageInDays(claim.lossDate || claim.createdAt);
+    if (days == null) {
+      return '—';
+    }
+    if (days < 3) {
+      return 'On track';
+    }
+    if (days < 5) {
+      return 'Due soon';
+    }
+    return 'Breaching';
+  }
+
+  protected lossDateText(claim: QueueClaimView): string {
+    return formatDate(claim.lossDate);
+  }
+
+  protected breachingCount(): number {
+    return this.claims().filter((claim) => {
+      const days = ageInDays(claim.lossDate || claim.createdAt);
+      return days != null && days >= 3;
+    }).length;
   }
 
   constructor() {

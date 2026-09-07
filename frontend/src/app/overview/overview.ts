@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
+import { formatMoney } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 import { normalizePage, pageParams } from '../paged';
 
@@ -70,8 +71,7 @@ export class Overview implements OnDestroy {
   protected readonly retrying = signal<number | null>(null);
 
   protected approvedText(): string {
-    const amount = this.stats()?.approvedThisMonth;
-    return amount == null ? '—' : '£' + amount.toFixed(2);
+    return formatMoney(this.stats()?.approvedThisMonth);
   }
 
   protected outboxBadge(status: string): string {

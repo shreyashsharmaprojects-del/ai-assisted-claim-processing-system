@@ -1,4 +1,4 @@
 policy_number,product_code,holder_name,holder_email,coverage
-POL-E2E-01,HOME,Ada Lovelace,ada.lovelace@example.test,"{""type"": ""home""}"
-POL-E2E-02,AUTO,Grace Hopper,grace.hopper@example.test,"{""type"": ""auto""}"
+POL-E2E-01,PROP-HOME,Ada Lovelace,ada.lovelace@example.test,"{""type"": ""home""}"
+POL-E2E-02,AUTO-STD,Grace Hopper,grace.hopper@example.test,"{""type"": ""auto""}"
 POL-E2E-03,BOGUS,Bad Row,bad.row@example.test,

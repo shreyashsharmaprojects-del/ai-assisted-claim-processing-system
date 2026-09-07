@@ -64,3 +64,9 @@
 .step-hint {
   margin-top: var(--space-4);
 }
+
+/* Optional marker inside labels: quiet, parenthesized, never a second color. */
+.field__optional {
+  font-weight: var(--weight-regular);
+  color: var(--text-tertiary);
+}

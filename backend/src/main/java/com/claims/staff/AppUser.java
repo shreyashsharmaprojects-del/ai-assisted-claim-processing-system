@@ -13,6 +13,8 @@ import jakarta.persistence.Table;
  * emails/queues plus the adjuster's L1/L2 routing level (see docs/decisions.md).
  * Seeded by V4 with keycloak_sub values matching the users imported from
  * keycloak/realm-export.template.json (rendered to realm-export.json at dev/E2E boot).
+ * V2-1 adds L3 (adjuster.six) plus adjuster.four (L1) and adjuster.five (L2); the level
+ * check is enforced in the DB (V4/V12), not here.
  */
 @Entity
 @Table(name = "app_user")

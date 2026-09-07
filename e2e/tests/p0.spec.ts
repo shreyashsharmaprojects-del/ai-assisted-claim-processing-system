@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { Browser, Page } from '@playwright/test';
-import { resolve } from 'node:path';
-
-let registrationCounter = 1000;
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';let registrationCounter = 1000;
 
 /** Provisioned-realm passwords come from the environment (see .env.example -> .env). */
 function requiredEnv(name: string): string {
@@ -113,61 +113,81 @@ test(
     await expect(supervisorPage.getByTestId('policies-page')).toBeVisible();
     await expect(supervisorPage.getByTestId('policies-table')).toBeVisible();
 
-    const csvPath = resolve(process.cwd(), 'tests/fixtures/policy-import.csv');
-    await supervisorPage.getByTestId('policy-import-input').setInputFiles(csvPath);
+    // Unique suffix per run keeps the journey idempotent: a previous partial run
+    // may already have imported the static POL-E2E-01/02 fixture rows, and reruns
+    // would then see "already exists" instead of the expected 2-of-3 result.
+    const stamp = String(Date.now() % 100000).padStart(5, '0');
+    const policyA = `POL-E2E-${stamp}-01`;
+    const policyB = `POL-E2E-${stamp}-02`;
+    const runCsv = join(
+      mkdtempSync(join(tmpdir(), 'policy-import-')),
+      'policy-import.csv',
+    );
+    writeFileSync(
+      runCsv,
+      'policy_number,product_code,holder_name,holder_email,coverage\n' +
+        `${policyA},PROP-HOME,Ada Lovelace,ada.lovelace@example.test,"{""type"": ""home""}"\n` +
+        `${policyB},AUTO-STD,Grace Hopper,grace.hopper@example.test,"{""type"": ""auto""}"\n` +
+        'POL-E2E-BAD,BOGUS,Bad Row,bad.row@example.test,\n',
+    );
+    await supervisorPage.getByTestId('policy-import-input').setInputFiles(runCsv);
     await expect(supervisorPage.getByTestId('policy-import-preview')).toBeVisible();
     await supervisorPage.getByTestId('policy-import-confirm').click();
-    // Server result: 2 kept, POL-E2E-03 rejected (unknown product code).
-    await expect(supervisorPage.getByTestId('policy-import-summary')).toContainText(
+    // Server result: 2 kept, the BOGUS row rejected (unknown product code). The
+    // result notice renders under `policy-import-result`; the preview keeps its
+    // own summary.
+    await expect(supervisorPage.getByTestId('policy-import-result')).toContainText(
       'Imported 2 of 3 rows',
     );
     await expect(
-      supervisorPage.getByTestId('policy-import-error-row').filter({ hasText: 'POL-E2E-03' }),
+      supervisorPage.getByTestId('policy-import-error-row').filter({ hasText: 'POL-E2E-BAD' }),
     ).toHaveCount(1);
 
     // The imported policy is listed (search narrows server-side).
-    await supervisorPage.getByTestId('policies-search').fill('POL-E2E-01');
+    await supervisorPage.getByTestId('policies-search').fill(policyA);
     await expect(
-      supervisorPage.getByTestId('policies-row').filter({ hasText: 'POL-E2E-01' }),
+      supervisorPage.getByTestId('policies-row').filter({ hasText: policyA }),
     ).toHaveCount(1);
 
     // Retire the second imported policy (stays readable, leaves AUTO/HOME routing alone).
     await supervisorPage.getByTestId('policies-search').fill('');
     await supervisorPage
       .getByTestId('policies-row')
-      .filter({ hasText: 'POL-E2E-02' })
-      .getByTestId('policy-retire-POL-E2E-02')
+      .filter({ hasText: policyB })
+      .getByTestId(`policy-retire-${policyB}`)
       .click();
-    await supervisorPage.getByTestId('policy-retire-confirm-POL-E2E-02').click();
+    await supervisorPage.getByTestId(`policy-retire-confirm-${policyB}`).click();
     await expect(
-      supervisorPage.getByTestId('policies-row').filter({ hasText: 'POL-E2E-02' }),
+      supervisorPage.getByTestId('policies-row').filter({ hasText: policyB }),
     ).toContainText('RETIRED');
     await supervisorContext.close();
 
-    // A fresh claimant files against the imported HOME policy; it routes L1.
+    // A fresh claimant files against the imported PROP-HOME policy; it routes L1.
+    // (PROP-HOME is the V2 property product; HOME/AUTO rows no longer exist in
+    // authority_config since V12 replaced them with the V2 catalog.)
     const claimantContext = await browser.newContext();
     const claimantPage = await claimantContext.newPage();
     await registerClaimant(claimantPage);
     const claimNumber = await fileFnol(
       claimantPage,
-      'POL-E2E-01',
+      policyA,
       'Ada Lovelace',
       'ada.lovelace@example.test',
     );
     await claimantContext.close();
 
     // The claim lands in exactly one L1 adjuster's queue, never the L2 queue.
-    const oneContext = await browser.newContext();
-    const onePage = await oneContext.newPage();
-    await signInAdjuster(onePage, 'adjuster.one');
-    const oneHolds = await queueShows(onePage, claimNumber);
-    await oneContext.close();
-
-    const twoContext = await browser.newContext();
-    const twoPage = await twoContext.newPage();
-    await signInAdjuster(twoPage, 'adjuster.two');
-    const twoHolds = await queueShows(twoPage, claimNumber);
-    await twoContext.close();
+    // V2-1 staff: three L1 adjusters — poll all three, exactly one must hold it.
+    let l1Holds = 0;
+    for (const username of ['adjuster.one', 'adjuster.two', 'adjuster.four']) {
+      const holderContext = await browser.newContext();
+      const holderPage = await holderContext.newPage();
+      await signInAdjuster(holderPage, username);
+      if (await queueShows(holderPage, claimNumber)) {
+        l1Holds++;
+      }
+      await holderContext.close();
+    }
 
     const l2Context = await browser.newContext();
     const l2Page = await l2Context.newPage();
@@ -175,14 +195,40 @@ test(
     const l2Holds = await queueShows(l2Page, claimNumber);
     await l2Context.close();
 
-    expect(oneHolds !== twoHolds).toBe(true);
+    expect(l1Holds).toBe(1);
     expect(l2Holds).toBe(false);
+  },
+);
+
+/**
+ * V2-1 cockpit journey: a freshly registered claimant owns no policy, so My
+ * policies renders the empty state (never another holder's rows, never an error).
+ * The owner path (Ada / POL-10001, 5-cover detail) is covered by
+ * CockpitIntegrationTest (mine/detail/404) against the same seeded rows — the
+ * E2E realm cannot mint Ada's email without breaking other journeys' isolation.
+ */
+test(
+  'V2-1 cockpit journey: unlinked claimant sees the empty state, never another holder',
+  async ({ browser }) => {
+    const freshContext = await browser.newContext();
+    const freshPage = await freshContext.newPage();
+    await registerClaimant(freshPage);
+
+    await freshPage.goto('/policies');
+    await expect(freshPage.getByTestId('cockpit-page')).toBeVisible();
+    await expect(
+      freshPage.getByTestId('cockpit-error').or(freshPage.getByTestId('cockpit-empty')),
+    ).toBeVisible();
+    await expect(freshPage.getByTestId('cockpit-error')).toHaveCount(0);
+    await expect(freshPage.getByTestId('cockpit-empty')).toBeVisible();
+    await expect(freshPage.getByTestId('cockpit-empty')).toContainText('No policies found');
+    await freshContext.close();
   },
 );
 
 /** Opens a claim as its current holder via the queue (mirrors queue.spec.ts). */
 async function openClaimAsHolder(browser: Browser, claimNumber: string): Promise<Page> {
-  for (const username of ['adjuster.one', 'adjuster.two']) {
+  for (const username of ['adjuster.one', 'adjuster.two', 'adjuster.four']) {
     const context = await browser.newContext();
     const page = await context.newPage();
     await signInAdjuster(page, username);

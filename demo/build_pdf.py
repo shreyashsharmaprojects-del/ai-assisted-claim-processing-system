@@ -1,434 +1,217 @@
-"""Technical sales demo PDF for the Claim Processing System.
+"""ClaimFlow demo PDF — simple walkthrough: one screenshot per page, big and clear.
 
-Generates demo/ClaimFlow-Demo.pdf — a visual, showable walkthrough:
-cover, pipeline diagram, per-actor screens (REAL product screenshots),
-live-demo script, trust/engineering page, roadmap/pricing-close page.
+Generates demo/ClaimFlow-Demo.pdf from e2e/shots/*.png (captured by
+e2e/tests/shots.spec.ts via `npx playwright test --config shots.config.ts`
+from e2e/ after `npm run demo:seed`).
 
-Screenshots are captured by e2e/tests/shots.spec.ts
-(`npx playwright test --config shots.config.ts` from e2e/) against the live
-seeded dev stack, then embedded below. Pure reportlab vectors only where no
-screenshot fits (cover, pipeline, authority-gate diagram, close).
+Layout per page: small header, title + one-line subtitle, screenshot as
+large as the page allows, short explanation bullets underneath.
 """
 import os
 
 from PIL import Image as PILImage
-from reportlab.lib.colors import HexColor, white, black
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.pdfbase.pdfmetrics import registerFont, stringWidth
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
+
+# Embedded DejaVu so the rupee sign renders on any viewer (base-14
+# Helvetica leaves U+20B9 to viewer fallback — tofu on bare Linux readers).
+FONT_DIR = "/usr/share/fonts/truetype/dejavu"
+registerFont(TTFont("Body", f"{FONT_DIR}/DejaVuSans.ttf"))
+registerFont(TTFont("Body-Bold", f"{FONT_DIR}/DejaVuSans-Bold.ttf"))
+F, FB = "Body", "Body-Bold"
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ClaimFlow-Demo.pdf")
 SHOTS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "e2e", "shots"))
 
-# --- brand (matches app: corporate blue #0056B3 on cool-grey canvas) ---
 BLUE = HexColor("#0056B3")
-BLUE_DARK = HexColor("#003E82")
-BLUE_TINT = HexColor("#E8F0FA")
 INK = HexColor("#0F172A")
 MUTED = HexColor("#64748B")
-FAINT = HexColor("#94A3B8")
-CANVAS_BG = HexColor("#F1F5F9")
-CARD = white
 LINE = HexColor("#E2E8F0")
-GREEN = HexColor("#15803D")
-GREEN_BG = HexColor("#ECFDF5")
-AMBER = HexColor("#B45309")
-AMBER_BG = HexColor("#FFFBEB")
-RED = HexColor("#B91C1C")
-RED_BG = HexColor("#FEF2F2")
-SLATE_BG = HexColor("#F8FAFC")
 
 W, H = A4
-MARGIN = 18 * mm
+MARGIN = 15 * mm
+CONTENT_W = W - 2 * MARGIN
+TOP = H - 15 * mm
+BOTTOM = 18 * mm  # footer lives below this
 
 
-def pill(c, x, y, w, h, text, fg, bg, size=7.5):
-    c.setFillColor(bg)
-    c.setStrokeColor(fg)
-    c.setLineWidth(0.6)
-    c.roundRect(x, y, w, h, h / 2, fill=1, stroke=1)
-    c.setFillColor(fg)
-    c.setFont("Helvetica-Bold", size)
-    c.drawCentredString(x + w / 2, y + h / 2 - size / 2.8, text)
+def wrap(text, size, max_w):
+    """Greedy word-wrap into lines that fit max_w."""
+    words, lines, cur = text.split(), [], ""
+    for word in words:
+        trial = f"{cur} {word}".strip()
+        if not cur or stringWidth(trial, F, size) <= max_w:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
 
 
-def card(c, x, y, w, h, radius=6):
-    c.setFillColor(CARD)
-    c.setStrokeColor(LINE)
-    c.setLineWidth(0.7)
-    c.roundRect(x, y, w, h, radius, fill=1, stroke=1)
+# (shot file, title, subtitle, bullets)
+PAGES = [
+    ("00-home.png", "1 · Public home page",
+     "The front door — no login needed to start.",
+     ["File a claim and Track a claim are the two actions a visitor sees.",
+      "Everything behind this page requires sign-in through Keycloak SSO."]),
 
+    ("01-fnol-step1.png", "2 · File a claim — step 1: who is covered",
+     "The claimant identifies their policy.",
+     ["Policy number, holder name and email are entered here.",
+      "The system checks the policy exists and is active before letting you continue."]),
 
-def h1(c, y, text):
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 21)
-    c.drawString(MARGIN, y, text)
-    return y - 8
+    ("02-fnol-step2.png", "3 · File a claim — step 2: what happened",
+     "The loss itself, in plain language.",
+     ["Loss date, location and a free-text description of the incident.",
+      "Submitting creates the claim instantly — no adjuster touch needed yet."]),
 
+    ("03-fnol-confirmation.png", "4 · Instant claim number",
+     "Proof the claim exists, the second it is filed.",
+     ["A CLM- reference number is issued immediately.",
+      "The status steps show the claim starting at Under review."]),
 
-def h2(c, y, text):
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(MARGIN, y, text)
-    return y - 6
+    ("04-claimant-status.png", "5 · Track your claim",
+     "What the claimant sees when they come back later.",
+     ["Step-by-step progress (submitted, under review, decided) in plain words.",
+      "Claimants only ever see their own claim — anyone else's number shows a 404 page."]),
 
+    ("05-my-claims.png", "6 · My claims history",
+     "Every claim this person has ever filed, in one list.",
+     ["Newest first, each row linking to its tracking page.",
+      "Filing a second claim takes the same two-step path as the first."]),
 
-def body(c, y, text, size=9.5, color=MUTED, leading=13):
-    c.setFillColor(color)
-    c.setFont("Helvetica", size)
-    for line in text.split("\n"):
-        c.drawString(MARGIN, y, line)
-        y -= leading
-    return y
+    ("06-cockpit-empty.png", "7 · Policy cockpit — empty state",
+     "A brand-new claimant owns no policy yet, and the screen says so honestly.",
+     ["When this claimant holds a policy, this page lists each cover with its limit, claimed and remaining benefit.",
+      "The empty state itself proves the visibility wall: nobody ever sees another holder's policies."]),
 
+    ("07-adjuster-queue.png", "8 · Adjuster work queue",
+     "Where an adjuster's day starts.",
+     ["Only claims assigned to the signed-in adjuster appear here — never a colleague's.",
+      "New claims auto-assign to the least-loaded qualified adjuster."]),
 
-def bullets(c, y, items, size=9.5, leading=13.5, bullet="•  "):
-    c.setFont("Helvetica", size)
-    for bold_head, rest in items:
-        c.setFillColor(BLUE)
-        c.drawString(MARGIN, y, bullet)
-        x = MARGIN + 10
-        if bold_head:
-            c.setFillColor(INK)
-            c.setFont("Helvetica-Bold", size)
-            c.drawString(x, y, bold_head)
-            x += c.stringWidth(bold_head, "Helvetica-Bold", size) + 3
-        c.setFillColor(MUTED)
-        c.setFont("Helvetica", size)
-        c.drawString(x, y, rest)
-        y -= leading
-    return y
+    ("08-queue-filtered.png", "9 · Queue filter — Under review",
+     "Same queue, narrowed to one status.",
+     ["One-click tabs split the queue by claim status.",
+      "Filtering never leaks unassigned claims; it only narrows your own list."]),
 
+    ("09-claim-detail.png", "10 · Claim work surface — facts",
+     "Everything the adjuster needs to assess the claim.",
+     ["Policy, claimant, loss details and the reserve (expected payout) they set.",
+      "Opening a claim assigned to someone else shows 404, not an error about permissions."]),
 
-def footer(c, num, total, light=False):
-    c.setFillColor(HexColor("#BFD7F2") if light else FAINT)
-    c.setFont("Helvetica", 8)
-    c.drawString(MARGIN, 12 * mm, "ClaimFlow  •  Technical sales demo  •  Confidential")
-    c.drawRightString(W - MARGIN, 12 * mm, f"{num} / {total}")
+    ("10-decision-panel.png", "11 · Decision panel + audit trail",
+     "Where the adjuster approves, partially approves or rejects.",
+     ["Decisions above the adjuster's authority limit are blocked and must be escalated.",
+      "Every action lands in an append-only audit trail that nobody can edit or delete."]),
 
+    ("11-overview.png", "12 · Supervisor overview",
+     "The whole book of business at a glance.",
+     ["Aggregates: open claims, exposures, approvals, rejections, aging.",
+      "Numbers always reconcile with the queue rows beneath them."]),
 
-def topbar(c):
-    c.setFillColor(BLUE)
-    c.rect(0, H - 14 * mm, W, 14 * mm, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(MARGIN, H - 9 * mm, "ClaimFlow")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(W - MARGIN, H - 9 * mm, "Claims Processing System  •  Live demo deck")
+    ("12-outbox.png", "13 · Notification outbox",
+     "Proof that claimants were told what happened.",
+     ["Every status change queues a notification; SENT rows confirm delivery.",
+      "The outbox pattern means no email is ever lost if mail sending fails."]),
 
+    ("13-escalations.png", "14 · Escalations queue",
+     "Claims that need a more senior hand.",
+     ["Over-authority decisions and SLA breaches land here for L2/L3 and supervisors.",
+      "Escalation preserves the full history — nothing is re-entered."]),
 
-TOTAL = 8
+    ("14-policies.png", "15 · Policy book (admin)",
+     "The policies claims are filed against.",
+     ["Create, import from CSV (with per-row error reporting) and retire policies.",
+      "Retired or expired policies can never take a new claim."]),
 
-
-def shot(c, name, x, y, w, max_h):
-    """Embed a real product screenshot, aspect-fit into (w x max_h).
-
-    Screenshots are 1440px captures; downscale to a print width that keeps text
-    crisp (~150 dpi on A4). Returns the height actually used.
-    """
-    path = os.path.join(SHOTS, name)
-    with PILImage.open(path) as im:
-        iw, ih = im.size
-    h = w * ih / iw
-    if h > max_h:
-        h = max_h
-        w = h * iw / ih
-    # browser-chrome frame: thin border + caption bar reads as "product", not art
-    c.setFillColor(CARD)
-    c.setStrokeColor(LINE)
-    c.setLineWidth(0.7)
-    c.roundRect(x - 3, y - 3, w + 6, h + 6, 6, fill=1, stroke=1)
-    c.drawImage(path, x, y, width=w, height=h, preserveAspectRatio=True, anchor='sw')
-    return h
-
-
-def shot_caption(c, x, y, text):
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica-Oblique", 7.5)
-    c.drawString(x, y, "Real product screen — " + text)
-    return y - 11
-
-
-def cue(c, y, text):
-    c.setFillColor(RED)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(MARGIN, y, "DEMO CUE  •  " + text)
-    return y
-
-
-def p1_cover(c):
-    c.setFillColor(BLUE)
-    c.rect(0, 0, W, H, fill=1, stroke=0)
-    c.setFillColor(HexColor("#0B2A4A"))
-    c.rect(0, 0, W, 62 * mm, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 34)
-    c.drawString(MARGIN, H - 70 * mm, "From first notice")
-    c.drawString(MARGIN, H - 82 * mm, "to closed claim.")
-    c.setFillColor(HexColor("#BFD7F2"))
-    c.setFont("Helvetica", 12)
-    c.drawString(MARGIN, H - 94 * mm, "A live, working claims pipeline — claimant to adjuster to supervisor,")
-    c.drawString(MARGIN, H - 100 * mm, "with the authority gate, the visibility wall, and the audit trail enforcing every step.")
-    # stat chips
-    y = H - 118 * mm
-    for label, value in [("Backend tests", "182 green"), ("E2E journeys", "15"), ("Migrations", "V1-V11"),
-                         ("Decision emails lost", "0 — outbox")]:
-        c.setFillColor(white)
-        c.roundRect(MARGIN, y - 2, 118, 20, 5, fill=1, stroke=0)
-        c.setFillColor(BLUE)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(MARGIN + 8, y + 8, value)
-        c.setFillColor(HexColor("#334155"))
-        c.setFont("Helvetica", 8)
-        c.drawString(MARGIN + 8, y + 1, label)
-        MARGIN_X = MARGIN
-        globals()["MARGIN"] = MARGIN_X + 124
-    globals()["MARGIN"] = 18 * mm
-    c.setFillColor(HexColor("#BFD7F2"))
-    c.setFont("Helvetica", 9.5)
-    c.drawString(MARGIN, 78 * mm, "This deck is a show-script: each page is a 2-minute live demo beat.")
-    c.drawString(MARGIN, 72 * mm, "Run it with npm run demo:seed, then follow the red DEMO cues.")
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(MARGIN, 30 * mm, "CONFIDENTIAL  •  Prepared for carrier evaluation")
-    footer(c, 1, TOTAL, light=True)
-
-
-def pipeline(c, y, steps):
-    """Horizontal chevron pipeline across the content width."""
-    x0 = MARGIN
-    total_w = W - 2 * MARGIN
-    n = len(steps)
-    gap = 4
-    sw = (total_w - gap * (n - 1)) / n
-    cy = y - 16
-    for i, (label, sub, col) in enumerate(steps):
-        x = x0 + i * (sw + gap)
-        c.setFillColor(col)
-        c.setStrokeColor(col)
-        c.roundRect(x, cy - 14, sw, 30, 5, fill=1, stroke=0)
-        c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 8.5)
-        c.drawCentredString(x + sw / 2, cy + 5, label)
-        c.setFont("Helvetica", 7)
-        c.drawCentredString(x + sw / 2, cy - 6, sub)
-        if i < n - 1:
-            c.setFillColor(BLUE)
-            c.setFont("Helvetica-Bold", 11)
-            c.drawCentredString(x + sw + gap / 2, cy - 3, "›")
-    return cy - 22
-
-
-def p2_pipeline(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "One claim, one pipeline, zero spreadsheets")
-    y = body(c, y - 4, "Every claim walks the same enforced path. No side channels, no email-and-hope.", leading=13)
-    y -= 4
-    y = pipeline(c, y, [
-        ("FNOL", "claimant files", BLUE),
-        ("TRIAGE", "L1 / L2 route", BLUE),
-        ("WORK", "reserve + notes", BLUE),
-        ("DECIDE", "gate enforced", AMBER),
-        ("CLOSE", "pay + notify", GREEN),
-    ])
-    y = h2(c, y - 2, "The three guarantees (say these out loud)")
-    y = bullets(c, y - 4, [
-        ("Authority gate — ", "L1 < L2 < supervisor. Above-limit approvals escalate, never grant."),
-        ("Visibility wall — ", "claimants never see reserve, notes, assignee, or coverage. DTO-layer, tested."),
-        ("Audit immutability — ", "append-only log (DB trigger); every decision has actor + rationale."),
-    ])
-    y -= 4
-    card(c, MARGIN, y - 34, W - 2 * MARGIN, 34)
-    c.setFillColor(RED)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(MARGIN + 8, y - 12, "DEMO CUE  •  30 seconds")
-    c.setFillColor(INK)
-    c.setFont("Helvetica", 9)
-    c.drawString(MARGIN + 8, y - 22, "Open the supervisor Overview: 8 live aggregates. That is the whole book at a glance.")
-    footer(c, 2, TOTAL)
-
-
-def p3_claimant(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "Claimant: file in minutes, track without calling")
-    y -= 4
-    # Filing wizard (step 1) + instant claim-number confirmation, side by side.
-    half = (W - 2 * MARGIN - 10) / 2
-    h_left = shot(c, "01-fnol-step1.png", MARGIN, y - 118, half, 118)
-    h_right = shot(c, "03-fnol-confirmation.png", MARGIN + half + 10, y - 118, half, 118)
-    y -= max(h_left, h_right) + 8
-    y = shot_caption(c, MARGIN, y, "left: 2-step FNOL wizard  •  right: claim number issued instantly")
-    y = bullets(c, y - 2, [
-        ("Status screen shows steps — ", "never reserve, notes, assignee, or coverage (wall holds on closed claims too)."),
-        ("My claims history — ", "newest first; decision amount or denial remarks inline."),
-        ("Emails that can't get lost — ", "FNOL / assignment / decision via outbox with retry (R2)."),
-    ])
-    y -= 2
-    # Claimant's own track screen: steps, not secrets.
-    h = shot(c, "04-claimant-status.png", MARGIN, y - 118, W - 2 * MARGIN, 118)
-    y -= h + 6
-    y = shot_caption(c, MARGIN, y, "claimant track screen: process steps, decision only if won")
-    y = cue(c, y - 2, "file a live FNOL against POL-10001, watch the claim number + Mailpit email.")
-    footer(c, 3, TOTAL)
-
-
-def p4_adjuster(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "Adjuster: a queue that works top-down")
-    y -= 4
-    h = shot(c, "06-adjuster-queue.png", MARGIN, y - 150, W - 2 * MARGIN, 150)
-    y -= h + 6
-    y = shot_caption(c, MARGIN, y, "adjuster.one (L1) queue: own claims, oldest first, server search")
-    y -= 8
-    h = shot(c, "07-claim-detail.png", MARGIN, y - 150, W - 2 * MARGIN, 150)
-    y -= h + 6
-    y = shot_caption(c, MARGIN, y, "claim detail: work surface with decision panel + audit trail")
-    y = bullets(c, y - 2, [
-        ("Claim detail — ", "coverage, reserve form, internal notes, photo downloads, decision panel."),
-        ("Reserve is a free estimate — ", "only the indemnity payment is authority-gated."),
-        ("Above-limit? — ", "one click escalates to L2 or supervisor. No self-approval, ever."),
-    ])
-    y = cue(c, y - 2, "set a reserve, add a note, then approve £1,500 — claim closes + payment recorded.")
-    footer(c, 4, TOTAL)
-
-
-def p5_gate(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "The authority gate: the moment buyers lean in")
-    # gate diagram: amount vs ladder
-    card(c, MARGIN, y - 84, W - 2 * MARGIN, 78, radius=7)
-    bx = MARGIN + 10
-    by = y - 68
-    # ladder bars
-    for i, (lvl, amt, col) in enumerate([("L1", "<= £2,500", GREEN), ("L2", "<= £10,000", BLUE), ("Supervisor", "unlimited", HexColor("#6D28D9"))]):
-        c.setFillColor(col)
-        c.roundRect(bx, by + i * 19, 112, 15, 4, fill=1, stroke=0)
-        c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 8)
-        c.drawString(bx + 8, by + i * 19 + 5, f"{lvl}   {amt}")
-    # arrows + outcomes
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(bx + 126, by + 44, "£1,500 as L1  ->  APPROVED, payment recorded, CLOSED")
-    c.drawString(bx + 126, by + 25, "£8,000 as L1  ->  ESCALATED to L2 (least-loaded)")
-    c.drawString(bx + 126, by + 6, "£12,000 / 5 days old  ->  ESCALATED_SUPERVISOR")
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica", 7.5)
-    c.drawString(bx, by - 12, "Limits live per product code: the next decision uses the new ladder immediately (no cache).")
-    y -= 90
-    y = bullets(c, y, [
-        ("Try to break it — ", "approve £12,000 as L1: blocked, escalated, audit row names you."),
-        ("Aging ladder — ", "3 days -> L2, 5 days -> supervisor; claimant sees the escalation."),
-        ("Single-payment atomicity — ", "decision + payment + closure in one transaction (row-locked)."),
-    ])
-    y -= 2
-    c.setFillColor(RED)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(MARGIN, y, "DEMO CUE  •  attempt the above-limit approval. The block IS the feature — narrate it.")
-    footer(c, 5, TOTAL)
-
-
-def p6_supervisor(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "Supervisor: run the book, prove compliance")
-    y -= 4
-    h = shot(c, "08-overview.png", MARGIN, y - 150, W - 2 * MARGIN, 150)
-    y -= h + 6
-    y = shot_caption(c, MARGIN, y, "overview: 8 live aggregates — the whole book at a glance")
-    y = bullets(c, y - 2, [
-        ("Policy book — ", "create + CSV import (per-row errors) + retire. Load a carrier's book live on the call."),
-        ("Email outbox — ", "every notice PENDING -> SENT, failures retried; prove notification in diligence."),
-        ("Audit trail — ", "immutable (DB trigger), per-claim view + export for the regulator."),
-    ])
-    y -= 2
-    half = (W - 2 * MARGIN - 10) / 2
-    h_left = shot(c, "09-escalations.png", MARGIN, y - 105, half, 105)
-    h_right = shot(c, "10-policies.png", MARGIN + half + 10, y - 105, half, 105)
-    y -= max(h_left, h_right) + 8
-    y = shot_caption(c, MARGIN, y, "left: escalations waiting on you  •  right: policy book with CSV import")
-    y = cue(c, y - 2, "import the 3-row CSV (1 bad row) — the error row is the trust moment.")
-    footer(c, 6, TOTAL)
-
-
-def p7_engineering(c):
-    topbar(c)
-    y = H - 26 * mm
-    y = h1(c, y, "Engineered to survive diligence")
-    y = bullets(c, y - 2, [
-        ("182 backend tests green — ", "gate matrix, wall-shape tests, trigger test, Mailpit delivery pins."),
-        ("15 E2E journeys, hermetic — ", "own backend :8082 + frontend :4200; boots its own world on any laptop."),
-        ("Migrations V1-V11, append-only — ", "Flyway checksums load-bearing; V1-V8 never edited."),
-        ("Ops runbook + api.http — ", "restore-pairing gate, alert table, onboarding checklist, example per endpoint."),
-        ("Infra you already have — ", "Docker + Postgres + Keycloak + Mailpit. Realm-per-carrier tenancy."),
-        ("No lock-in surprises — ", "photo-storage interface (S3 path needs no schema change), OIDC-standard auth."),
-    ])
-    y -= 6
-    half = (W - 2 * MARGIN - 10) / 2
-    h_left = shot(c, "11-authority.png", MARGIN, y - 140, half, 140)
-    h_right = shot(c, "05-my-claims.png", MARGIN + half + 10, y - 140, half, 140)
-    y -= max(h_left, h_right) + 8
-    y = shot_caption(c, MARGIN, y, "left: authority ladder editor (live, no cache)  •  right: claimant history")
-    card(c, MARGIN, y - 40, W - 2 * MARGIN, 40)
-    c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 9.5)
-    c.drawString(MARGIN + 8, y - 14, "Answer before they ask: 404-not-403 (existence never leaks)  •  rationale required  •  closed is terminal")
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica", 8.5)
-    c.drawString(MARGIN + 8, y - 25, "Single-payment atomicity  •  per-claimant + IP flood guards  •  request-id tracing with user-safe references")
-    footer(c, 7, TOTAL)
-
-
-def p8_close(c):
-    c.setFillColor(BLUE)
-    c.rect(0, 0, W, H, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 24)
-    c.drawString(MARGIN, H - 60 * mm, "Pilot in weeks,")
-    c.drawString(MARGIN, H - 71 * mm, "not quarters.")
-    c.setFillColor(HexColor("#BFD7F2"))
-    c.setFont("Helvetica", 11)
-    c.drawString(MARGIN, H - 83 * mm, "Dedicated realm + database per carrier. Your policies imported on the first call.")
-    c.drawString(MARGIN, H - 89 * mm, "Your adjusters working their own queue the same afternoon.")
-    y = H - 104 * mm
-    for title, desc in [("Week 1 — your book, live", "Onboarding checklist: realm -> staff -> authority ladder -> CSV import -> demo seed."),
-                        ("Weeks 2-5 — paid pilot", "Reopen/appeal, staff roster, notification prefs, audit export, a11y evidence."),
-                        ("After customer two — scale", "Tranches, row-level tenancy, SMS, coverage rules — priced roadmap, not surprises.")]:
-        c.setFillColor(white)
-        c.roundRect(MARGIN, y - 24, W - 2 * MARGIN, 30, 6, fill=1, stroke=0)
-        c.setFillColor(BLUE)
-        c.setFont("Helvetica-Bold", 10)
-        c.drawString(MARGIN + 8, y - 6, title)
-        c.setFillColor(HexColor("#334155"))
-        c.setFont("Helvetica", 8.5)
-        c.drawString(MARGIN + 8, y - 16, desc)
-        y -= 36
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(MARGIN, 34 * mm, "Next step: name the pilot book. We import it together — live.")
-    c.setFont("Helvetica", 9)
-    c.setFillColor(HexColor("#BFD7F2"))
-    c.drawString(MARGIN, 27 * mm, "ClaimFlow  •  demo/ClaimFlow-Demo.pdf  •  Companion: README + docs/operations.md")
-    footer(c, 8, TOTAL, light=True)
+    ("15-authority.png", "16 · Authority ladder (admin)",
+     "Who may approve how much — configured, not hard-coded.",
+     ["L1 / L2 / L3 / supervisor limits in INR, editable by supervisors.",
+      "SLA targets per stage live here too; breaches route to escalations."]),
+]
 
 
 def build():
+    missing = [shot for shot, *_ in PAGES if not os.path.isfile(os.path.join(SHOTS, shot))]
+    if missing:
+        raise SystemExit(f"missing screenshots: {missing} — run shots.spec.ts first")
+    total = len(PAGES) + 1  # cover + shots
+
     c = Canvas(OUT, pagesize=A4)
-    c.setTitle("ClaimFlow — Technical Sales Demo")
-    c.setAuthor("ClaimFlow")
-    for fn in (p1_cover, p2_pipeline, p3_claimant, p4_adjuster, p5_gate, p6_supervisor, p7_engineering, p8_close):
-        # grey canvas backdrop for inner pages
-        if fn is not p1_cover and fn is not p8_close:
-            c.setFillColor(CANVAS_BG)
-            c.rect(0, 0, W, H, fill=1, stroke=0)
-        fn(c)
+
+    # ---- cover ----
+    c.setFillColor(BLUE)
+    c.setFont(FB, 30)
+    c.drawCentredString(W / 2, H / 2 + 40, "ClaimFlow")
+    c.setFillColor(MUTED)
+    c.setFont(F, 13)
+    c.drawCentredString(W / 2, H / 2 + 8, "Insurance claim processing — visual walkthrough")
+    c.setFont(F, 10)
+    c.drawCentredString(W / 2, H / 2 - 20, "16 screenshots from the real running product, in the order a user meets them")
+    c.setFont(F, 9)
+    c.drawCentredString(W / 2, H / 2 - 44, "Claimant files and tracks  →  adjuster assesses and decides  →  supervisor oversees")
+    c.showPage()
+
+    # ---- one page per screenshot ----
+    for i, (shot, title, subtitle, bullets) in enumerate(PAGES, start=2):
+        # header
+        c.setFillColor(BLUE)
+        c.setFont(FB, 9)
+        c.drawString(MARGIN, TOP, "ClaimFlow — demo walkthrough")
+        c.setFillColor(MUTED)
+        c.setFont(F, 9)
+        c.drawRightString(W - MARGIN, TOP, f"{i} / {total}")
+        c.setStrokeColor(LINE)
+        c.setLineWidth(0.6)
+        c.line(MARGIN, TOP - 8, W - MARGIN, TOP - 8)
+
+        y = TOP - 34
+        c.setFillColor(INK)
+        c.setFont(FB, 16)
+        c.drawString(MARGIN, y, title)
+        y -= 18
+        c.setFillColor(MUTED)
+        c.setFont(F, 10)
+        c.drawString(MARGIN, y, subtitle)
+        y -= 12
+
+        # wrap bullets first so we know how much vertical room the image gets
+        groups = [wrap(b, 9.5, CONTENT_W - 16) for b in bullets]
+        text_h = sum(len(g) for g in groups) * 13 + 10
+        img_top, img_bottom = y, BOTTOM + text_h
+
+        img = PILImage.open(os.path.join(SHOTS, shot))
+        iw, ih = img.size
+        scale = min(CONTENT_W / iw, (img_top - img_bottom) / ih)
+        dw, dh = iw * scale, ih * scale
+        c.drawImage(os.path.join(SHOTS, shot), MARGIN + (CONTENT_W - dw) / 2, img_bottom,
+                    dw, dh, preserveAspectRatio=True, anchor="c")
+
+        # bullets
+        y = img_bottom - 12
+        c.setFont(F, 9.5)
+        c.setFillColor(MUTED)
+        for g in groups:
+            for j, line in enumerate(g):
+                c.drawString(MARGIN, y, ("•  " if j == 0 else "     ") + line)
+                y -= 13
+            y -= 2
+
+        # footer
+        c.setFillColor(MUTED)
+        c.setFont(F, 8)
+        c.drawCentredString(W / 2, 12 * mm, f"ClaimFlow demo  •  page {i} of {total}")
         c.showPage()
+
     c.save()
-    print(f"wrote {OUT} ({os.path.getsize(OUT)} bytes)")
+    print(f"wrote {OUT} ({total} pages)")
 
 
 if __name__ == "__main__":

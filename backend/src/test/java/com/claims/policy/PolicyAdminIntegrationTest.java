@@ -92,6 +92,7 @@ class PolicyAdminIntegrationTest extends ClaimTableResettingTest {
         assertEquals(400, response.statusCode(), response.body());
         assertTrue(response.body().contains("HOME"), response.body());
         assertTrue(response.body().contains("AUTO"), response.body());
+        assertTrue(response.body().contains("HLTH-PLUS"), response.body());
     }
 
     // --- import -----------------------------------------------------------------

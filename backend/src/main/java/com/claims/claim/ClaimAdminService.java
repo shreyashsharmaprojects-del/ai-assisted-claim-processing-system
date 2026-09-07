@@ -71,8 +71,8 @@ public class ClaimAdminService {
             throw new InvalidRequestException(
                     "This claim is awaiting a supervisor decision and cannot be reassigned.");
         }
-        if (!"L1".equals(level) && !"L2".equals(level)) {
-            throw new InvalidRequestException("Reassign level must be L1 or L2.");
+        if (!"L1".equals(level) && !"L2".equals(level) && !"L3".equals(level)) {
+            throw new InvalidRequestException("Reassign level must be L1, L2, or L3.");
         }
 
         String previousLevel = claim.getLevel();

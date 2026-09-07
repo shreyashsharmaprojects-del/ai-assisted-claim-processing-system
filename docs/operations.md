@@ -25,6 +25,15 @@ Prerequisites: Docker + a shell with the prod secrets in the environment
 ```bash
 # 1. Render the realm from secrets (passwords never touch git).
 npm run realm:render
+# Re-render EVERY time keycloak/realm-export.template.json changes — the running
+# Keycloak only imports realm-export.json, and only on container CREATE (a plain
+# `restart` keeps the old realm: the V2-1 staff never appeared until the container
+# was removed and recreated). After user/role edits: re-render, then
+# `docker compose rm -f keycloak && docker compose up -d keycloak` in dev.
+# Backend↔realm identity is the Keycloak subject: app_user.keycloak_sub must equal
+# the realm user's id (template UUIDs 10000000-...-000001..7). Users created via
+# the Admin API get random subs and see EMPTY queues until the subs match — prefer
+# the template + fresh import over hand-created users.
 
 # 2. Point the SPA at this environment's Keycloak.
 cp deploy/config.json /tmp/config.json  # then edit keycloakUrl to $KEYCLOAK_URL
@@ -169,8 +178,9 @@ multi-tenancy is Series-A, not this sale.
 #    carrier (new realm name, e.g. "carrier-acme"), then render secrets in:
 DB_USERNAME=... DB_PASSWORD=... KEYCLOAK_ADMIN_PASSWORD=... \
 ADJUSTER_PASSWORD=... SUPERVISOR_PASSWORD=... npm run realm:render
-# 2. Provision — staff Keycloak users + matching app_user rows (level L1/L2).
-#    The supervisor needs a Keycloak user ONLY (no app_user row, by design).
+# 2. Provision — staff Keycloak users + matching app_user rows (levels L1/L2/L3;
+#    V2-1 added the adjuster_l3 realm role + L3 staff; the supervisor needs a
+#    Keycloak user ONLY (no app_user row, by design).
 # 3. Authority limits — PUT /api/config/authority/{HOME,AUTO} (supervisor) to the
 #    carrier's ladder; examples in api.http. New rows route/classify immediately.
 # 4. Import policies — POST /api/policies/import (supervisor, ≤ 500 rows/CSV,

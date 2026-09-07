@@ -57,19 +57,24 @@ public class ClaimsMetrics {
         escalations.computeIfAbsent(target, t -> new AtomicLong()).incrementAndGet();
     }
 
-    /** The scrape snapshot: counters plus live gauges. */
+    /**
+     * The scrape snapshot: counters plus live gauges. A {@link java.util.LinkedHashMap}
+     * keeps the wire order stable (fnol first) so scrapers and log-tail parsers see a
+     * deterministic shape — {@code Map.of} makes no ordering promise.
+     */
     public Map<String, Object> snapshot() {
-        return Map.of(
-                "claims_fnol_total", fnolTotal.get(),
-                "claims_fnol_rejected_total", copyOf(fnolRejected),
-                "claims_decisions_total", copyOf(decisions),
-                "claims_escalations_total", copyOf(escalations),
-                "claims_queue_depth", Map.of(
-                        "UNASSIGNED", queueDepth("UNASSIGNED"),
-                        "UNDER_REVIEW", queueDepth("UNDER_REVIEW"),
-                        "ESCALATED_SUPERVISOR", queueDepth("ESCALATED_SUPERVISOR")),
-                "claims_outbox_pending", outboxCount("PENDING"),
-                "claims_outbox_failed_total", outboxCount("FAILED"));
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("claims_fnol_total", fnolTotal.get());
+        snapshot.put("claims_fnol_rejected_total", copyOf(fnolRejected));
+        snapshot.put("claims_decisions_total", copyOf(decisions));
+        snapshot.put("claims_escalations_total", copyOf(escalations));
+        snapshot.put("claims_queue_depth", Map.of(
+                "UNASSIGNED", queueDepth("UNASSIGNED"),
+                "UNDER_REVIEW", queueDepth("UNDER_REVIEW"),
+                "ESCALATED_SUPERVISOR", queueDepth("ESCALATED_SUPERVISOR")));
+        snapshot.put("claims_outbox_pending", outboxCount("PENDING"));
+        snapshot.put("claims_outbox_failed_total", outboxCount("FAILED"));
+        return snapshot;
     }
 
     private long outboxCount(String status) {

@@ -14,6 +14,16 @@ export const routes: Routes = [
     loadComponent: () => import('./my-claims/my-claims').then((m) => m.MyClaims),
   },
   {
+    path: 'policies',
+    canActivate: [claimantGuard],
+    loadComponent: () => import('./policies-cockpit/policies-cockpit').then((m) => m.PoliciesCockpit),
+  },
+  {
+    path: 'policies/:policyNumber',
+    canActivate: [claimantGuard],
+    loadComponent: () => import('./policies-cockpit/policy-detail').then((m) => m.PolicyDetail),
+  },
+  {
     path: 'claim/:claimNumber',
     canActivate: [claimantGuard],
     loadComponent: () => import('./claim-status/claim-status').then((m) => m.ClaimStatus),

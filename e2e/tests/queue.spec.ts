@@ -112,22 +112,21 @@ test('a filed claim lands in exactly one L1 adjuster queue and never in the L2 q
   ).toHaveCount(1);
   await claimantContext.close();
 
-  // Each adjuster opens their own queue in a fresh browser context (own Keycloak session).
-  const oneContext = await browser.newContext();
-  const onePage = await oneContext.newPage();
-  await signInAdjuster(onePage, 'adjuster.one');
-  const oneHolds = await queueShows(onePage, claimNumber);
-  await oneContext.close();
+  // Each adjuster opens their own queue in a fresh browser context (own Keycloak
+  // session). V2-1 staff: three L1 adjusters — poll all three, exactly one holds it.
+  let l1Holds = 0;
+  for (const username of ['adjuster.one', 'adjuster.two', 'adjuster.four']) {
+    const holderContext = await browser.newContext();
+    const holderPage = await holderContext.newPage();
+    await signInAdjuster(holderPage, username);
+    if (await queueShows(holderPage, claimNumber)) {
+      l1Holds++;
+    }
+    await holderContext.close();
+  }
 
-  const twoContext = await browser.newContext();
-  const twoPage = await twoContext.newPage();
-  await signInAdjuster(twoPage, 'adjuster.two');
-  const twoHolds = await queueShows(twoPage, claimNumber);
-  await twoContext.close();
-
-  // Exactly one L1 adjuster holds the claim — never both, never neither.
-  expect(oneHolds || twoHolds, `claim ${claimNumber} must be assigned to one of the two L1 adjusters`).toBe(true);
-  expect(oneHolds && twoHolds, `claim ${claimNumber} must appear in only one L1 queue`).toBe(false);
+  // Exactly one L1 adjuster holds the claim — never zero, never more.
+  expect(l1Holds, `claim ${claimNumber} must be assigned to exactly one L1 adjuster`).toBe(1);
 
   // …and the L2 adjuster never does.
   const threeContext = await browser.newContext();
@@ -166,7 +165,7 @@ async function fileFnolWithPhoto(page: Page): Promise<string> {
 
 /** Signs in the L1 adjuster who holds the claim and opens its detail screen. */
 async function openClaimAsHolder(browser: Browser, claimNumber: string): Promise<Page> {
-  for (const username of ['adjuster.one', 'adjuster.two']) {
+  for (const username of ['adjuster.one', 'adjuster.two', 'adjuster.four']) {
     const context = await browser.newContext();
     const page = await context.newPage();
     await signInAdjuster(page, username);
@@ -270,9 +269,9 @@ test('an above-limit approval is blocked and escalated to the L2 adjuster', asyn
 
   const holder = await openClaimAsHolder(browser, claimNumber);
 
-  // 5000.00 exceeds the seeded L1 limit (2500) but is within the L2 limit (10000): the
-  // approval must be blocked and the claim escalated to the least-loaded L2 adjuster.
-  await holder.getByTestId('detail-decision-amount').fill('5000.00');
+  // 200000.00 exceeds the HLTH-PLUS L1 limit (100000) but is within L2 (400000):
+  // the approval must be blocked and the claim escalated to a least-loaded L2 adjuster.
+  await holder.getByTestId('detail-decision-amount').fill('200000.00');
   await holder.getByTestId('detail-decision-rationale').fill('Large water damage claim.');
   await holder.getByTestId('detail-approve').click();
 
@@ -290,14 +289,20 @@ test('an above-limit approval is blocked and escalated to the L2 adjuster', asyn
   await expect(l1Row).toHaveCount(0);
   await holder.context().close();
 
-  // …and it has been reassigned to the (only) L2 adjuster's queue.
-  const l2Context = await browser.newContext();
-  const l2Page = await l2Context.newPage();
-  await signInAdjuster(l2Page, 'adjuster.three');
-  const l2Holds = await queueShows(l2Page, claimNumber);
-  expect(l2Holds, `the escalated claim ${claimNumber} must appear in the L2 adjuster's queue`)
-    .toBe(true);
-  await l2Context.close();
+  // …and it has been reassigned to an L2 adjuster's queue (V2-1 staff: two L2s —
+  // poll both, exactly one must hold it).
+  let l2Holds = 0;
+  for (const username of ['adjuster.three', 'adjuster.five']) {
+    const l2Context = await browser.newContext();
+    const l2Page = await l2Context.newPage();
+    await signInAdjuster(l2Page, username);
+    if (await queueShows(l2Page, claimNumber)) {
+      l2Holds++;
+    }
+    await l2Context.close();
+  }
+  expect(l2Holds, `the escalated claim ${claimNumber} must appear in exactly one L2 queue`)
+    .toBe(1);
 });
 
 /**
@@ -330,7 +335,7 @@ test('supervisor approves an escalated claim with rationale and it closes', asyn
   await claimantContext.close();
 
   const holder = await openClaimAsHolder(browser, claimNumber);
-  await holder.getByTestId('detail-decision-amount').fill('12000.00');
+  await holder.getByTestId('detail-decision-amount').fill('1200000.00');
   await holder.getByTestId('detail-decision-rationale').fill('Substantial structural damage.');
   await holder.getByTestId('detail-approve').click();
   await expect(holder.getByTestId('detail-decision-result')).toBeVisible();
@@ -353,7 +358,7 @@ test('supervisor approves an escalated claim with rationale and it closes', asyn
   await expect(supervisorPage.getByTestId('detail-audit-list')).toContainText('CLAIM_ESCALATED');
 
   // Approve with a rationale: the claim closes and leaves the escalation queue.
-  await supervisorPage.getByTestId('detail-decision-amount').fill('12000.00');
+  await supervisorPage.getByTestId('detail-decision-amount').fill('1200000.00');
   await supervisorPage.getByTestId('detail-decision-rationale').fill(
     'Agreed under full authority.',
   );
@@ -428,7 +433,7 @@ test('claimant sees the decision on the closed claim: approved amount, or denial
   await expect(claimantPage.getByTestId('claim-status-page')).toBeVisible();
   await expect(claimantPage.getByTestId('claim-status-state')).toHaveText('CLOSED');
   await expect(claimantPage.getByTestId('claim-decision-approved')).toBeVisible();
-  await expect(claimantPage.getByTestId('claim-decision-amount')).toHaveText('£1500.00');
+  await expect(claimantPage.getByTestId('claim-decision-amount')).toHaveText('₹1500.00');
   await expect(claimantPage.getByTestId('claim-decision-denied')).toHaveCount(0);
   await claimantContext.close();
 
@@ -482,8 +487,14 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   await supervisorPage.goto('/admin/authority');
   await expect(supervisorPage.getByTestId('auth-page')).toBeVisible();
 
-  // Re-route AUTO to L1 through the editor.
-  const autoRow = supervisorPage.getByTestId('auth-row').filter({ hasText: 'AUTO' });
+  // Re-route AUTO to L1 through the editor. The auth-row carries the exact
+  // product code under `auth-product`, so match on it exactly — a bare
+  // hasText('AUTO') also matches AUTO-COM/AUTO-STD in the V2 catalog.
+  const autoRow = supervisorPage
+    .getByTestId('auth-row')
+    .filter({ hasText: 'AUTO' })
+    .filter({ has: supervisorPage.getByTestId('auth-product').getByText('AUTO', { exact: true }) });
+  await expect(autoRow).toHaveCount(1);
   await autoRow.getByTestId('auth-route').selectOption('L1');
   await autoRow.getByTestId('auth-save').click();
   await expect(supervisorPage.getByTestId('auth-error')).toHaveCount(0);
@@ -510,26 +521,22 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   await expect(claimantPage.getByTestId('claim-steps')).toContainText('Under review');
   await claimantContext.close();
 
-  const oneContext = await browser.newContext();
-  const onePage = await oneContext.newPage();
-  await signInAdjuster(onePage, 'adjuster.one');
-  const oneHolds = await queueShows(onePage, claimNumber);
-  await oneContext.close();
-
-  const twoContext = await browser.newContext();
-  const twoPage = await twoContext.newPage();
-  await signInAdjuster(twoPage, 'adjuster.two');
-  const twoHolds = await queueShows(twoPage, claimNumber);
-  await twoContext.close();
+  // V2-1 staff: three L1 adjusters — poll all three, exactly one must hold it.
+  let l1Holds = 0;
+  for (const username of ['adjuster.one', 'adjuster.two', 'adjuster.four']) {
+    const holderContext = await browser.newContext();
+    const holderPage = await holderContext.newPage();
+    await signInAdjuster(holderPage, username);
+    if (await queueShows(holderPage, claimNumber)) {
+      l1Holds++;
+    }
+    await holderContext.close();
+  }
 
   expect(
-    oneHolds || twoHolds,
-    `the L1-routed AUTO claim ${claimNumber} must be in an L1 adjuster's queue`,
-  ).toBe(true);
-  expect(
-    oneHolds && twoHolds,
-    `claim ${claimNumber} must appear in only one L1 queue`,
-  ).toBe(false);
+    l1Holds,
+    `the L1-routed AUTO claim ${claimNumber} must be in exactly one L1 adjuster's queue`,
+  ).toBe(1);
 
   const threeContext = await browser.newContext();
   const threePage = await threeContext.newPage();
@@ -546,7 +553,11 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   // earlier run left it there), so an interrupted run cannot cascade into other journeys —
   // nothing else touches AUTO.
   await supervisorPage.goto('/admin/authority');
-  const restoredRow = supervisorPage.getByTestId('auth-row').filter({ hasText: 'AUTO' });
+  const restoredRow = supervisorPage
+    .getByTestId('auth-row')
+    .filter({ hasText: 'AUTO' })
+    .filter({ has: supervisorPage.getByTestId('auth-product').getByText('AUTO', { exact: true }) });
+  await expect(restoredRow).toHaveCount(1);
   await restoredRow.getByTestId('auth-route').selectOption('L2');
   await restoredRow.getByTestId('auth-save').click();
   await expect(supervisorPage.getByTestId('auth-error')).toHaveCount(0);

@@ -10,7 +10,90 @@
 
 .panel--approved .panel__body,
 .panel--denied .panel__body {
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-6);
+}
+
+/* Progress tracker: horizontal rail, done steps filled, current ringed. */
+.tracker {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  gap: 0;
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow-x: auto;
+}
+
+.tracker__step {
+  flex: 1;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: relative;
+  padding-top: 20px;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.tracker__step::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border-default);
+}
+
+.tracker__step:first-child::before {
+  left: 12px;
+}
+
+.tracker__step:last-child::before {
+  right: calc(100% - 24px);
+}
+
+.tracker__dot {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--surface-default);
+  border: 2px solid var(--border-strong);
+}
+
+.tracker__step.is-done {
+  color: var(--text-secondary);
+}
+
+.tracker__step.is-done .tracker__dot {
+  background: var(--status-success-fg);
+  border-color: var(--status-success-fg);
+}
+
+.tracker__step.is-done::before {
+  background: var(--status-success-fg);
+}
+
+.tracker__step.is-current {
+  color: var(--text-primary);
+  font-weight: var(--weight-medium);
+}
+
+.tracker__step.is-current .tracker__dot {
+  border-color: var(--accent-600);
+  box-shadow: var(--focus-ring);
+}
+
+/* The detailed step list below the rail keeps the .steps recipe. */
+.panel--timeline {
+  margin-top: 0;
 }
 
 .decision-summary {

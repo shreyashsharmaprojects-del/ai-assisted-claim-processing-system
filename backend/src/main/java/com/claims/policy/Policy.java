@@ -1,6 +1,8 @@
 package com.claims.policy;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -36,6 +38,34 @@ public class Policy {
     /** ACTIVE (fileable) or RETIRED (history-only, rejected at FNOL) — R1, V9. */
     @Column(name = "status", nullable = false)
     private String status = "ACTIVE";
+
+    /**
+     * V2-1: policy-period cap. Remaining benefit is derived
+     * ({@code sum_insured - prior net payables}), never stored.
+     */
+    @Column(name = "sum_insured", insertable = false, updatable = false)
+    private BigDecimal sumInsured;
+
+    /**
+     * V2-1: the numbers that define the cover (room-rent cap, waiting periods, zone…).
+     * Mapped LONGVARCHAR (never read through JPA — the cockpit reads jsonb via JDBC);
+     * only status transitions write through this entity, and Postgres accepts the
+     * default '{}' without a cast on insert paths used here.
+     */
+    @Column(name = "rating_params", columnDefinition = "jsonb", insertable = false,
+            updatable = false)
+    private String ratingParams;
+
+    /** V2-1: {covered[], excluded[], scope} clause wording shown in the cockpit. */
+    @Column(name = "clauses", columnDefinition = "jsonb", insertable = false,
+            updatable = false)
+    private String clauses;
+
+    @Column(name = "valid_from", insertable = false, updatable = false)
+    private LocalDate validFrom;
+
+    @Column(name = "valid_to", insertable = false, updatable = false)
+    private LocalDate validTo;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -84,7 +114,31 @@ public class Policy {
         return "RETIRED".equals(status);
     }
 
+    public boolean isExpired() {
+        return "EXPIRED".equals(status);
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public BigDecimal getSumInsured() {
+        return sumInsured;
+    }
+
+    public String getRatingParams() {
+        return ratingParams;
+    }
+
+    public String getClauses() {
+        return clauses;
+    }
+
+    public LocalDate getValidFrom() {
+        return validFrom;
+    }
+
+    public LocalDate getValidTo() {
+        return validTo;
     }
 }

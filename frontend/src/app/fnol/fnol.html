@@ -12,12 +12,12 @@
     @if (!result()) {
       <div class="page-banner__aside">
         <ol class="stepper" aria-label="Filing progress">
-          <li class="stepper__step" [class.is-current]="step === 1" [class.is-done]="step === 2">
-            <span class="step-index">1</span>
+          <li class="stepper__step" [class.is-current]="step === 1" [class.is-done]="step === 2" [attr.aria-current]="step === 1 ? 'step' : null">
+            <span class="step-index" aria-hidden="true">1</span>
             <span>Your policy</span>
           </li>
-          <li class="stepper__step" [class.is-current]="step === 2">
-            <span class="step-index">2</span>
+          <li class="stepper__step" [class.is-current]="step === 2" [attr.aria-current]="step === 2 ? 'step' : null" aria-label="Step 2 of 2: what happened">
+            <span class="step-index" aria-hidden="true">2</span>
             <span>What happened</span>
           </li>
         </ol>
@@ -68,9 +68,9 @@
 
     @if (step === 1) {
       <form id="fnol-form-step1" class="form-card" (ngSubmit)="nextStep()">
-        <section class="group">
-          <h2 class="group__title">
-            <span class="step-index">1</span>
+        <section class="group" aria-labelledby="fnol-step1-title">
+          <h2 class="group__title" id="fnol-step1-title">
+            <span class="step-index" aria-hidden="true">1</span>
             Your policy
           </h2>
           <p class="group__desc">
@@ -79,7 +79,7 @@
           </p>
 
           <div class="form-grid">
-            <div class="field">
+            <div class="field field--wide">
               <label for="policyNumber">Policy number</label>
               <input
                 id="policyNumber"
@@ -89,9 +89,11 @@
                 placeholder="POL-00000"
                 autocomplete="off"
                 required
+                aria-describedby="policy-number-hint"
                 data-testid="fnol-policy-number"
                 [(ngModel)]="policyNumber"
               />
+              <p class="field__hint" id="policy-number-hint">Found at the top of your policy document.</p>
             </div>
 
             <div class="field">
@@ -102,6 +104,7 @@
                 class="input"
                 type="text"
                 autocomplete="name"
+                placeholder="As printed on the policy"
                 required
                 data-testid="fnol-holder-name"
                 [(ngModel)]="holderName"
@@ -116,6 +119,7 @@
                 class="input"
                 type="email"
                 autocomplete="email"
+                placeholder="you@example.com"
                 required
                 data-testid="fnol-holder-email"
                 [(ngModel)]="holderEmail"
@@ -138,9 +142,9 @@
       </div>
     } @else {
       <form id="fnol-form" class="form-card" (ngSubmit)="submit()" novalidate>
-        <section class="group">
-          <h2 class="group__title">
-            <span class="step-index">2</span>
+        <section class="group" aria-labelledby="fnol-step2-title">
+          <h2 class="group__title" id="fnol-step2-title">
+            <span class="step-index" aria-hidden="true">2</span>
             What happened
           </h2>
           <p class="group__desc">
@@ -170,6 +174,7 @@
                 class="input"
                 type="text"
                 autocomplete="off"
+                placeholder="Street, city"
                 required
                 data-testid="fnol-loss-location"
                 [(ngModel)]="lossLocation"
@@ -185,10 +190,11 @@
                 type="file"
                 accept="image/*"
                 multiple
+                aria-describedby="fnol-photos-hint"
                 data-testid="fnol-photos"
                 (change)="onPhotosSelected($event)"
               />
-              <p class="field__hint" data-testid="fnol-photos-hint">{{ photoHint() }}</p>
+              <p class="field__hint" id="fnol-photos-hint" data-testid="fnol-photos-hint">{{ photoHint() }}</p>
             </div>
 
             <div class="field field--wide">
@@ -198,6 +204,7 @@
                 name="lossDescription"
                 class="input"
                 rows="4"
+                placeholder="Describe what happened, when, and what was damaged…"
                 required
                 data-testid="fnol-loss-description"
                 [(ngModel)]="lossDescription"
@@ -205,12 +212,13 @@
             </div>
 
             <div class="field field--wide">
-              <label for="remarks">Remarks (optional)</label>
+              <label for="remarks">Remarks <span class="field__optional">(optional)</span></label>
               <textarea
                 id="remarks"
                 name="remarks"
                 class="input"
                 rows="2"
+                placeholder="Anything else the adjuster should know…"
                 data-testid="fnol-remarks"
                 [(ngModel)]="remarks"
               ></textarea>

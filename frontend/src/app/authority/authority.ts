@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { Toasts, serverMessage } from '../toasts';
@@ -24,7 +25,7 @@ interface EditableRow {
 
 /** The supervisor's authority config editor (supervisor-only). */
 @Component({
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   selector: 'app-authority',
   styleUrl: './authority.css',
   templateUrl: './authority.html',

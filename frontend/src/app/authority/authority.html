@@ -1,4 +1,10 @@
 <main class="page page--narrow" data-testid="auth-page">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a routerLink="/overview">Supervision</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">Authority settings</span>
+  </nav>
+
   <div class="page-banner">
     <div class="page-banner__main">
       <div class="page-banner__title-row">
@@ -66,10 +72,12 @@
                 data-testid="auth-route"
                 [(ngModel)]="row.routeLevel"
                 name="route"
+                [attr.aria-describedby]="'route-hint-' + row.productCode"
               >
                 <option value="L1">L1</option>
                 <option value="L2">L2</option>
               </select>
+              <p class="field__hint" id="route-hint-{{ row.productCode }}">New {{ row.productCode }} claims start here.</p>
             </div>
             <div class="field">
               <label for="l1-{{ row.productCode }}">L1 limit (£)</label>
@@ -79,6 +87,7 @@
                 type="number"
                 min="0.01"
                 step="0.01"
+                placeholder="0.00"
                 data-testid="auth-l1"
                 [(ngModel)]="row.l1Text"
                 name="l1"
@@ -92,6 +101,7 @@
                 type="number"
                 min="0.01"
                 step="0.01"
+                placeholder="0.00"
                 data-testid="auth-l2"
                 [(ngModel)]="row.l2Text"
                 name="l2"

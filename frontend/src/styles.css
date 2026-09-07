@@ -233,7 +233,7 @@ td.num,
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-6);
 }
 
 .page-banner__main {
@@ -450,6 +450,7 @@ td.num,
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   padding: 2px 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .panel__actions {
@@ -460,11 +461,15 @@ td.num,
 }
 
 .panel__body {
-  padding: var(--space-6);
+  padding: var(--space-4) var(--space-6);
 }
 
 .panel__body--tight {
   padding: var(--space-4) var(--space-6);
+}
+
+.panel__body--flush {
+  padding: 0;
 }
 
 /* Footer action bar card */
@@ -477,7 +482,7 @@ td.num,
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
-  padding: var(--space-4) var(--space-6);
+  padding: var(--space-3) var(--space-6);
   margin-top: auto;
 }
 
@@ -516,7 +521,6 @@ td.num,
 .btn--primary {
   background: var(--accent-600);
   color: var(--text-on-accent);
-  box-shadow: 0 1px 2px rgba(0, 86, 179, 0.3);
 }
 
 .btn--primary:hover {
@@ -823,6 +827,16 @@ table.data-table {
   white-space: nowrap;
 }
 
+.data-table thead th[aria-sort='ascending']::after,
+.data-table thead th[aria-sort='descending']::after {
+  content: ' ▾';
+  color: var(--text-tertiary);
+}
+
+.data-table thead th[aria-sort='ascending']::after {
+  content: ' ▴';
+}
+
 .data-table tbody td {
   height: var(--row-height);
   padding: 0 var(--cell-padding-x);
@@ -843,6 +857,20 @@ table.data-table {
   text-align: right;
 }
 
+/* Cross-link identifier cell: mono claim/policy number that opens the record. */
+.data-table .cell-id a {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  letter-spacing: -0.01em;
+  color: var(--text-link);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.data-table .cell-id a:hover {
+  text-decoration: underline;
+}
+
 .data-table .cell-truncate {
   max-width: 320px;
   overflow: hidden;
@@ -854,6 +882,232 @@ table.data-table {
   text-align: right;
   width: 1%;
   white-space: nowrap;
+}
+
+/* ============================================================
+   Shared list toolbar — one recipe for every work queue:
+   search -> filter chips -> spacer -> result count
+   Queue, escalations, my-claims, policies, and the overview
+   outbox all share this; no per-screen toolbar CSS.
+   ============================================================ */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.toolbar__search {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.toolbar__search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.toolbar__input {
+  padding-left: 30px;
+}
+
+.toolbar__filters {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.chip-btn {
+  height: 30px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+
+.chip-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.chip-btn.is-active {
+  background: var(--accent-50);
+  border-color: var(--accent-200);
+  color: var(--accent-700);
+}
+
+.toolbar__sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.input--sm {
+  height: var(--control-height-sm);
+  width: auto;
+  font-size: var(--text-xs);
+}
+
+.toolbar__count {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Pagination footer: centered action + quiet position, no numbered pages. */
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.load-more__count {
+  font-size: var(--text-xs);
+}
+
+/* ============================================================
+   Saved-view tabs above a list toolbar: My queue, Unassigned,
+   Breaching SLA, All open. The highest-value queue feature.
+   ============================================================ */
+
+.saved-views {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-6) 0;
+  flex-wrap: wrap;
+}
+
+.saved-views__tab {
+  height: 32px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.saved-views__tab:hover {
+  color: var(--text-primary);
+}
+
+.saved-views__tab.is-active {
+  color: var(--accent-700);
+  border-bottom-color: var(--accent-600);
+}
+
+.saved-views__count {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  background: var(--surface-tint);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  font-variant-numeric: tabular-nums;
+}
+
+.saved-views__tab.is-active .saved-views__count {
+  color: var(--accent-700);
+  background: var(--accent-50);
+  border-color: var(--accent-200);
+}
+
+/* ============================================================
+   Summary metric tiles — the dense alternative to stat cards:
+   label above value inside panels, one row, no invented chrome.
+   ============================================================ */
+
+.summary-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+}
+
+.summary-metric__value {
+  font-size: 28px;
+  font-weight: var(--weight-semibold);
+  color: var(--gray-800);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-metric__label {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.summary-metric__hint {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Breadcrumb — 12px tertiary with chevron separators.
+   ============================================================ */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  flex-wrap: wrap;
+}
+
+.breadcrumb a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  color: var(--text-link);
+  text-decoration: underline;
+}
+
+.breadcrumb__sep {
+  color: var(--text-disabled);
 }
 
 /* ============================================================

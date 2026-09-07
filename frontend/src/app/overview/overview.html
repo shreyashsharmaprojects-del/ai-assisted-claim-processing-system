@@ -1,4 +1,10 @@
 <main class="page" data-testid="overview-page">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <span aria-current="page">Supervision</span>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">Overview</span>
+  </nav>
+
   <div class="page-banner">
     <div class="page-banner__main">
       <div class="page-banner__title-row">
@@ -34,23 +40,24 @@
           </svg>
         </div>
         <h2>Current load</h2>
+        <span class="panel__count">{{ s.openClaims + s.closedClaims }} lifetime</span>
       </div>
       <div class="panel__body">
-        <div class="metric-grid">
-          <div class="metric" data-testid="overview-open">
-            <p class="metric__value num">{{ s.openClaims }}</p>
-            <p class="metric__label">Open claims</p>
-            <p class="metric__hint">{{ s.unassignedClaims }} unassigned · {{ s.underReviewClaims }} under review</p>
+        <div class="summary-metrics">
+          <div class="summary-metric" data-testid="overview-open">
+            <p class="summary-metric__value">{{ s.openClaims }}</p>
+            <p class="summary-metric__label">Open claims</p>
+            <p class="summary-metric__hint">{{ s.unassignedClaims }} unassigned · {{ s.underReviewClaims }} under review</p>
           </div>
-          <div class="metric metric--alert" data-testid="overview-escalated">
-            <p class="metric__value num">{{ s.escalatedClaims }}</p>
-            <p class="metric__label">Awaiting your decision</p>
+          <div class="summary-metric" data-testid="overview-escalated">
+            <p class="summary-metric__value">{{ s.escalatedClaims }}</p>
+            <p class="summary-metric__label">Awaiting your decision</p>
             <a routerLink="/escalations" class="metric__link">Open escalation queue</a>
           </div>
-          <div class="metric" data-testid="overview-closed">
-            <p class="metric__value num">{{ s.closedClaims }}</p>
-            <p class="metric__label">Closed claims</p>
-            <p class="metric__hint">Approved this month: <span class="num" data-testid="overview-approved">{{ approvedText() }}</span></p>
+          <div class="summary-metric" data-testid="overview-closed">
+            <p class="summary-metric__value">{{ s.closedClaims }}</p>
+            <p class="summary-metric__label">Closed claims</p>
+            <p class="summary-metric__hint">Approved this month: <span data-testid="overview-approved">{{ approvedText() }}</span></p>
           </div>
         </div>
       </div>
@@ -68,16 +75,16 @@
         <span class="panel__count">Last 7 days</span>
       </div>
       <div class="panel__body">
-        <div class="metric-grid">
-          <div class="metric" data-testid="overview-aged-l2">
-            <p class="metric__value num">{{ s.agedToL2Last7Days }}</p>
-            <p class="metric__label">Aged to L2</p>
-            <p class="metric__hint">Undecided 3+ days from filing</p>
+        <div class="summary-metrics">
+          <div class="summary-metric" data-testid="overview-aged-l2">
+            <p class="summary-metric__value">{{ s.agedToL2Last7Days }}</p>
+            <p class="summary-metric__label">Aged to L2</p>
+            <p class="summary-metric__hint">Undecided 3+ days from filing</p>
           </div>
-          <div class="metric" data-testid="overview-aged-sup">
-            <p class="metric__value num">{{ s.agedToSupervisorLast7Days }}</p>
-            <p class="metric__label">Aged to supervisor</p>
-            <p class="metric__hint">Undecided 5+ days from filing</p>
+          <div class="summary-metric" data-testid="overview-aged-sup">
+            <p class="summary-metric__value">{{ s.agedToSupervisorLast7Days }}</p>
+            <p class="summary-metric__label">Aged to supervisor</p>
+            <p class="summary-metric__hint">Undecided 5+ days from filing</p>
           </div>
         </div>
       </div>
@@ -152,9 +159,17 @@
           <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'SENT'" (click)="setOutboxStatus('SENT')" data-testid="outbox-filter-sent">Sent</button>
           <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'FAILED'" (click)="setOutboxStatus('FAILED')" data-testid="outbox-filter-failed">Failed</button>
         </div>
+        <span class="toolbar__count" aria-live="polite">{{ outboxVisible().length }} of {{ outboxTotal() }}</span>
       </div>
 
-      @if (outboxVisible().length === 0) {
+      @if (outboxVisible().length === 0 && (outboxQuery().trim() !== '' || outboxStatus() !== 'ALL')) {
+        <div class="state-panel" data-testid="outbox-empty">
+          <p class="state-panel__title">No messages match these filters</p>
+          <p class="state-panel__body">
+            Nothing in the outbox matches the current search and filters.
+          </p>
+        </div>
+      } @else if (outboxVisible().length === 0) {
         <div class="state-panel" data-testid="outbox-empty">
           <p class="state-panel__title">Outbox is clear</p>
           <p class="state-panel__body">
@@ -178,7 +193,7 @@
             <tbody>
               @for (row of outboxVisible(); track row.id) {
                 <tr data-testid="outbox-row">
-                  <td class="mono identifier" data-testid="outbox-claim">{{ claimLabel(row) }}</td>
+                  <td class="cell-id" data-testid="outbox-claim">{{ claimLabel(row) }}</td>
                   <td data-testid="outbox-kind">{{ row.kind }}</td>
                   <td data-testid="outbox-to">{{ row.toAddress }}</td>
                   <td class="cell-truncate" title="{{ row.subject }}" data-testid="outbox-subject">{{ row.subject }}</td>

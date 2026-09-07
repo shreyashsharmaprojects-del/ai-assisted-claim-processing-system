@@ -52,15 +52,21 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
     private static final String BOUNDARY = "----ClaimDecisionTestBoundary9";
 
-    // Seeded staff (V4): adjuster.one/two are L1, adjuster.three is L2.
+    // Seeded staff (V4/V13): adjuster.one/two/four are L1, adjuster.three/five are L2.
     private static final String SUB_L1_ONE = "10000000-0000-0000-0000-000000000001";
     private static final String SUB_L2 = "10000000-0000-0000-0000-000000000003";
+    private static final String SUB_L2_TWO = "10000000-0000-0000-0000-000000000006";
     private static final String CLAIMANT = "sub-claimant-decision";
 
-    // Seeded authority thresholds (V6): L1 up to 2500, L2 up to 10000.
+    // Seeded authority thresholds: POL-10001 is HLTH-PLUS (L1 100000 / L2 400000 /
+    // L3 1000000); POL-20002 is AUTO (L1 2500 / L2 10000 / L3 25000). The mid amount
+    // must clear HLTH-PLUS L1 yet stay inside HLTH-PLUS L2 (200000); the AUTO test
+    // needs its own amount inside AUTO L2 (5000); the top amount must clear
+    // HLTH-PLUS L3 so it reaches the supervisor (1200000).
     private static final String WITHIN_L1 = "1500.00";
-    private static final String ABOVE_L1_WITHIN_L2 = "5000.00";
-    private static final String ABOVE_L2 = "12000.00";
+    private static final String ABOVE_L1_WITHIN_L2 = "200000.00";
+    private static final String AUTO_ABOVE_L1_WITHIN_L2 = "5000.00";
+    private static final String ABOVE_L2 = "1200000.00";
 
     private static final GenericContainer<?> MAILPIT = new GenericContainer<>(
             DockerImageName.parse("axllent/mailpit:v1.22"))
@@ -109,7 +115,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + WITHIN_L1 + ",\"rationale\":\"Quotes verified; within my authority.\"}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"APPROVED\""), response.body());
@@ -172,7 +178,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"DENIED\",\"rationale\":"
+                holderBearer(claimNumber), "{\"decision\":\"DENIED\",\"rationale\":"
                         + "\"Coverage excludes the reported damage.\"}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"DENIED\""), response.body());
@@ -214,7 +220,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L1_WITHIN_L2
                         + ",\"rationale\":\"Large water damage claim.\"}");
         assertEquals(200, response.statusCode(), response.body());
@@ -227,9 +233,12 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
                 "SELECT status FROM claim WHERE id = ?", String.class, claimId));
         assertEquals("L2", jdbcTemplate.queryForObject(
                 "SELECT level FROM claim WHERE id = ?", String.class, claimId));
-        // Reassigned to the (only) L2 adjuster — never the original actor.
-        assertEquals(l2AdjusterId(), jdbcTemplate.queryForObject(
-                "SELECT assigned_adjuster_id FROM claim WHERE id = ?", Long.class, claimId));
+        // Reassigned to a least-loaded L2 adjuster — never the original actor.
+        Long newAssignee = jdbcTemplate.queryForObject(
+                "SELECT assigned_adjuster_id FROM claim WHERE id = ?", Long.class, claimId);
+        assertTrue(SUB_L2.equals(keycloakSubOf(newAssignee))
+                || SUB_L2_TWO.equals(keycloakSubOf(newAssignee)),
+                "escalation lands on an L2 adjuster, never the actor");
         assertEquals(0, count("SELECT count(*) FROM payment WHERE claim_id = ?", claimId));
         // Escalation audit attributed to the adjuster whose attempt triggered it.
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'CLAIM_ESCALATED' "
@@ -247,7 +256,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"escalatedTo\":\"SUPERVISOR\""), response.body());
@@ -265,13 +274,14 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
     @Test
     void anL2AdjusterApprovingAnL2ClaimWithinLimitIsAllowed() throws Exception {
-        // AUTO (POL-20002) routes to L2 and is assigned to the L2 adjuster. Approving an
-        // L2-level claim within the L2 limit is a plain within-authority approval.
+        // AUTO (POL-20002) routes to L2 and is assigned to an L2 adjuster. Approving
+        // an L2-level claim within the AUTO L2 limit (10000) is a plain
+        // within-authority approval; resolve the holder (V2-1 staff may add L2s).
         String claimNumber = fileAutoFnol();
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterThreeBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L1_WITHIN_L2
+                holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                        + AUTO_ABOVE_L1_WITHIN_L2
                         + ",\"rationale\":\"Within L2 authority.\"}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"APPROVED\""), response.body());
@@ -290,7 +300,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         appUsersDeleteL2();
         try {
             HttpResponse<String> response = postJson(
-                    "/api/claims/" + claimNumber + "/decision", adjusterOneBearer(),
+                    "/api/claims/" + claimNumber + "/decision", holderBearer(claimNumber),
                     "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                             + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"no L2 available\"}");
             assertEquals(200, response.statusCode(), response.body());
@@ -358,13 +368,13 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> approve = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + WITHIN_L1 + "}");
         assertEquals(400, approve.statusCode(), approve.body());
         assertTrue(approve.body().contains("rationale"), approve.body());
 
         HttpResponse<String> deny = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), "{\"decision\":\"DENIED\"}");
+                holderBearer(claimNumber), "{\"decision\":\"DENIED\"}");
         assertEquals(400, deny.statusCode(), deny.body());
         assertTrue(deny.body().contains("rationale"), deny.body());
 
@@ -376,7 +386,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
     @Test
     void invalidAmountsAndDecisionsAreRejected() throws Exception {
         String claimNumber = fileHomeFnol();
-        String bearer = adjusterOneBearer();
+        String bearer = holderBearer(claimNumber);
 
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
                 "{\"decision\":\"MAYBE\",\"indemnityAmount\":100,\"rationale\":\"x\"}")
@@ -397,7 +407,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
     @Test
     void aSecondDecisionOnAClosedClaimIsRejectedAndPaymentStaysUnique() throws Exception {
         String claimNumber = fileHomeFnol();
-        String bearer = adjusterOneBearer();
+        String bearer = holderBearer(claimNumber);
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                 + WITHIN_L1 + ",\"rationale\":\"first\"}";
 
@@ -442,21 +452,30 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
     @Test
     void anEscalatedClaimLeavesTheOriginalActorsHands() throws Exception {
         String claimNumber = fileHomeFnol();
+        String originalBearer = holderBearer(claimNumber);
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                 + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"above L1\"}";
 
         assertEquals(200, postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), body).statusCode());
+                originalBearer, body).statusCode());
 
         // The original L1 actor can no longer see or decide the claim: it moved to L2.
         assertEquals(404, postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterOneBearer(), body).statusCode());
-        assertEquals(404, get("/api/claims/" + claimNumber + "/full", adjusterOneBearer())
+                originalBearer, body).statusCode());
+        assertEquals(404, get("/api/claims/" + claimNumber + "/full", originalBearer)
                 .statusCode());
 
-        // The L2 adjuster who now holds it may approve within their limit.
+        // The L2 adjuster who now holds it may approve within their limit. The
+        // escalated assignee is whichever L2 adjuster was least-loaded (V2-1 staff);
+        // resolve the bearer from the claim row instead of assuming adjuster.three.
+        // Realm role is adjuster_l2 (SecurityConfig maps ROLE_* directly).
+        String holderSub = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
         HttpResponse<String> l2Decision = postJson("/api/claims/" + claimNumber + "/decision",
-                adjusterThreeBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                JwtTestConfig.tokenFor(holderSub, "adjuster_l2"),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"within L2\"}");
         assertEquals(200, l2Decision.statusCode(), l2Decision.body());
         assertEquals("CLOSED", jdbcTemplate.queryForObject(
@@ -469,7 +488,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         // rules are status-independent: a closed claim number is never revealed to an
         // anonymous caller (401) or another claimant (404), exactly like an open one.
         String claimNumber = fileHomeFnol();
-        postJson("/api/claims/" + claimNumber + "/decision", adjusterOneBearer(),
+        postJson("/api/claims/" + claimNumber + "/decision", holderBearer(claimNumber),
                 "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\"}");
 
         assertEquals(200, get("/api/claims/" + claimNumber, claimantBearer()).statusCode(),
@@ -482,6 +501,11 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
     // --- helpers ---------------------------------------------------------------
 
+    /**
+     * V2-1: HOME no longer exists as a routing code (POL-10001 is HLTH-PLUS). These
+     * helpers pin the claim's assignee and return a bearer for whoever holds it, so
+     * the gate assertions (not the routing) stay the subject of every test.
+     */
     private String fileHomeFnol() throws Exception {
         return fileFnol(Map.of(
                 "policyNumber", "POL-10001",
@@ -570,15 +594,23 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
                 "SELECT id FROM app_user WHERE keycloak_sub = ?", Long.class, SUB_L2);
     }
 
-    /** Removes the L2 adjuster to simulate the provisioning gap; pair with restore. */
-    private void appUsersDeleteL2() {
-        jdbcTemplate.update("DELETE FROM app_user WHERE keycloak_sub = ?", SUB_L2);
+    private String keycloakSubOf(Long appUserId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT keycloak_sub FROM app_user WHERE id = ?", String.class, appUserId);
     }
 
-    /** Restores the seeded L2 adjuster (fresh id, same identity as the V4 seed). */
+    /** Removes all L2 adjusters to simulate the provisioning gap; pair with restore. */
+    private void appUsersDeleteL2() {
+        jdbcTemplate.update("DELETE FROM app_user WHERE level = 'L2'");
+    }
+
+    /** Restores the seeded L2 adjusters (fresh ids, same identities as the seeds). */
     private void appUsersRestoreL2() {
         jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
                 + "VALUES (?, ?, ?, ?)", SUB_L2, "Ines Kowalski", "ines.kowalski@claims.test", "L2");
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email, level) "
+                + "VALUES (?, ?, ?, ?)", SUB_L2_TWO, "Rahul Singh", "rahul.singh@claims.test",
+                "L2");
     }
 
     private long count(String sql, Object... args) {
@@ -605,6 +637,24 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
     private String adjusterOneBearer() {
         return JwtTestConfig.tokenFor(SUB_L1_ONE, "adjuster_l1");
+    }
+
+    /**
+     * V2-1: bearer for whoever currently holds the claim (the gate — not routing —
+     * is under test). Resolves the assignee from the claim row. Roles are the real
+     * Keycloak names (adjuster_l1/l2/l3): JwtTestConfig signs realm_access roles, and
+     * SecurityConfig maps ROLE_* directly, so the suffix must match the staff level.
+     */
+    private String holderBearer(String claimNumber) {
+        String sub = jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        String level = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        return JwtTestConfig.tokenFor(sub, "adjuster_" + level.toLowerCase());
     }
 
     private String adjusterThreeBearer() {

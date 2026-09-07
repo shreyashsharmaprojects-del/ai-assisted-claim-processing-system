@@ -73,8 +73,17 @@ class MetricsIntegrationTest extends ClaimTableResettingTest {
         String marker = "\"claims_fnol_total\":";
         int at = response.body().indexOf(marker);
         assertTrue(at >= 0, "scrape must carry claims_fnol_total: " + response.body());
-        int end = response.body().indexOf(",", at);
-        return Long.parseLong(response.body().substring(at + marker.length(), end).trim());
+        // The value may be last in the object (no trailing comma): scan to the first
+        // delimiter of any kind.
+        int start = at + marker.length();
+        int end = start;
+        while (end < response.body().length()
+                && (Character.isDigit(response.body().charAt(end))
+                        || response.body().charAt(end) == '-')) {
+            end++;
+        }
+        assertTrue(end > start, "claims_fnol_total must carry a number: " + response.body());
+        return Long.parseLong(response.body().substring(start, end).trim());
     }
 
     private void fileHomeFnol(String claimantSub) throws Exception {

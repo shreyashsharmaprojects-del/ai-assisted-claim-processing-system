@@ -197,7 +197,8 @@ GET {{host}}/api/claims/CLM-000001/audit
 Authorization: Bearer {{token}}
 
 ### Policy admin — create (SUPERVISOR only). Unknown product code -> 400 naming valid
-# codes (HOME, AUTO); duplicate number -> 409. Coverage is a JSON object or omitted.
+# codes (10-row V2 catalog: HLTH-PLUS, AUTO-STD, PROP-HOME, ...); duplicate number
+# -> 409. Coverage is a JSON object or omitted.
 POST {{host}}/api/policies
 Authorization: Bearer {{token}}
 Content-Type: application/json
@@ -237,6 +238,18 @@ Authorization: Bearer {{token}}
 # page/size (defaults 0/25, max 100) + q (number/holder/product substring) + status
 # (ACTIVE/RETIRED) filter. Envelope {content,page,size,totalElements,totalPages}.
 GET {{host}}/api/policies/admin?page=0&size=25
+Authorization: Bearer {{token}}
+
+### Cockpit — my policies (CLAIMANT only). Policies whose holder_email matches the
+# caller's token email, with remaining benefit per policy and per cover
+# (remaining = sum_insured/sub-limit minus prior non-DENIED net payables; derived,
+# never stored). Another holder's rows never leak; unlinked claimants get [].
+GET {{host}}/api/policies/mine
+Authorization: Bearer {{token}}
+
+### Cockpit — policy detail (owner only). One policy with its covers + remaining
+# benefit. Non-owner (or unknown number) -> 404, never 403 (visibility wall).
+GET {{host}}/api/policies/POL-10001
 Authorization: Bearer {{token}}
 
 ### Email outbox — list (SUPERVISOR only). Rows newest first with status filter

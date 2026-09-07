@@ -53,6 +53,13 @@
         }
       </div>
 
+      <div class="saved-views" role="tablist" aria-label="Saved claim views" data-testid="my-claims-views">
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'ALL'" [attr.aria-selected]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="my-claims-filter-all">All claims</button>
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'OPEN'" [attr.aria-selected]="statusFilter() === 'OPEN'" (click)="setStatusFilter('OPEN')" data-testid="my-claims-filter-open">Open</button>
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'APPROVED'" [attr.aria-selected]="statusFilter() === 'APPROVED'" (click)="setStatusFilter('APPROVED')" data-testid="my-claims-filter-approved">Approved</button>
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'DENIED'" [attr.aria-selected]="statusFilter() === 'DENIED'" (click)="setStatusFilter('DENIED')" data-testid="my-claims-filter-denied">Not approved</button>
+      </div>
+
       <div class="toolbar" data-testid="my-claims-toolbar">
         <div class="toolbar__search">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -69,12 +76,7 @@
             (input)="setQuery($any($event.target).value)"
           />
         </div>
-        <div class="toolbar__filters" role="group" aria-label="Filter by decision">
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="my-claims-filter-all">All</button>
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'OPEN'" (click)="setStatusFilter('OPEN')" data-testid="my-claims-filter-open">Open</button>
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'APPROVED'" (click)="setStatusFilter('APPROVED')" data-testid="my-claims-filter-approved">Approved</button>
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'DENIED'" (click)="setStatusFilter('DENIED')" data-testid="my-claims-filter-denied">Not approved</button>
-        </div>
+        <span class="toolbar__count" aria-live="polite">{{ visible().length }} of {{ mineCount() }}</span>
       </div>
 
       @if (mineCount() === 0 && !hasActiveFilters()) {
@@ -83,10 +85,11 @@
           <p class="state-panel__body">
             When you file a claim it appears here with its current status.
           </p>
+          <a routerLink="/claim/new" class="btn btn--primary">File your first claim</a>
         </div>
       } @else if (visible().length === 0) {
         <div class="state-panel" data-testid="my-claims-no-results">
-          <p class="state-panel__title">No claims match</p>
+          <p class="state-panel__title">No claims match these filters</p>
           <p class="state-panel__body">
             Nothing here matches the current search and filters.
           </p>
@@ -103,22 +106,22 @@
                 <th scope="col">Status</th>
                 <th scope="col">Product</th>
                 <th scope="col">Loss date</th>
-                <th scope="col">Decision</th>
+                <th scope="col" class="num">Decision</th>
                 <th scope="col"><span class="sr-only">Open</span></th>
               </tr>
             </thead>
             <tbody>
               @for (claim of visible(); track claim.claimNumber) {
                 <tr data-testid="my-claims-row">
-                  <td class="mono identifier" data-testid="my-claims-number">{{ claim.claimNumber }}</td>
+                  <td class="cell-id" data-testid="my-claims-number"><a [routerLink]="['/claim', claim.claimNumber]">{{ claim.claimNumber }}</a></td>
                   <td>
                     <span class="{{ statusBadge(claim.status) }}" data-testid="my-claims-status">{{ claim.status }}</span>
                   </td>
                   <td data-testid="my-claims-product"><span class="chip">{{ claim.productCode }}</span></td>
-                  <td data-testid="my-claims-loss-date">{{ claim.lossDate }}</td>
-                  <td data-testid="my-claims-decision">
+                  <td data-testid="my-claims-loss-date">{{ lossDateText(claim) }}</td>
+                  <td class="num" data-testid="my-claims-decision">
                     @if (claim.decision === 'APPROVED') {
-                      <span class="num">{{ amountText(claim) }}</span>
+                      <span>{{ amountText(claim) }}</span>
                     } @else if (claim.decision === 'DENIED') {
                       <span class="muted">Not approved</span>
                     } @else {

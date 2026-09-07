@@ -187,11 +187,17 @@ export async function accessToken(): Promise<string | null> {
     await initSession();
   }
   try {
-    await kc.updateToken(30);
+    // Notify listeners only when the token actually rotated: every /api call
+    // flows through here, so an unconditional notify would re-trigger the
+    // shell's badge fetches (which are API calls themselves) in an infinite
+    // loop that floods the tab for internal sessions.
+    const refreshed = await kc.updateToken(30);
+    if (refreshed) {
+      notify();
+    }
   } catch {
     // Token could not be refreshed; the interceptor surfaces the 401 and the next
     // guarded navigation re-prompts sign-in.
   }
-  notify();
   return kc.token ?? null;
 }

@@ -31,31 +31,65 @@
   grid-column: 1 / -1;
 }
 
-.note-list,
-.photo-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-4);
-}
-
-.note-list .note-item {
-  border-left: 2px solid var(--border-default);
-  padding: var(--space-1) var(--space-3);
+/* Reserve: current value sits above the edit row, separated by a hairline. */
+.reserve-current {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
   margin-bottom: var(--space-3);
 }
 
-.note-item__body {
+.reserve-current strong {
+  color: var(--gray-800);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Timeline: left-rail entries with a connecting line. Notes render in a
+   bordered block; audit entries are plain system rows. Nothing editable. */
+.timeline {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.timeline__item {
+  position: relative;
+  border-left: 2px solid var(--border-default);
+  padding: var(--space-1) var(--space-3);
+}
+
+.timeline__item--note {
+  background: var(--surface-tint);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--accent-600);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.timeline__body {
   font-size: var(--text-sm);
   white-space: pre-wrap;
 }
 
-.note-item__meta {
+.timeline__meta {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
   margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline__rationale {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  margin-top: var(--space-1);
 }
 
 .photo-list {
+  list-style: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
@@ -84,36 +118,4 @@
 
 .decision-actions {
   margin-top: var(--space-4);
-}
-
-/* Supervisor audit trail: chronological action rows with rationale. */
-.audit-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.audit-item {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  border-left: 2px solid var(--border-default);
-  padding: var(--space-1) var(--space-3);
-}
-
-.audit-item__meta {
-  font-size: var(--text-xs);
-  color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
-.audit-item__rationale {
-  flex-basis: 100%;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
 }

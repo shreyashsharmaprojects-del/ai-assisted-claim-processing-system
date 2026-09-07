@@ -1,4 +1,10 @@
 <main class="page" data-testid="policies-page">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a routerLink="/overview">Supervision</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">Policies</span>
+  </nav>
+
   <div class="page-banner">
     <div class="page-banner__main">
       <div class="page-banner__title-row">
@@ -64,6 +70,12 @@
         }
       </div>
 
+      <div class="saved-views" role="tablist" aria-label="Saved policy views" data-testid="policies-views">
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'ALL'" [attr.aria-selected]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="policies-filter-all">All policies <span class="saved-views__count">{{ bookCount() }}</span></button>
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'ACTIVE'" [attr.aria-selected]="statusFilter() === 'ACTIVE'" (click)="setStatusFilter('ACTIVE')" data-testid="policies-filter-active">Active</button>
+        <button type="button" role="tab" class="saved-views__tab" [class.is-active]="statusFilter() === 'RETIRED'" [attr.aria-selected]="statusFilter() === 'RETIRED'" (click)="setStatusFilter('RETIRED')" data-testid="policies-filter-retired">Retired</button>
+      </div>
+
       <div class="toolbar" data-testid="policies-toolbar">
         <div class="toolbar__search">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -80,11 +92,7 @@
             (input)="setQuery($any($event.target).value)"
           />
         </div>
-        <div class="toolbar__filters" role="group" aria-label="Filter by status">
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="policies-filter-all">All</button>
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ACTIVE'" (click)="setStatusFilter('ACTIVE')" data-testid="policies-filter-active">Active</button>
-          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'RETIRED'" (click)="setStatusFilter('RETIRED')" data-testid="policies-filter-retired">Retired</button>
-        </div>
+        <span class="toolbar__count" aria-live="polite">{{ visible().length }} of {{ bookCount() }}</span>
       </div>
 
       @if (bookCount() === 0 && !hasActiveFilters()) {
@@ -93,10 +101,11 @@
           <p class="state-panel__body">
             Create the first policy below, or import the book from a CSV.
           </p>
+          <a href="#policy-create" class="btn btn--primary">Create the first policy</a>
         </div>
       } @else if (visible().length === 0) {
         <div class="state-panel" data-testid="policies-no-results">
-          <p class="state-panel__title">No policies match</p>
+          <p class="state-panel__title">No policies match these filters</p>
           <p class="state-panel__body">
             Nothing in the book matches the current search and filters.
           </p>
@@ -164,7 +173,7 @@
       }
     </section>
 
-    <section class="panel">
+    <section class="panel" id="policy-create">
       <div class="panel__header">
         <div class="panel__head-icon">
           <svg viewBox="0 0 16 16" aria-hidden="true">

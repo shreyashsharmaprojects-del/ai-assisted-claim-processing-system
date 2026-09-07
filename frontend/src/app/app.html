@@ -20,6 +20,9 @@
           File a claim
         </a>
       } @else if (isClaimant()) {
+        <a routerLink="/policies" class="btn btn--secondary btn--sm" data-testid="nav-my-policies">
+          My policies
+        </a>
         <a routerLink="/claims" class="btn btn--secondary btn--sm" data-testid="nav-my-claims">
           My claims
         </a>
@@ -65,6 +68,9 @@
               <path d="M2.5 4h11M2.5 8h11M2.5 12h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
             </svg>
             My queue
+            @if (queueBadge() !== null) {
+              <span class="nav-item__count">{{ queueBadge() }}</span>
+            }
           </a>
         </div>
         @if (isSupervisor()) {
@@ -83,6 +89,9 @@
                 <circle cx="8" cy="11.6" r="0.4" fill="currentColor" />
               </svg>
               Escalations
+              @if (escalationBadge() !== null) {
+                <span class="nav-item__count nav-item__count--alert">{{ escalationBadge() }}</span>
+              }
             </a>
             <a routerLink="/admin/authority" routerLinkActive="is-active" class="nav-item" data-testid="nav-authority">
               <svg viewBox="0 0 16 16" aria-hidden="true">

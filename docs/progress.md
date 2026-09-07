@@ -1,21 +1,57 @@
 # Progress
 
-Last updated: 2026-09-07 (demo PDF now embeds real screenshots)
+Last updated: 2026-09-07 (V2-1 slice green: backend 193/193, E2E 16/16)
 
 This file exists so a new session can pick up cold. Write it for someone who has never
 seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**Demo deck `demo/ClaimFlow-Demo.pdf` embeds 10 real product screenshots** (was
-hand-drawn wireframes): FNOL wizard, claim-number confirmation, claimant track screen,
-adjuster queue + claim detail, overview, escalations, policies, authority ladder,
-claimant history. Captured by `e2e/tests/shots.spec.ts` (`npx playwright test
+**V2-1 (domain/data model + routing foundations + seeded scenarios) is built and
+green.** See `docs/requirements-v2.md` + `docs/plan-v2.md` (slice V2-1 scope). Backend
+193/193 green (`mvn -o test`), frontend build green, **hermetic E2E 16/16 green twice
+in a row** (`npx playwright test --workers=1` from `e2e/`, backend :8082 + own
+ng serve :4200, `claims_e2e` truncated before the run, AUTO route reset to L2).
+
+What V2-1 added: **V12** product catalog (10 V2 products), policy enrichment
+(`sum_insured`, `rating_params`/`clauses` jsonb, `valid_from/to`, EXPIRED status),
+`policy_cover`, `adjuster_skill` (eligibility separated from `app_user.level`
+authority), `app_user` L3 + `active`, `authority_config` L3/`authority_basis`/SLA
+columns; **V13** dummy data (POL-10001→HLTH-PLUS 1M + 5 covers, POL-20002→AUTO-STD,
+POL-30001–30010 incl. RETIRED/EXPIRED/low-SI/orphan rows, staff Aisha L1/Rahul L2/
+Meera L3); cockpit API (`GET /api/policies/mine` CLAIMANT, `GET
+/api/policies/{policyNumber}` owner-else-404, remaining benefit derived never stored)
++ `/policies` + `/policies/:policyNumber` claimant screens; realm `adjuster_l3` role
++ `adjuster.four/five/six` users; `CockpitIntegrationTest` 11/11. All V1 guarantees
+preserved (visibility wall, 404-not-403, immutable audit, atomic closure, outbox,
+least-loaded + lowest-id tie-break).
+
+**E2E close-out lessons (this session, keep):** (1) V12 replaced HOME/AUTO authority
+rows with the V2 catalog — journeys referencing them must use PROP-HOME/AUTO-STD and
+HLTH-PLUS-scale amounts; (2) 3 L1s now, so queue tests poll one/two/four and the
+config test matches the exact `auth-product` code; (3) R1 import journey generates a
+unique per-run CSV (reruns otherwise trip on "already exists"); (4) the dev Keycloak
+only imports the realm on container CREATE — after re-rendering
+`keycloak/realm-export.json` you must `rm -f keycloak && up -d keycloak` (a plain
+restart keeps the stale realm: `Realm already exists. Import skipped`), and
+Admin-API-created users get random subs that mismatch `app_user.keycloak_sub` → empty
+queues (queue resolves by subject, not email) — prefer template + fresh import.
+
+**Demo deck `demo/ClaimFlow-Demo.pdf` is a 17-page simple walkthrough: cover +
+one full-width screenshot per page with 2 short explanation bullets** (was a dense
+16-page card/diagram deck): landing,
+FNOL wizard (2 steps), claim-number confirmation, claimant track screen, my-claims
+history, cockpit empty state, adjuster queue (+ filtered tab), claim detail,
+decision panel, overview, outbox, escalations, policy book, authority ladder.
+Captured by `e2e/tests/shots.spec.ts` (`npx playwright test
 --config e2e/shots.config.ts` from `e2e/`) against the live seeded dev stack (:4200
 -> :8081 -> dev `claims` DB after `npm run demo:seed`); shots land in `e2e/shots/`
-(gitignored, regenerable) and the builder (`demo/build_pdf.py`, needs
-`PYTHONPATH=.pylibs`) embeds them at print width. `e2e/playwright.config.ts`
-ignores `shots.spec.ts` so the hermetic gate stays 15 tests in 4 files.
+(regenerable; the names are the PDF build's contract — keep them stable) and the
+builder (`demo/build_pdf.py`, needs `PYTHONPATH=.pylibs`) embeds them at print
+width with embedded DejaVu fonts (the rupee sign needs embedding — base-14
+Helvetica leaves U+20B9 to viewer fallback). `e2e/playwright.config.ts`
+ignores `shots.spec.ts` so the hermetic gate stays 16 tests in 4 files
+(15 carried forward + the V2-1 cockpit journey).
 
 **Sale-readiness pass (R1–R7) is built: backend 182/182 green, frontend build green,
 13/13 existing E2E green on the live host stack + 2 new P0 journeys written for the
