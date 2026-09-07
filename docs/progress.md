@@ -1,11 +1,38 @@
 # Progress
 
-Last updated: 2026-09-07 (V2-1 slice green: backend 193/193, E2E 16/16)
+Last updated: 2026-09-08 (V2-2 slice green: backend 201/201, E2E 19/19 twice)
 
 This file exists so a new session can pick up cold. Write it for someone who has never
 seen this project. Rewrite it, don't append to it.
 
 ## Right now
+
+**V2-2 (multi-cover FNOL + tracker) is built and green.** Backend 201/201
+(`mvn -o test`: 193 carried + 8 new `MultiCoverFnolIntegrationTest`), frontend build
+green, **hermetic E2E 19/19 green twice in a row** (16 carried + 3 new
+`covers.spec.ts`). V2-1 scope below is the foundation it builds on.
+
+What V2-2 added: **V14** `claim_cover` (one row per filed cover: claimed/assessed/
+approved/deductible/adjustment/net_payable + decision + proposal flag; assessed and
+later NULL until V2-5) + `claim.claimed_total` (server-computed, NULL on legacy
+no-cover filings) + duplicate-lookup index; FNOL `covers` JSON part (camelCase
+`coverCode/claimedAmount`, snake accepted leniently; absent = legacy path untouched);
+cover validation (1–N opted, amounts > 0, duplicates rejected, unknown codes name
+the valid ones); above-limit accepted + flagged, never blocked (locked rule 1);
+duplicate guard (same policy + loss date + cover set, order-insensitive, amounts
+ignored, 24h → 409 + existing number, best-effort under concurrency); RETIRED/
+EXPIRED closed-world 404 (only ACTIVE files); `GET /api/claims/filing-covers`
+(picker source keyed off typed filing identity, same 404 shape); enriched claimant
+view/tracker (covers + claimedTotal, wall-safe — `ClaimantClaimViewTest` wall pin
+extended deliberately); claimant cover-picker UI (optional, never blocks submit) +
+tracker per-cover display.
+
+E2E lesson: the duplicate guard is not claimant-scoped and `claims_e2e` persists
+across runs, so `covers.spec.ts` uses a per-run loss date (base 2020-01-01 +
+epochSeconds % 2000 days — unique per second, always past) instead of a fixed date;
+fixed dates trip on the suite's own prior filings (first debugged as a 400 on a
+future date, then as 409s on reruns). Legacy no-cover filings never enter the
+duplicate check, so all pre-V2-2 journeys stay rerun-safe.
 
 **V2-1 (domain/data model + routing foundations + seeded scenarios) is built and
 green.** See `docs/requirements-v2.md` + `docs/plan-v2.md` (slice V2-1 scope). Backend

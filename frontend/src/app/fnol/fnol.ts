@@ -3,12 +3,37 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { formatMoney } from '../format';
 import { serverMessage } from '../toasts';
+
+/** One cover as returned by GET /api/claims/filing-covers (camelCase). */
+export interface AvailableCover {
+  coverCode: string;
+  displayName: string;
+  subLimit: number;
+}
+
+interface FilingCoverRow {
+  coverCode?: string;
+  displayName?: string | null;
+  subLimit?: number | null;
+}
+
+/** One filed cover as echoed on the claimant view (POST + tracker GET, camelCase). */
+export interface FiledCover {
+  coverCode: string;
+  claimedAmount: number;
+  aboveLimit: boolean;
+  displayName?: string | null;
+  subLimit?: number | null;
+}
 
 interface ClaimantClaimView {
   claimNumber: string;
   status: string;
   steps: string[];
+  covers?: FiledCover[] | null;
+  claimedTotal?: number | null;
 }
 
 const MAX_PHOTOS = 5;
@@ -37,6 +62,99 @@ export class Fnol {
   protected readonly error = signal<string | null>(null);
   protected readonly result = signal<ClaimantClaimView | null>(null);
 
+  // --- cover picker (V2-2) ----------------------------------------------------
+  // Loaded from GET /api/claims/filing-covers with the typed step-1 holder
+  // details (holder-match gate, same 404 shape as submit). On 404/empty/<=1
+  // cover the section hides and submit omits the `covers` part (legacy path).
+  // Selection is always optional: shown-but-unchecked submits without covers.
+
+  protected readonly availableCovers = signal<AvailableCover[]>([]);
+  protected coverChecked: Record<string, boolean> = {};
+  protected coverAmounts: Record<string, string> = {};
+
+  /** The cover section shows only when the policy carries 2+ covers. */
+  protected showCovers(): boolean {
+    return this.availableCovers().length >= 2;
+  }
+
+  protected checkedCoverCodes(): string[] {
+    return this.availableCovers()
+      .map((cover) => cover.coverCode)
+      .filter((code) => this.coverChecked[code] === true);
+  }
+
+  /** Above-limit is informational, never blocks: hint when amount > sub-limit. */
+  protected aboveLimitHint(cover: AvailableCover): string | null {
+    if (this.coverChecked[cover.coverCode] !== true) {
+      return null;
+    }
+    const amount = Number(this.coverAmounts[cover.coverCode]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return null;
+    }
+    if (!(cover.subLimit > 0) || amount <= cover.subLimit) {
+      return null;
+    }
+    return `Above the ₹${cover.subLimit} sub-limit — still fileable, flagged for review`;
+  }
+
+  /**
+   * Cover validation: null when fine. Selection is optional, so an empty
+   * selection is valid; every checked amount must be > 0.
+   */
+  protected coversError(): string | null {
+    if (!this.showCovers()) {
+      return null;
+    }
+    for (const code of this.checkedCoverCodes()) {
+      const amount = Number(this.coverAmounts[code]);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        return 'Enter a claimed amount greater than 0 for each selected cover.';
+      }
+    }
+    return null;
+  }
+
+  protected money(value: number | null | undefined): string {
+    return formatMoney(value);
+  }
+
+  private async loadCovers(): Promise<void> {
+    this.availableCovers.set([]);
+    this.coverChecked = {};
+    this.coverAmounts = {};
+    const policyNumber = this.policyNumber.trim();
+    const holderName = this.holderName.trim();
+    const holderEmail = this.holderEmail.trim();
+    if (policyNumber === '' || holderName === '' || holderEmail === '') {
+      return;
+    }
+    try {
+      const rows = await firstValueFrom(
+        this.http.get<FilingCoverRow[] | { covers?: FilingCoverRow[] }>(
+          '/api/claims/filing-covers',
+          { params: { policyNumber, holderName, holderEmail } },
+        ),
+      );
+      const list: FilingCoverRow[] = Array.isArray(rows) ? rows : (rows?.covers ?? []);
+      const covers: AvailableCover[] = (list ?? [])
+        .filter(
+          (cover): cover is FilingCoverRow & { coverCode: string } =>
+            !!cover && typeof cover.coverCode === 'string' && cover.coverCode !== '',
+        )
+        .map((cover) => ({
+          coverCode: cover.coverCode,
+          displayName: cover.displayName ?? cover.coverCode,
+          subLimit: typeof cover.subLimit === 'number' ? cover.subLimit : 0,
+        }));
+      this.availableCovers.set(covers);
+    } catch {
+      // 404 (holder mismatch / unknown policy) or backend not yet deployed:
+      // legacy path, no covers section.
+      this.availableCovers.set([]);
+    }
+  }
+
   // --- step 1 (policy) ------------------------------------------------------
 
   protected step1Valid(): boolean {
@@ -61,6 +179,7 @@ export class Fnol {
     this.error.set(null);
     if (this.step1Valid()) {
       this.step = 2;
+      void this.loadCovers();
     }
   }
 
@@ -92,7 +211,12 @@ export class Fnol {
     return `${this.photoFiles.length} photo${this.photoFiles.length === 1 ? '' : 's'} selected: ${names.join(', ')}.`;
   }
 
+  /** Loss-field validity (photos included); checked-cover amounts gate separately. */
   protected step2Valid(): boolean {
+    return this.lossFieldsValid() && this.coversError() === null;
+  }
+
+  private lossFieldsValid(): boolean {
     if (this.lossDate === '' || this.lossLocation.trim() === '' || this.lossDescription.trim() === '') {
       return false;
     }
@@ -116,8 +240,13 @@ export class Fnol {
   async submit() {
     this.error.set(null);
     this.result.set(null);
-    if (!this.step1Valid() || !this.step2Valid()) {
+    if (!this.step1Valid() || !this.lossFieldsValid()) {
       this.error.set('Check the highlighted details before submitting.');
+      return;
+    }
+    const coverProblem = this.coversError();
+    if (coverProblem) {
+      this.error.set(coverProblem);
       return;
     }
     this.submitting.set(true);
@@ -131,6 +260,15 @@ export class Fnol {
       form.append('lossDescription', this.lossDescription.trim());
       if (this.remarks.trim()) {
         form.append('remarks', this.remarks.trim());
+      }
+      // Optional: only when >=1 cover checked; otherwise legacy path (backend defaults).
+      const selected = this.showCovers() ? this.checkedCoverCodes() : [];
+      if (selected.length > 0) {
+        const covers = selected.map((code) => ({
+          coverCode: code,
+          claimedAmount: Number(this.coverAmounts[code]),
+        }));
+        form.append('covers', JSON.stringify(covers));
       }
       if (this.photoFiles) {
         for (const file of Array.from(this.photoFiles)) {

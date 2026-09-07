@@ -72,6 +72,13 @@ public class Claim {
     @Column(name = "indemnity_amount")
     private BigDecimal indemnityAmount;
 
+    /**
+     * V2-2: server-computed sum of the filed cover amounts (never client-trusted).
+     * NULL on pre-V2-2 rows (single-figure V1 claims predate cover splits).
+     */
+    @Column(name = "claimed_total")
+    private BigDecimal claimedTotal;
+
     @Column(name = "closed_at")
     private Instant closedAt;
 
@@ -158,6 +165,14 @@ public class Claim {
 
     public BigDecimal getIndemnityAmount() {
         return indemnityAmount;
+    }
+
+    public BigDecimal getClaimedTotal() {
+        return claimedTotal;
+    }
+
+    public void setClaimedTotal(BigDecimal claimedTotal) {
+        this.claimedTotal = claimedTotal;
     }
 
     public Instant getClosedAt() {

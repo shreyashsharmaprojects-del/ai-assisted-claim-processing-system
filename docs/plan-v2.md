@@ -1,6 +1,6 @@
 # Plan V2 — Claims Processing System (rethink)
 
-Status: Draft (for approval — no implementation until approved)
+Status: Approved (V2-1 built green; V2-2 build authorised 2026-09-08)
 Last updated: 2026-09-07
 Based on: `docs/requirements-v2.md` (Draft 2026-09-07); V1 `docs/plan.md` (Approved, still the build record)
 
@@ -114,8 +114,9 @@ UNDER_REVIEW[DECISION] --send back w/ reason--> UNDER_REVIEW[VERIFICATION] (new 
 UNDER_REVIEW[REVIEW|VERIFICATION] --send back w/ requested items--> NEED_INFO (leaves assignee bucket; claimant notified; SLA clock pauses; never from DECISION)
 NEED_INFO --claimant responds--> UNDER_REVIEW[prior stage] (stage + history preserved; SLA clock resumes)
 UNDER_REVIEW[DECISION] --decide, within authority--> CLOSED{APPROVED|DENIED|PARTIALLY_APPROVED} + payment
-UNDER_REVIEW[DECISION] --decide, above authority--> proposals saved; UNDER_REVIEW reassigned
-    to lowest rung with authority (stage stays DECISION; full trail travels) — or
+UNDER_REVIEW[DECISION] --propose, above authority--> UNDER_REVIEW[DECISION] proposals saved, gate shown, claim STAYS (adjuster may reduce/reject/refer)
+UNDER_REVIEW[DECISION] --refer confirmed (named senior | auto-pick lowest rung with authority)--> UNDER_REVIEW[DECISION] reassigned
+    with full trail (stage preserved; prior stages, verification, proposals travel) — or
     ESCALATED_SUPERVISOR when no rung covers it
 ESCALATED_SUPERVISOR --supervisor cover-decide--> CLOSED (ungated, rationale required)
 Any UNDER_REVIEW --SLA breach--> rung up, STAGE PRESERVED (reassign; supervisor if top)
@@ -183,9 +184,11 @@ decide(actor, covers[], rationale): validate financial invariants first (field e
   basis = APPROVED_TOTAL or NET_PAYABLE_TOTAL per product config
   if all covers REJECTED → close DENIED (never gated)
   elif basis ≤ limits[actor.level] → apply, close (aggregate computed), payment = net_payable_total, atomically
-  else target = lowest rung with limits[rung] ≥ basis, else SUPERVISOR
-       → save covers as PROPOSALS, re-assign (least-loaded eligible at target rung;
-          walk up if empty; supervisor if none), stage preserved, trail visible
+  else → save covers as PROPOSALS, show gate (proposed vs actor limit), claim STAYS at
+       DECISION with actor (nothing moves by itself; actor may reduce below limit or reject instead)
+refer(actor, target): target = named higher-rung adjuster | AUTO (least-loaded eligible at
+       lowest rung with limits[rung] ≥ basis, walk up if empty; supervisor if none)
+       → re-assign at DECISION, stage preserved, trail visible
        → original actor loses access (404); cannot self-approve (structural, as V1)
 Supervisor on ESCALATED_*: ungated cover-level decide, rationale required, atomic close.
 ```
@@ -240,7 +243,8 @@ S9 retired/expired filings · S10 mid-verification reassignment.
 | POST | `/api/claims/{n}/review` | assignee | `{action: ADVANCE\|REJECT, rationale/notes}` |
 | POST/PUT | `/api/claims/{n}/verifications[/{id}]` | assignee (+ supervisor reassigns) | full verification record in/out |
 | PUT | `/api/claims/{n}/assessment` | assignee at DECISION | per-cover assessed amounts |
-| POST | `/api/claims/{n}/decision` | assignee (**new cover-level body**) | approve/deny/propose per cover + rationale; atomic close or escalation |
+| POST | `/api/claims/{n}/decision` | assignee (**new cover-level body**) | approve/deny/propose per cover + rationale; within authority closes atomically, above authority saves proposals and shows gate (never moves the claim) |
+| POST | `/api/claims/{n}/refer` | assignee at DECISION with saved proposals | `{target_adjuster_id \| AUTO, reason}` → re-assign at DECISION to named senior or least-loaded eligible at lowest covering rung; audited; actor loses access |
 | POST | `/api/claims/{n}/escalation-decision` | SUPERVISOR (**cover-level body**) | ungated close with rationale |
 | POST | `/api/claims/{n}/reassign` | SUPERVISOR | stage + history preserved |
 | GET/PUT | `/api/config/authority[/{code}]` | SUPERVISOR | extended: l3, basis, SLA fields |
@@ -256,9 +260,12 @@ S9 retired/expired filings · S10 mid-verification reassignment.
   clauses, remaining benefit) → cover-picker FNOL (per-cover amount + docs) →
   tracker with stage steps + per-cover outcomes + delay flag. Simple, read-only calm.
 - **Adjuster:** claim workspace with stage stepper (Review | Verification | Decision,
-  later stages locked until guards pass); verification panel (type/status/outcome/
-  notes/evidence/performer/timestamps); assessment grid; cover-decision grid with
-  live totals + authority hint ("₹X against your ₹Y limit — will escalate to L3").
+  later stages locked until guards pass); Review shows documents/description/amounts/
+  covers with advance / reject / ask-claimant actions; verification panel
+  (type/status/outcome/notes/evidence/performer/timestamps); assessment grid;
+  cover-decision grid with live totals + always-visible authority hint ("₹X proposed
+  against your ₹Y limit — above your authority: reduce, reject, or refer upwards"
+  with named-senior or auto-pick referral, never auto-move).
 - **Supervisor:** team dashboard (stage × level × product, escalations, unassigned
   reasons, SLA exposure, outbox), escalated claim view with full trail + proposals,
   admin (authority+SLA+skills matrix, cover-aware policy import).

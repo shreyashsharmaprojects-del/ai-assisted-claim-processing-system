@@ -1,6 +1,6 @@
 # Requirements V2 — Claims Processing System (rethink)
 
-Status: Draft (for approval — no implementation until approved)
+Status: Approved (V2-1 built green; V2-2 build authorised 2026-09-08)
 Last updated: 2026-09-07
 Based on: `docs/requirements.md` (V1, Approved 2026-09-03) + user V2 direction + 8 clarifications (2026-09-07)
 
@@ -138,17 +138,25 @@ attempting to approve** under the product's configured `authority_basis`
 level's limit for the claim's product.
 
 The decider records per-cover outcomes (`APPROVED` with amounts, or `REJECTED` with
-remarks) plus a claim-level rationale. Gate outcome:
+remarks) plus a claim-level rationale. The interface shows a **visible authority
+gate**: the decision panel always displays the actor's limit for the claim's
+product next to the proposed aggregate ("₹X proposed against your ₹Y limit"), so
+it is unmistakable when the claim exceeds what the adjuster may approve. Gate
+outcome:
 - Aggregate within the actor's limit → apply, close the claim. All covers approved ⇒
   claim `APPROVED`; all rejected ⇒ `DENIED`; mixed ⇒ **`PARTIALLY_APPROVED`** with
   `approved_total`/`net_payable_total` computed from the approved covers. Single
   payment row recorded (V1 atomicity preserved).
-- Aggregate above the actor's limit → **nothing is closed**: the per-cover proposals
-  are saved as proposals, the claim escalates to the **lowest level with sufficient
-  authority** (skip-level allowed, L1→L3 directly), assigned to the least-loaded
-  eligible adjuster there, with the full trail (prior stages, verification, proposals)
-  visible. The new handler may accept or modify each proposal; no one can approve
-  their own escalation (structural, as V1).
+- Aggregate above the actor's limit → **the claim is NOT auto-escalated and nothing
+  closes**: the per-cover proposals are saved, and the adjuster is offered an
+  explicit **Refer upwards** choice — pick a named higher-rung adjuster, or "assign
+  to any qualified senior" (least-loaded eligible at the lowest rung whose limit
+  covers the aggregate; skip-level allowed, L1→L3 directly; supervisor when no rung
+  covers it). Only when the adjuster confirms the referral does the claim move, at
+  stage DECISION with the full trail (prior stages, verification, proposals) visible.
+  Until then the claim stays with the adjuster, still at DECISION, still theirs to
+  reduce below their limit or reject instead. The new handler may accept or modify
+  each proposal; no one can approve their own escalation (structural, as V1).
 - Pure rejection (no approved amount) is never authority-gated.
 
 Acceptance criteria:
@@ -159,9 +167,11 @@ Acceptance criteria:
       capped within the remaining cover sub-limit and the remaining policy sum insured;
       over-limit proposals are rejected with a field-level error and the claim stays open.
       (Filing above a limit is legal — see Flow V2-1; deciding above a limit is not.)
-- [ ] An above-authority approval attempt escalates (never closes), preserves the
-      per-cover proposals, and routes to the lowest level whose limit covers the
-      aggregate; the escalated handler sees the full prior trail.
+- [ ] An above-authority proposal does NOT move the claim by itself: the gate shows
+      the limit breach plainly, proposals are saved, and the claim moves only when
+      the adjuster confirms a referral (named senior or auto-pick) to the lowest
+      level whose limit covers the aggregate; the escalated handler sees the full
+      prior trail.
 - [ ] An escalated handler can modify any proposal and re-decide; the original
       actor cannot touch the claim after escalation (404).
 - [ ] Denying all covers closes the claim as `DENIED` at any deciding level with a rationale.

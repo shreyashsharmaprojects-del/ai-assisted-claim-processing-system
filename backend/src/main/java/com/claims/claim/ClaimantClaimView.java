@@ -18,17 +18,31 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * The mapper guards each field to its decision so the "approved amount only when APPROVED /
  * remarks only when DENIED" rule is structural at the view boundary, not a serialization
  * accident.
+ *
+ * <p>V2-2 grows the filed covers: {@code covers} (claimant-supplied figures plus the
+ * above-limit flag derived from the already-public sub-limit) and the server-computed
+ * {@code claimedTotal}. Both are null on pre-V2-2 and legacy no-cover filings, so those
+ * responses are byte-identical to before. Assessed/approved/deductible/net figures,
+ * verifier identity, proposals and notes never enter this shape.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClaimantClaimView(String claimNumber, String status, List<String> steps,
-        String decision, BigDecimal indemnityAmount, String decisionRemarks) {
+        String decision, BigDecimal indemnityAmount, String decisionRemarks,
+        List<ClaimantCoverView> covers, BigDecimal claimedTotal) {
 
+    /** Legacy shape: no filed covers (pre-V2-2 rows and the no-covers filing path). */
     public static ClaimantClaimView from(Claim claim) {
+        return from(claim, null, null);
+    }
+
+    public static ClaimantClaimView from(Claim claim, List<ClaimantCoverView> covers,
+            BigDecimal claimedTotal) {
         String decision = claim.getDecision();
         return new ClaimantClaimView(claim.getClaimNumber(), claim.getStatus(),
                 stepsFor(claim.getStatus()), decision,
                 "APPROVED".equals(decision) ? claim.getIndemnityAmount() : null,
-                "DENIED".equals(decision) ? claim.getDecisionRemarks() : null);
+                "DENIED".equals(decision) ? claim.getDecisionRemarks() : null,
+                covers, claimedTotal);
     }
 
     /**

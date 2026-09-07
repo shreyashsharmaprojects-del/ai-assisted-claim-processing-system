@@ -40,6 +40,27 @@
         <p class="kv__label result-panel__label">Your claim number</p>
         <p class="claim-number mono identifier" data-testid="claim-number">{{ view.claimNumber }}</p>
 
+        @if (view.covers && view.covers.length > 0) {
+          <h3 class="section-subhead">Covers filed</h3>
+          <ul class="cover-list" data-testid="claim-covers">
+            @for (cover of view.covers; track cover.coverCode) {
+              <li>
+                <strong class="mono">{{ cover.coverCode }}</strong>
+                @if (cover.displayName) {
+                  <span> — {{ cover.displayName }}</span>
+                }
+                <span> — {{ money(cover.claimedAmount) }}</span>
+                @if (cover.aboveLimit) {
+                  <span class="cover-flag">Above sub-limit — flagged for review</span>
+                }
+              </li>
+            }
+          </ul>
+          @if (view.claimedTotal != null) {
+            <p class="cover-total">Total claimed: <strong data-testid="claim-total">{{ money(view.claimedTotal) }}</strong></p>
+          }
+        }
+
         <h3 class="section-subhead">What happens next</h3>
         <ol class="steps" data-testid="claim-steps">
           @for (step of view.steps; track step) {
@@ -151,6 +172,46 @@
             A description of the incident helps route your claim to the right adjuster.
             Filing for <strong class="mono">{{ policyNumber.trim() }}</strong>.
           </p>
+
+          @if (showCovers()) {
+            <div class="cover-picker" data-testid="fnol-covers">
+              <h3 class="section-subhead">Which covers are you claiming under?</h3>
+              <p class="group__desc">Tick each cover and enter the amount claimed.</p>
+              @for (cover of availableCovers(); track cover.coverCode) {
+                <div class="cover-row">
+                  <label class="cover-row__check">
+                    <input
+                      type="checkbox"
+                      [name]="'cover-' + cover.coverCode"
+                      [attr.data-testid]="'fnol-cover-' + cover.coverCode"
+                      [(ngModel)]="coverChecked[cover.coverCode]"
+                    />
+                    <span><strong class="mono">{{ cover.coverCode }}</strong> — {{ cover.displayName }}</span>
+                  </label>
+                  <div class="field">
+                    <label [for]="'amount-' + cover.coverCode">Claimed amount (₹)</label>
+                    <input
+                      [id]="'amount-' + cover.coverCode"
+                      [name]="'amount-' + cover.coverCode"
+                      class="input"
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      placeholder="0.00"
+                      [attr.data-testid]="'fnol-amount-' + cover.coverCode"
+                      [(ngModel)]="coverAmounts[cover.coverCode]"
+                    />
+                    @if (cover.subLimit > 0) {
+                      <p class="field__hint">Sub-limit ₹{{ cover.subLimit }}</p>
+                    }
+                    @if (aboveLimitHint(cover); as aboveHint) {
+                      <p class="field__hint cover-row__above">{{ aboveHint }}</p>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
 
           <div class="form-grid">
             <div class="field">

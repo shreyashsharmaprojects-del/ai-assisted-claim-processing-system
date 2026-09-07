@@ -19,7 +19,10 @@ import org.junit.jupiter.api.Test;
  * carry only the public fields — claimNumber/status/steps, plus the slice-6 decision
  * fields (decision, indemnityAmount on approval, decisionRemarks on denial) — no
  * internal fields, ever. Slice 4 deferred the decision fields here deliberately; this
- * test pins the exact shape so growing it is a conscious act.
+ * test pins the exact shape so growing it is a conscious act. V2-2 deliberately adds
+ * the filed covers + claimed total (claimant-supplied figures plus the above-limit flag
+ * derived from the already-public sub-limit — wall-safe, never assessed/approved/
+ * reserve/notes/assignee).
  */
 class ClaimantClaimViewTest {
 
@@ -29,7 +32,7 @@ class ClaimantClaimViewTest {
                 .map(RecordComponent::getName)
                 .toList();
         assertEquals(List.of("claimNumber", "status", "steps", "decision", "indemnityAmount",
-                "decisionRemarks"), components,
+                "decisionRemarks", "covers", "claimedTotal"), components,
                 "adding an internal field to the claimant view is a deliberate act");
     }
 

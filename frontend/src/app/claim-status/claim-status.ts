@@ -6,6 +6,15 @@ import { badgeClass } from '../ui';
 import { formatDate, formatMoney } from '../format';
 import { serverMessage } from '../toasts';
 
+/** One filed cover on the claimant view (camelCase, claimant-safe keys only). */
+interface FiledCover {
+  coverCode: string;
+  claimedAmount: number;
+  aboveLimit: boolean;
+  displayName?: string | null;
+  subLimit?: number | null;
+}
+
 interface ClaimantClaimView {
   claimNumber: string;
   status: string;
@@ -15,6 +24,8 @@ interface ClaimantClaimView {
   decision?: 'APPROVED' | 'DENIED' | null;
   indemnityAmount?: number | null;
   decisionRemarks?: string | null;
+  covers?: FiledCover[] | null;
+  claimedTotal?: number | null;
 }
 
 /** The claimant's own claim status screen: only claimant-visible data. */
@@ -43,6 +54,11 @@ export class ClaimStatus {
   /** The approved amount, rendered in pounds with two decimals. */
   protected approvedAmountText(): string {
     return formatMoney(this.view()?.indemnityAmount);
+  }
+
+  /** Claimed amount per cover / filed total, in rupees with two decimals. */
+  protected money(value: number | null | undefined): string {
+    return formatMoney(value);
   }
 
   /** Filing date line under the banner; the wire may omit it on older backends. */

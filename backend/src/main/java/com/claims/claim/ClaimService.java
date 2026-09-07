@@ -1,12 +1,17 @@
 package com.claims.claim;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +22,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.claims.api.DuplicateFnolException;
 import com.claims.api.FnolValidationException;
 import com.claims.api.PolicyMismatchException;
 import com.claims.api.RateLimitedException;
@@ -27,6 +33,8 @@ import com.claims.audit.AuditLogWriter;
 import com.claims.outbox.EmailOutboxWriter;
 import com.claims.metrics.ClaimsMetrics;
 import com.claims.policy.Policy;
+import com.claims.policy.PolicyCover;
+import com.claims.policy.PolicyCoverRepository;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityConfigRepository;
 import com.claims.routing.ClaimClassifier;
@@ -56,6 +64,8 @@ public class ClaimService {
 
     private final ClaimRepository claims;
     private final PolicyRepository policies;
+    private final PolicyCoverRepository policyCovers;
+    private final ClaimCoverRepository claimCovers;
     private final AuthorityConfigRepository authorityConfigs;
     private final AttachmentRepository attachments;
     private final PhotoStorage photoStorage;
@@ -68,6 +78,7 @@ public class ClaimService {
     private final int fnolPerDay;
 
     public ClaimService(ClaimRepository claims, PolicyRepository policies,
+            PolicyCoverRepository policyCovers, ClaimCoverRepository claimCovers,
             AuthorityConfigRepository authorityConfigs, AttachmentRepository attachments,
             PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
             JdbcTemplate jdbcTemplate, FnolSubmissionRepository submissions,
@@ -75,6 +86,8 @@ public class ClaimService {
             @Value("${claims.fnol.rate-limit-per-day:20}") int fnolPerDay) {
         this.claims = claims;
         this.policies = policies;
+        this.policyCovers = policyCovers;
+        this.claimCovers = claimCovers;
         this.authorityConfigs = authorityConfigs;
         this.attachments = attachments;
         this.photoStorage = photoStorage;
@@ -102,9 +115,11 @@ public class ClaimService {
         if (policy == null
                 || !policy.getHolderName().equalsIgnoreCase(input.holderName().trim())
                 || !policy.getHolderEmail().equalsIgnoreCase(input.holderEmail().trim())
-                || policy.isRetired()) {
-            // RETIRED policies reuse the same shape: no new claimant-visible branch, and no
-            // signal whether the number exists, the holder mismatched, or it was retired.
+                || !"ACTIVE".equals(policy.getStatus())) {
+            // Non-ACTIVE (RETIRED/EXPIRED/future) policies reuse the same shape: no new
+            // claimant-visible branch, and no signal whether the number exists, the
+            // holder mismatched, or it was non-fileable (V2-2 E9). Closed-world: only
+            // ACTIVE files.
             throw new PolicyMismatchException(
                     "We could not match that policy number with the holder details provided.");
         }
@@ -113,6 +128,26 @@ public class ClaimService {
         if (level == null) {
             throw new UnroutableException(
                     "No routing configuration exists for product " + policy.getProductCode());
+        }
+
+        // V2-2: explicit cover selections are validated against the policy's opted
+        // covers (unknown codes name the valid ones — R1 discipline). Above-limit
+        // amounts are accepted, never blocked (locked rule 1): the flag is derived
+        // at read time and enforced at assessment/approval (V2-5).
+        List<PolicyCover> opted = policyCovers
+                .findByPolicyIdOrderBySortOrderAscIdAsc(policy.getId());
+        List<CoverSelection> selections = normalizeCovers(input.covers(), opted);
+
+        // Duplicate guard BEFORE the claim-number burn, photo store, audit and
+        // assignment: same policy + loss date + cover set within 24h returns the
+        // existing number (409). Amounts are ignored (a refiled set is a correction
+        // pointer, not a new claim). Best-effort under concurrency — no locking.
+        if (selections != null) {
+            String duplicate = findDuplicateClaimNumber(policy.getId(), lossDate,
+                    coverSetOf(selections));
+            if (duplicate != null) {
+                throw new DuplicateFnolException(duplicate);
+            }
         }
 
         Long sequence = jdbcTemplate.queryForObject("SELECT nextval('claim_number_seq')", Long.class);
@@ -146,11 +181,42 @@ public class ClaimService {
 
         submissions.save(new FnolSubmission(input.claimantSub(), claimId, clientIp, Instant.now()));
 
+        // V2-2: persist one claim_cover row per selected cover (codes stored UPPER,
+        // trimmed) and the server-computed claimed total. Legacy no-covers filings
+        // persist nothing and leave claimed_total NULL (V1 bridge).
+        BigDecimal claimedTotal = null;
+        List<ClaimantCoverView> coverViews = null;
+        if (selections != null) {
+            claimedTotal = BigDecimal.ZERO;
+            coverViews = new ArrayList<>();
+            Map<String, PolicyCover> byCode = new HashMap<>();
+            for (PolicyCover cover : opted) {
+                byCode.put(cover.getCoverCode(), cover);
+            }
+            for (CoverSelection selection : selections) {
+                PolicyCover cover = byCode.get(selection.coverCode());
+                claimCovers.save(new ClaimCover(claimId, selection.coverCode(),
+                        selection.claimedAmount()));
+                claimedTotal = claimedTotal.add(selection.claimedAmount());
+                coverViews.add(new ClaimantCoverView(selection.coverCode(),
+                        cover.getDisplayName(), selection.claimedAmount(),
+                        cover.getSubLimit(),
+                        selection.claimedAmount().compareTo(cover.getSubLimit()) > 0));
+            }
+            claim.setClaimedTotal(claimedTotal);
+            claims.save(claim);
+        }
+
+        Map<String, Object> createdAfter = new HashMap<>();
+        createdAfter.put("claimNumber", claim.getClaimNumber());
+        createdAfter.put("level", claim.getLevel());
+        createdAfter.put("status", claim.getStatus());
+        if (selections != null) {
+            createdAfter.put("covers", coverSetOf(selections).toString());
+            createdAfter.put("claimedTotal", claimedTotal);
+        }
         auditLog.append(input.claimantSub(), "CLAIM_CREATED", "CLAIM", claimId, null,
-                AuditJson.of(Map.of(
-                        "claimNumber", claim.getClaimNumber(),
-                        "level", claim.getLevel(),
-                        "status", claim.getStatus())),
+                AuditJson.of(createdAfter),
                 null);
 
         // Assign inside the creating transaction: the claim is never observable as
@@ -177,9 +243,105 @@ public class ClaimService {
                     claim.getClaimNumber(), policy.getHolderName(), adjuster.getDisplayName(),
                     adjuster.getEmail());
         }
-        return new FnolResult(ClaimantClaimView.from(claim),
+        return new FnolResult(ClaimantClaimView.from(claim, coverViews, claimedTotal),
                 adjuster == null ? null : adjuster.getDisplayName(),
                 adjuster == null ? null : adjuster.getEmail());
+    }
+
+    /**
+     * V2-2 cover validation. Null input = legacy path (no selections, no rows).
+     * A present list must carry 1–N opted covers with amounts &gt; 0; codes are
+     * normalized (trim + UPPER) and matched against the policy's opted set.
+     * Above-limit amounts pass untouched (locked rule 1).
+     */
+    private List<CoverSelection> normalizeCovers(List<CoverSelection> covers,
+            List<PolicyCover> opted) {
+        if (covers == null) {
+            return null;
+        }
+        Map<String, PolicyCover> byCode = new HashMap<>();
+        List<String> validCodes = new ArrayList<>();
+        for (PolicyCover cover : opted) {
+            byCode.put(cover.getCoverCode(), cover);
+            validCodes.add(cover.getCoverCode());
+        }
+        if (covers.isEmpty()) {
+            throw new FnolValidationException(
+                    "Select at least one cover to claim under.");
+        }
+        if (covers.size() > opted.size()) {
+            throw new FnolValidationException(
+                    "Too many covers selected: this policy carries " + opted.size() + ".");
+        }
+        Set<String> seen = new HashSet<>();
+        List<CoverSelection> normalized = new ArrayList<>();
+        for (CoverSelection selection : covers) {
+            String code = selection == null || selection.coverCode() == null ? ""
+                    : selection.coverCode().trim().toUpperCase(Locale.ROOT);
+            BigDecimal amount = selection == null ? null : selection.claimedAmount();
+            if (code.isEmpty()) {
+                throw new FnolValidationException("Each selected cover needs a cover code.");
+            }
+            if (amount == null) {
+                throw new FnolValidationException(
+                        "Enter a claimed amount for cover " + code + ".");
+            }
+            if (amount.scale() > 2 || amount.compareTo(BigDecimal.ZERO) <= 0
+                    || amount.compareTo(new BigDecimal("999999999999.99")) > 0) {
+                throw new FnolValidationException(
+                        "The claimed amount for cover " + code
+                                + " must be greater than 0 with at most two decimals.");
+            }
+            if (!seen.add(code)) {
+                throw new FnolValidationException(
+                        code + " was selected twice — select each cover once.");
+            }
+            if (!byCode.containsKey(code)) {
+                throw new FnolValidationException("Cover " + code
+                        + " is not on this policy. Valid covers: "
+                        + String.join(", ", validCodes) + ".");
+            }
+            normalized.add(new CoverSelection(code, amount));
+        }
+        return normalized;
+    }
+
+    /** Normalized cover set, order-insensitive (duplicate-key comparison). */
+    private static Set<String> coverSetOf(List<CoverSelection> selections) {
+        Set<String> set = new TreeSet<>();
+        for (CoverSelection selection : selections) {
+            set.add(selection.coverCode());
+        }
+        return set;
+    }
+
+    /**
+     * Duplicate-FNOL lookup: the most recent claim on this policy with the same loss
+     * date and same cover set (order-insensitive, amounts ignored) filed in the last
+     * 24h, any status. Null when none. The sliding window + set equality cannot be a
+     * DB constraint, so this is a service query — best-effort under concurrency.
+     */
+    private String findDuplicateClaimNumber(Long policyId, LocalDate lossDate,
+            Set<String> coverSet) {
+        List<Long> candidates = jdbcTemplate.query(
+                "SELECT id FROM claim WHERE policy_id = ? AND loss_date = ? "
+                        + "AND created_at >= now() - interval '24 hours' "
+                        + "ORDER BY created_at DESC, id DESC LIMIT 20",
+                (rs, rowNum) -> rs.getLong("id"), policyId, lossDate);
+        for (Long candidateId : candidates) {
+            Set<String> filed = new TreeSet<>(jdbcTemplate.query(
+                    "SELECT cover_code FROM claim_cover WHERE claim_id = ?",
+                    (rs, rowNum) -> rs.getString("cover_code"), candidateId));
+            if (!filed.isEmpty() && filed.equals(coverSet)) {
+                String number = jdbcTemplate.queryForObject(
+                        "SELECT claim_number FROM claim WHERE id = ?", String.class,
+                        candidateId);
+                if (number != null) {
+                    return number;
+                }
+            }
+        }
+        return null;
     }
 
     private LocalDate validate(FnolInput input) {

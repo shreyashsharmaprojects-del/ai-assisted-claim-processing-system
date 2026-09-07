@@ -110,6 +110,19 @@ public class ApiExceptionHandler {
                 .body(new ErrorResponse(ex.getMessage()));
     }
 
+    /**
+     * V2-2: the duplicate-FNOL guard — 409 with the existing claim number both in the
+     * message (humans) and as a field (routerLink). Additive: old {message} clients
+     * are unaffected (NON_NULL view, Map body here).
+     */
+    @ExceptionHandler(DuplicateFnolException.class)
+    public ResponseEntity<java.util.Map<String, String>> duplicateFnol(
+            DuplicateFnolException ex) {
+        metrics.fnolRejected("duplicate");
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(java.util.Map.of(
+                "message", ex.getMessage(), "claimNumber", ex.getClaimNumber()));
+    }
+
     /** Anything unexpected: log the cause, never leak internals to the caller. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> unexpected(Exception ex) {

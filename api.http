@@ -64,6 +64,10 @@ London\r
 Content-Disposition: form-data; name="lossDescription"\r
 \r
 Kitchen flooded after a pipe burst.\r
+------ApiHttpBoundary\r
+Content-Disposition: form-data; name="covers"\r
+\r
+[{"coverCode":"HOSPITALIZATION","claimedAmount":200000},{"coverCode":"PHARMACY","claimedAmount":15000}]\r
 # (photos are optional — add a part like the text ones above, name "photos", to upload)
 ------ApiHttpBoundary--\r
 
@@ -250,6 +254,14 @@ Authorization: Bearer {{token}}
 ### Cockpit — policy detail (owner only). One policy with its covers + remaining
 # benefit. Non-owner (or unknown number) -> 404, never 403 (visibility wall).
 GET {{host}}/api/policies/POL-10001
+Authorization: Bearer {{token}}
+
+### FNOL filing covers — covers available for a holder-matched policy (CLAIMANT).
+# Query: policyNumber + holderName + holderEmail (the typed filing identity, not the
+# caller's account email). Holder mismatch or unknown policy -> 404, never 403.
+# Returns [{coverCode, displayName, subLimit}]; 0/1 covers or 404 -> file legacy
+# (omit the `covers` part). Selection is always optional; amounts must be > 0.
+GET {{host}}/api/claims/filing-covers?policyNumber=POL-10001&holderName=Ada%20Lovelace&holderEmail=ada.lovelace@example.test
 Authorization: Bearer {{token}}
 
 ### Email outbox — list (SUPERVISOR only). Rows newest first with status filter

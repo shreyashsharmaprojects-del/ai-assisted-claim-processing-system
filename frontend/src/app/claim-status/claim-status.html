@@ -37,6 +37,33 @@
       }
     </ol>
 
+    @if (claim.covers && claim.covers.length > 0) {
+      <section class="panel" aria-label="Covers claimed">
+        <div class="panel__header">
+          <h2>Claimed covers</h2>
+        </div>
+        <div class="panel__body">
+          <ul class="cover-list" data-testid="status-covers">
+            @for (cover of claim.covers; track cover.coverCode) {
+              <li>
+                <strong class="mono">{{ cover.coverCode }}</strong>
+                @if (cover.displayName) {
+                  <span> — {{ cover.displayName }}</span>
+                }
+                <span> — {{ money(cover.claimedAmount) }}</span>
+                @if (cover.aboveLimit) {
+                  <span class="cover-flag">Above sub-limit — flagged for review</span>
+                }
+              </li>
+            }
+          </ul>
+          @if (claim.claimedTotal != null) {
+            <p class="cover-total">Total claimed: <strong data-testid="status-total">{{ money(claim.claimedTotal) }}</strong></p>
+          }
+        </div>
+      </section>
+    }
+
     <section class="panel panel--timeline">
       <div class="panel__header">
         <div class="panel__head-icon">
