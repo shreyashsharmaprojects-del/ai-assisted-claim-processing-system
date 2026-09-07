@@ -1,11 +1,21 @@
 # Progress
 
-Last updated: 2026-09-07 (sale-readiness pass)
+Last updated: 2026-09-07 (demo PDF now embeds real screenshots)
 
 This file exists so a new session can pick up cold. Write it for someone who has never
 seen this project. Rewrite it, don't append to it.
 
 ## Right now
+
+**Demo deck `demo/ClaimFlow-Demo.pdf` embeds 10 real product screenshots** (was
+hand-drawn wireframes): FNOL wizard, claim-number confirmation, claimant track screen,
+adjuster queue + claim detail, overview, escalations, policies, authority ladder,
+claimant history. Captured by `e2e/tests/shots.spec.ts` (`npx playwright test
+--config e2e/shots.config.ts` from `e2e/`) against the live seeded dev stack (:4200
+-> :8081 -> dev `claims` DB after `npm run demo:seed`); shots land in `e2e/shots/`
+(gitignored, regenerable) and the builder (`demo/build_pdf.py`, needs
+`PYTHONPATH=.pylibs`) embeds them at print width. `e2e/playwright.config.ts`
+ignores `shots.spec.ts` so the hermetic gate stays 15 tests in 4 files.
 
 **Sale-readiness pass (R1–R7) is built: backend 182/182 green, frontend build green,
 13/13 existing E2E green on the live host stack + 2 new P0 journeys written for the

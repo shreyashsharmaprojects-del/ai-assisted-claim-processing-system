@@ -35,6 +35,9 @@ loadEnvFile();
  */
 export default defineConfig({
   testDir: './tests',
+  // shots.spec.ts is NOT a hermetic journey — it captures the sales-deck screenshots
+  // against the live dev stack (see shots.config.ts). Never run it under this config.
+  testIgnore: /shots\.spec\.ts/,
   timeout: 60_000,
   expect: { timeout: 15_000 },
   // Not fully parallel: journeys drive the same Keycloak realm (login/registration), and

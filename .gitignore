@@ -27,3 +27,7 @@ keycloak/realm-export.json
 
 # Demo preview renders (regenerate: pdftoppm -png -r 55 demo/ClaimFlow-Demo.pdf demo/preview-page)
 demo/preview-*
+
+# Demo screenshot run (e2e/shots.config.ts): regenerable against the live seeded stack,
+# and captures carry demo holder names. The PDF embeds them, so this dir never ships.
+e2e/shots/
