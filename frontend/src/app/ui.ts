@@ -10,13 +10,19 @@ export type StatusKind = 'neutral' | 'info' | 'success' | 'warning' | 'danger' |
 export function statusKind(status: string | null | undefined): StatusKind {
   switch (status) {
     case 'UNASSIGNED':
+    case 'RETIRED':
       return 'neutral';
     case 'UNDER_REVIEW':
       return 'info';
     case 'APPROVED':
+    case 'ACTIVE':
+    case 'SENT':
       return 'success';
     case 'DENIED':
+    case 'FAILED':
       return 'danger';
+    case 'PENDING':
+      return 'warning';
     case 'ESCALATED_SUPERVISOR':
       return 'special';
     case 'CLOSED':

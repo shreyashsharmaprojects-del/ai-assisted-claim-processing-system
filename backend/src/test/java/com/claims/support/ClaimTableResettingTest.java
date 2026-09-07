@@ -31,12 +31,17 @@ public abstract class ClaimTableResettingTest {
     @DynamicPropertySource
     static void agingSchedulerOffInTests(DynamicPropertyRegistry registry) {
         registry.add("claims.aging.enabled", () -> "false");
+        // The outbox dispatcher is driven directly in tests (EmailOutboxDispatcher.dispatch())
+        // with fixed data instead — a scheduler firing mid-suite could never be
+        // deterministic. Controllers still flush it after commit, so delivery assertions
+        // observe SENT rows without it.
+        registry.add("claims.outbox.enabled", () -> "false");
     }
 
     @BeforeEach
     final void resetClaimTablesBetweenTests() {
         jdbcTemplate.execute(
-                "TRUNCATE claim, attachment, internal_note, payment, audit_log, fnol_submission "
-                        + "RESTART IDENTITY CASCADE");
+                "TRUNCATE claim, attachment, internal_note, payment, audit_log, fnol_submission, "
+                        + "email_outbox RESTART IDENTITY CASCADE");
     }
 }

@@ -24,6 +24,8 @@ import com.claims.api.UnroutableException;
 import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
+import com.claims.outbox.EmailOutboxWriter;
+import com.claims.metrics.ClaimsMetrics;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityConfigRepository;
@@ -61,12 +63,15 @@ public class ClaimService {
     private final ClaimAssigner assigner;
     private final JdbcTemplate jdbcTemplate;
     private final FnolSubmissionRepository submissions;
+    private final ClaimsMetrics metrics;
+    private final EmailOutboxWriter outboxWriter;
     private final int fnolPerDay;
 
     public ClaimService(ClaimRepository claims, PolicyRepository policies,
             AuthorityConfigRepository authorityConfigs, AttachmentRepository attachments,
             PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
             JdbcTemplate jdbcTemplate, FnolSubmissionRepository submissions,
+            ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
             @Value("${claims.fnol.rate-limit-per-day:20}") int fnolPerDay) {
         this.claims = claims;
         this.policies = policies;
@@ -77,6 +82,8 @@ public class ClaimService {
         this.assigner = assigner;
         this.jdbcTemplate = jdbcTemplate;
         this.submissions = submissions;
+        this.metrics = metrics;
+        this.outboxWriter = outboxWriter;
         this.fnolPerDay = fnolPerDay;
     }
 
@@ -94,7 +101,10 @@ public class ClaimService {
         Policy policy = policies.findByPolicyNumber(policyNumber).orElse(null);
         if (policy == null
                 || !policy.getHolderName().equalsIgnoreCase(input.holderName().trim())
-                || !policy.getHolderEmail().equalsIgnoreCase(input.holderEmail().trim())) {
+                || !policy.getHolderEmail().equalsIgnoreCase(input.holderEmail().trim())
+                || policy.isRetired()) {
+            // RETIRED policies reuse the same shape: no new claimant-visible branch, and no
+            // signal whether the number exists, the holder mismatched, or it was retired.
             throw new PolicyMismatchException(
                     "We could not match that policy number with the holder details provided.");
         }
@@ -156,6 +166,17 @@ public class ClaimService {
                     null);
         }
 
+        metrics.fnolAccepted();
+        // R2: FNOL + assignment mails are outbox rows in this same transaction — the write
+        // commits or rolls back with the claim, so mail is never lost and never sent for a
+        // filing that did not happen. Delivery is the dispatcher's job, after commit.
+        outboxWriter.enqueueFnol(claimId, input.holderEmail().trim(), claim.getClaimNumber(),
+                policy.getHolderName());
+        if (adjuster != null) {
+            outboxWriter.enqueueAssignment(claimId, input.holderEmail().trim(),
+                    claim.getClaimNumber(), policy.getHolderName(), adjuster.getDisplayName(),
+                    adjuster.getEmail());
+        }
         return new FnolResult(ClaimantClaimView.from(claim),
                 adjuster == null ? null : adjuster.getDisplayName(),
                 adjuster == null ? null : adjuster.getEmail());

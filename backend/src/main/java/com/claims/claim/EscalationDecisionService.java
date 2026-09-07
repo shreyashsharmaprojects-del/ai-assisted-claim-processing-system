@@ -11,6 +11,8 @@ import com.claims.api.ClaimNotFoundException;
 import com.claims.api.InvalidRequestException;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
+import com.claims.metrics.ClaimsMetrics;
+import com.claims.outbox.EmailOutboxWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityGate;
@@ -36,13 +38,18 @@ public class EscalationDecisionService {
     private final PolicyRepository policies;
     private final PaymentRepository payments;
     private final AuditLogWriter auditLog;
+    private final ClaimsMetrics metrics;
+    private final EmailOutboxWriter outboxWriter;
 
     public EscalationDecisionService(ClaimRepository claims, PolicyRepository policies,
-            PaymentRepository payments, AuditLogWriter auditLog) {
+            PaymentRepository payments, AuditLogWriter auditLog, ClaimsMetrics metrics,
+            EmailOutboxWriter outboxWriter) {
         this.claims = claims;
         this.policies = policies;
         this.payments = payments;
         this.auditLog = auditLog;
+        this.metrics = metrics;
+        this.outboxWriter = outboxWriter;
     }
 
     /**
@@ -89,19 +96,26 @@ public class EscalationDecisionService {
             String rationale, Instant now) {
         claim.deny(rationale, now);
         claims.save(claim);
+        metrics.decision("DENIED");
         auditLog.append(actorSub, "DECISION", "CLAIM", claim.getId(),
                 AuditJson.of(Map.of("status", "ESCALATED_SUPERVISOR", "level", claim.getLevel())),
                 AuditJson.of(Map.of("claimNumber", claim.getClaimNumber(),
                         "decision", "DENIED", "decisionRemarks", rationale,
                         "status", "CLOSED")),
                 rationale);
-        return outcome(claim, policy);
+        ClaimDecisionOutcome result = outcome(claim, policy);
+        // R2: same-transaction outbox write — the notice commits or rolls back with the
+        // supervisor's closure.
+        outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
+                policy.getHolderName(), result.view());
+        return result;
     }
 
     private ClaimDecisionOutcome approve(Claim claim, Policy policy, String actorSub,
             BigDecimal amount, String rationale, Instant now) {
         claim.approve(amount, now);
         claims.save(claim);
+        metrics.decision("APPROVED");
         // authorized_by is NULL on purpose: a supervisor token has no app_user row (the
         // staff cache is L1/L2 adjusters only); the DECISION audit row below carries their
         // subject as the actor.
@@ -112,7 +126,11 @@ public class EscalationDecisionService {
                         "decision", "APPROVED", "indemnityAmount", amount,
                         "status", "CLOSED")),
                 rationale);
-        return outcome(claim, policy);
+        ClaimDecisionOutcome result = outcome(claim, policy);
+        // R2: same-transaction outbox write (see deny above).
+        outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
+                policy.getHolderName(), result.view());
+        return result;
     }
 
     private ClaimDecisionOutcome outcome(Claim claim, Policy policy) {

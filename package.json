@@ -10,6 +10,8 @@
     "backend:test": "mvn -f backend/pom.xml test",
     "frontend": "npm --prefix frontend start",
     "frontend:build": "npm --prefix frontend run build",
-    "e2e": "npm --prefix e2e test"
+    "e2e": "npm --prefix e2e test",
+    "demo:seed": "set -a; . ./.env; set +a; docker cp scripts/demo-seed.sql \"$(docker compose ps -q db):/tmp/demo-seed.sql\" && docker compose exec -T -e PGPASSWORD=\"$DB_PASSWORD\" db psql -U \"$DB_USERNAME\" -d claims -v ON_ERROR_STOP=1 -f /tmp/demo-seed.sql",
+    "demo:reset": "set -a; . ./.env; set +a; docker cp scripts/demo-reset.sql \"$(docker compose ps -q db):/tmp/demo-reset.sql\" && docker compose exec -T -e PGPASSWORD=\"$DB_PASSWORD\" db psql -U \"$DB_USERNAME\" -d claims -v ON_ERROR_STOP=1 -f /tmp/demo-reset.sql"
   }
 }

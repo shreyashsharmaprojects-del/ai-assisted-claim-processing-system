@@ -1,0 +1,63 @@
+<header class="header">
+    <style>
+        .header {
+            height: 52px;
+            background: white;
+            border-bottom: 1px solid #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 24px;
+            font-family: 'Inter', sans-serif;
+        }
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 16px;
+            font-weight: 500;
+            color: #1e293b;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .auto-save {
+            font-size: 12px;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            background: white;
+            font-size: 13px;
+        }
+        .btn-cancel {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+    <div class="header-left">
+        <i class="fas fa-chevron-left" style="font-size: 14px; color: #64748b"></i>
+        <span>Create Master Policy</span>
+    </div>
+    <div class="header-right">
+        <div class="auto-save">
+            Auto Saving as Drafts
+            <i class="fas fa-sync-alt"></i>
+        </div>
+        <button class="btn">Reset</button>
+        <button class="btn btn-cancel">
+            Cancel
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+</header>

@@ -1,0 +1,92 @@
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet" />
+<style>
+    :root {
+        --primary-blue: #0056b3;
+        --border-color: #e0e6ed;
+        --text-muted: #6b778c;
+    }
+    .header {
+        background: white;
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border-color);
+        height: 64px;
+        font-family: 'Inter', sans-serif;
+    }
+    .header-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .header-left h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
+    }
+    .label-badge {
+        background: #f0f2f5;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+    .header-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+    .auto-saving {
+        font-size: 13px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid #ccc;
+        border-top: 2px solid var(--primary-blue);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+    .btn-outline {
+        border: 1px solid var(--border-color);
+        background: white;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+</style>
+<header class="header">
+    <div class="header-left">
+        <i class="fas fa-chevron-left" style="color: #666; cursor: pointer"></i>
+        <h1>Create Master Policy</h1>
+        <span class="label-badge">Label</span>
+    </div>
+    <div class="header-right">
+        <div class="auto-saving">
+            Auto Saving as Drafts
+            <div class="spinner"></div>
+        </div>
+        <button class="btn-outline">Reset Fields</button>
+        <button class="btn-outline">
+            Close
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+</header>

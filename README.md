@@ -7,8 +7,9 @@ by an authority gate (L1 < L2 < supervisor) and a hard visibility wall between c
 claimant. A supervisor sees the team queue, approves escalations, manages aging, edits the
 authority table, and reads the immutable audit log.
 
-All plan slices (0–7) are built, reviewed, and green: **140 backend tests** (54 unit + 86
-integration) and **11 E2E journeys**. `docs/progress.md` is the source of truth for status.
+All plan slices (0–7) plus the sale-readiness pass (R1–R7) are built and green:
+**182 backend tests** and **13 E2E journeys** (11 original + supervisor overview +
+queue search/filters). `docs/progress.md` is the source of truth for status.
 
 ```
 Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
@@ -21,9 +22,11 @@ Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
 
 | Path | What |
 |---|---|
-| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway, OIDC resource server. Claimant surface, internal work surface, decision/gate, escalation + aging, and supervisor admin (authority config, reassign, audit). |
-| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status, adjuster queue, claim detail, escalations, authority settings. |
-| `e2e/` | Playwright (11 journeys) against the dedicated `claims_e2e` DB. |
+| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V11), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, decision/gate, escalation + aging, and supervisor admin (escalations, dashboard, authority config, reassign, audit, policy book, email outbox, metrics). |
+| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail, escalations, supervisor overview, authority settings. |
+| `e2e/` | Playwright (13 journeys + 2 new P0 journeys) against the dedicated `claims_e2e` DB. |
+| `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
+| `scripts/` | `demo-seed.sql` / `demo-reset.sql` — sales-demo book (dev `claims` DB only). |
 | `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
 | `docker/` | DB bootstrap (creates `claims_e2e`). |
 | `docker-compose.yml` | Postgres 16, Mailpit, Keycloak 26. |
@@ -58,7 +61,7 @@ npm run db:up
 # 2. Install frontend dependencies (first time or after pulls)
 npm ci --prefix frontend
 
-# 3. Backend on http://localhost:8081 — Flyway migrates on boot (V1..V7 + seeds).
+# 3. Backend on http://localhost:8081 — Flyway migrates on boot (V1..V11 + seeds).
 #    Sources .env so DB_USERNAME/DB_PASSWORD are set.
 npm run backend
 
@@ -98,9 +101,23 @@ npx --prefix e2e playwright install chromium
 npm run e2e
 ```
 
-Expected: backend **140 tests** (54 unit + 86 integration) and **11 E2E journeys** — all
+Expected: backend **182 tests** and **13 E2E journeys** (+ 2 new P0 journeys) — all
 green. E2E never touches the dev `claims` database: Playwright boots the backend on
 port 8082 against `claims_e2e` (the dev backend stays on 8081).
+
+## Demo seed (sales walkthroughs — dev `claims` DB only, never `claims_e2e`)
+
+```bash
+npm run demo:seed    # 6 POL-DEMO-* policies + claims at each ladder rung
+                     # (UNASSIGNED → UNDER_REVIEW → ESCALATED_SUPERVISOR →
+                     # CLOSED approved + denied), wall-safe demo markers
+npm run demo:reset   # deletes all demo rows (audit_log rows stay: append-only)
+```
+
+Demo markers: `policy_number LIKE 'POL-DEMO-%'`, `claimant_sub LIKE 'demo-%'`
+(holder names/emails are fictitious `@example.test`). Both scripts refuse any
+database but `claims`. See `docs/operations.md` (carrier onboarding checklist)
+for where the seed fits a demo.
 
 ## CI
 

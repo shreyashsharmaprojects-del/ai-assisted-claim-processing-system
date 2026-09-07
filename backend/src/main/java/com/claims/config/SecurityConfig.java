@@ -81,7 +81,23 @@ public class SecurityConfig {
                         // claimants only (never anonymous). The E2E readiness probe uses
                         // /api/health instead.
                         .requestMatchers(HttpMethod.GET, "/api/policies").authenticated()
+                        // R1 policy admin + R2 outbox: supervisor-only surfaces. Adjusters and
+                        // claimants are blocked before any policy/outbox logic runs (403).
+                        .requestMatchers(HttpMethod.POST, "/api/policies",
+                                "/api/policies/import", "/api/policies/*/retire")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/policies/admin")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/outbox")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST, "/api/outbox/*/retry")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/health", "/api/ready").permitAll()
+                        // R3: the metrics scrape is supervisor-scoped (never public;
+                        // readiness/liveness stay public above). Claimants and adjusters are
+                        // 403 — only supervisors may see aggregate operations numbers.
+                        .requestMatchers(HttpMethod.GET, "/api/metrics")
+                                .hasRole("SUPERVISOR")
                         .anyRequest().authenticated())
                 // CSRF is disabled because this is a stateless bearer-token API: there are no
                 // cookies to forge, so CSRF protection would only reject legitimate clients.

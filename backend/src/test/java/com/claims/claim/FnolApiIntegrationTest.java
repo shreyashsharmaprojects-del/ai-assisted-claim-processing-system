@@ -122,11 +122,13 @@ class FnolApiIntegrationTest extends ClaimTableResettingTest {
                 String.class, claim.getId()),
                 "an L1 claim must be assigned to an L1 adjuster");
 
-        // Attachment row + the file really on disk under the upload dir.
+        // Attachment row holds the object key ({claimId}/{uuid}{ext} — R5 storage seam);
+        // the file itself lives under the uploads base dir resolved at runtime.
         String path = jdbcTemplate.queryForObject(
                 "SELECT storage_path FROM attachment WHERE claim_id = ?", String.class, claim.getId());
         assertNotNull(path);
-        assertTrue(Files.exists(Path.of(path)), "uploaded photo file should exist on disk");
+        assertTrue(Files.exists(UPLOADS.resolve(path)),
+                "uploaded photo file should exist under the uploads dir: " + path);
         assertEquals(1, count("SELECT count(*) FROM attachment WHERE claim_id = ?", claim.getId()));
 
         // Audit entry: claim created, actor recorded (C1: the writer's first write).

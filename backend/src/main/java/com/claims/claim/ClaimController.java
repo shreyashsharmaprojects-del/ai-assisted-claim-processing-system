@@ -16,10 +16,19 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.claims.mail.AssignmentEmailSender;
 import com.claims.mail.FnolEmailSender;
+import com.claims.outbox.EmailOutboxDispatcher;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-/** Claimant FNOL submission (multipart: text fields + evidence photos). */
+/**
+ * Claimant FNOL submission (multipart: text fields + evidence photos).
+ *
+ * <p>R2: the service writes FNOL + assignment mails to the outbox in the filing
+ * transaction; this controller keeps the best-effort immediate sends after commit
+ * (existing Mailpit tests assert on them) and flushes the outbox rows through the
+ * dispatcher, so normal operation delivers each mail effectively once per flush while an
+ * SMTP outage degrades to PENDING rows the dispatcher retries.
+ */
 @RestController
 @RequestMapping("/api/claims")
 public class ClaimController {
@@ -27,12 +36,14 @@ public class ClaimController {
     private final ClaimService claimService;
     private final FnolEmailSender fnolEmailSender;
     private final AssignmentEmailSender assignmentEmailSender;
+    private final EmailOutboxDispatcher dispatcher;
 
     public ClaimController(ClaimService claimService, FnolEmailSender fnolEmailSender,
-            AssignmentEmailSender assignmentEmailSender) {
+            AssignmentEmailSender assignmentEmailSender, EmailOutboxDispatcher dispatcher) {
         this.claimService = claimService;
         this.fnolEmailSender = fnolEmailSender;
         this.assignmentEmailSender = assignmentEmailSender;
+        this.dispatcher = dispatcher;
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -58,6 +69,7 @@ public class ClaimController {
             assignmentEmailSender.sendAssignment(holderEmail, result.view().claimNumber(),
                     holderName, result.adjusterName(), result.adjusterEmail());
         }
+        dispatcher.dispatch();
         return result.view();
     }
 }

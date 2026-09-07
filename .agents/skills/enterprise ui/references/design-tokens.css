@@ -1,0 +1,180 @@
+/* ============================================================
+   Enterprise UI — design tokens (Insure Craft modern language)
+   Drop in at the root of the app. Every value in component CSS
+   must resolve to one of these. If you need a hex that isn't
+   here, the answer is almost always an existing token.
+
+   Reference: the workspace "design examples" folder — white
+   rounded cards with one quiet shadow recipe floating on a light
+   cool-grey canvas, Inter type, a single corporate blue
+   (#0056b3), tinted bordered status pills. That is the "2026
+   SaaS back office" look: calm, layered, believable — not the
+   flat-hairline 2015 aesthetic, and not gradient-drenched.
+   ============================================================ */
+
+:root {
+  /* ---- Neutral ramp: cool slate, tuned for long sessions ---- */
+  --gray-0:   #FFFFFF;
+  --gray-25:  #FCFCFD;
+  --gray-50:  #F8FAFC;   /* tint surfaces, th backgrounds */
+  --gray-100: #F1F5F9;
+  --gray-150: #EAF0F6;
+  --gray-200: #E2E8F0;   /* hairline borders */
+  --gray-300: #CBD5E1;   /* input borders, strong dividers */
+  --gray-400: #94A3B8;   /* placeholder, disabled */
+  --gray-500: #64748B;   /* muted text (4.6:1 on white) */
+  --gray-600: #475569;   /* secondary text */
+  --gray-700: #334155;
+  --gray-800: #1E293B;   /* headings */
+  --gray-900: #0F172A;   /* primary text */
+
+  /* ---- Accent: corporate blue ramp. One accent, used sparingly ---- */
+  --accent-50:  #F0F7FF;
+  --accent-100: #E0EEFA;
+  --accent-200: #BFDBFE;
+  --accent-300: #93C5FD;
+  --accent-400: #4F95D9;
+  --accent-500: #0E7BC0;
+  --accent-600: #0056B3;   /* primary actions */
+  --accent-700: #004A94;   /* hover */
+  --accent-800: #0A3D73;   /* active / nav ground */
+
+  /* ---- Semantic status. Text colors are AA on their own tint ---- */
+  --status-neutral-fg: #475569;  --status-neutral-bg: #F1F5F9;  --status-neutral-br: #E2E8F0;
+  --status-info-fg:    #1D4ED8;  --status-info-bg:    #EFF6FF;  --status-info-br:    #BFDBFE;
+  --status-success-fg: #15803D;  --status-success-bg: #ECFDF5;  --status-success-br: #A7F3D0;
+  --status-warning-fg: #B45309;  --status-warning-bg: #FFFBEB;  --status-warning-br: #FDE68A;
+  --status-danger-fg:  #B91C1C;  --status-danger-bg:  #FEF2F2;  --status-danger-br:  #FECACA;
+  --status-special-fg: #6D28D9;  --status-special-bg: #F5F3FF;  --status-special-br: #DDD6FE;
+
+  /* ---- Surfaces ---- */
+  --surface-sunken:  var(--gray-100);  /* the page canvas — light cool grey */
+  --surface-default: var(--gray-0);    /* cards, panels, tables */
+  --surface-tint:    var(--gray-50);   /* table headers, quiet fills */
+  --surface-hover:   var(--accent-50); /* row hover: soft blue tint */
+  --surface-active:  var(--gray-100);
+  --surface-selected: var(--accent-50);
+  --surface-disabled: var(--gray-100);
+  --surface-inverse: var(--gray-900);
+
+  /* ---- Text ---- */
+  --text-primary:   var(--gray-900);
+  --text-secondary: var(--gray-600);
+  --text-tertiary:  var(--gray-500);
+  --text-disabled:  var(--gray-400);
+  --text-inverse:   var(--gray-0);
+  --text-link:      var(--accent-600);
+  --text-on-accent: #FFFFFF;
+
+  /* ---- Borders ---- */
+  --border-subtle:  var(--gray-100);
+  --border-default: var(--gray-200);
+  --border-strong:  var(--gray-300);
+  --border-focus:   var(--accent-600);
+
+  /* ---- Radius. Controls 6px, cards 10–12px, never more ---- */
+  --radius-sm: 6px;    /* inputs, buttons, tags */
+  --radius-md: 8px;    /* small surfaces, icon tiles */
+  --radius-lg: 12px;   /* cards, panels, header, sidebar */
+  --radius-full: 999px; /* pills, status badges */
+
+  /* ---- Elevation. Cards float on the grey canvas with one quiet shadow ---- */
+  --shadow-card:    0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-raised:  0 4px 12px rgba(16, 24, 40, 0.08), 0 0 0 1px rgba(16, 24, 40, 0.03);
+  --shadow-overlay: 0 16px 40px rgba(16, 24, 40, 0.16), 0 0 0 1px rgba(16, 24, 40, 0.04);
+  --shadow-drag:    0 12px 32px rgba(16, 24, 40, 0.18);
+  --focus-ring:     0 0 0 3px rgba(0, 86, 179, 0.22);
+  --scrim:          rgba(15, 23, 42, 0.45);
+
+  /* ---- Spacing: 4px grid ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- Type: Inter (see the reference screens); system stack as fallback ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono',
+               Menlo, Consolas, monospace;
+
+  --text-2xs: 11px;
+  --text-xs:  12px;
+  --text-sm:  13px;
+  --text-md:  14px;
+  --text-lg:  15px;
+  --text-xl:  18px;
+  --text-2xl: 20px;
+
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* ---- Density ---- */
+  --row-height: 44px;
+  --control-height: 38px;
+  --control-height-sm: 30px;
+  --control-height-lg: 42px;
+  --cell-padding-x: var(--space-4);
+
+  /* ---- Layout ---- */
+  --topbar-height: 56px;
+  --sidebar-width: 240px;
+  --page-max-width: none;
+  --form-column-width: 720px;
+
+  /* ---- Motion ---- */
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:  cubic-bezier(0.4, 0, 1, 1);
+
+  /* ---- Z-index ---- */
+  --z-sticky: 100;
+  --z-dropdown: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+}
+
+/* ---- Base ---- */
+html { -webkit-font-smoothing: antialiased; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--surface-sunken);
+}
+
+/* Numeric alignment */
+.num, td.num, .tabular {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mono, .identifier {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  letter-spacing: -0.01em;
+}
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

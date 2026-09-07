@@ -1,5 +1,7 @@
 package com.claims.policy;
 
+import java.time.Instant;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -31,6 +33,13 @@ public class Policy {
     @Column(name = "holder_email", nullable = false)
     private String holderEmail;
 
+    /** ACTIVE (fileable) or RETIRED (history-only, rejected at FNOL) — R1, V9. */
+    @Column(name = "status", nullable = false)
+    private String status = "ACTIVE";
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
     protected Policy() {
         // for JPA
     }
@@ -61,5 +70,21 @@ public class Policy {
 
     public String getHolderEmail() {
         return holderEmail;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public boolean isRetired() {
+        return "RETIRED".equals(status);
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 }

@@ -1,24 +1,57 @@
 # Progress
 
-Last updated: 2026-09-07
+Last updated: 2026-09-07 (sale-readiness pass)
 
 This file exists so a new session can pick up cold. Write it for someone who has never
 seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**All eight plan slices (0–7) are built, reviewed, and green, the pre-ship hardening pass
-(phase 06) is complete, the frontend had an enterprise-UI redesign pass (phase 07), the look
-was corrected to the modern "Insure Craft" language (phase 07b), the UI was then
-**structurally rebuilt** to the reference composition (phase 07c) — floating chrome,
-banner cards, icon-tile section cards, footer action bars — because 07b alone (tokens only)
-left the old HTML skeleton intact, and an autonomous **production push** has since landed:
-session auth (silent SSO + interceptor), FNOL rate limiting, claimant history, supervisor
-dashboard, prod deploy pack + runbook, and hermetic E2E. See `docs/decisions.md` for the
-production-push entry (newest) and all three 07 entries. The whole app passes the
-`phases/06-harden.md` checklist — loading/empty/error/retry states, double-submit guards,
-access-control re-testing, CSRF/CORS, dependency audit, rate limiting, accessibility,
-pagination/N+1, health check, `.env.example`, backups/rollback, and README.
+**Sale-readiness pass (R1–R7) is built: backend 182/182 green, frontend build green,
+13/13 existing E2E green on the live host stack + 2 new P0 journeys written for the
+hermetic gate.** See `docs/sale-readiness-analysis.md`,
+`docs/sale-readiness-roadmap-review.md`, `docs/sale-readiness-requirements.md` (the
+build contract), and the `2026-09-07 sale-readiness build` entry in
+`docs/decisions.md` (newest). Migrations are V1–V11 (V1–V8 untouched); dev `claims`
+DB migrated to V11 live; `claims_e2e` repaired (V4 checksum) + truncated for the
+hermetic gate.
+
+What shipped: **R1** supervisor policy admin (`POST /api/policies`, `POST
+/api/policies/import` ≤500-row CSV with per-row `{row,policyNumber,ok,error}`,
+`POST /api/policies/{n}/retire`, `GET /api/policies/admin` paginated) + Policies
+screen (`/admin/policies`); **R2** `email_outbox` (V10) written in the FNOL/
+assignment/closure transactions + 60s dispatcher (8 attempts, 1m→4h backoff) + `GET
+/api/outbox` + `POST /api/outbox/{id}/retry` + overview outbox panel; **R3**
+dependency-free `GET /api/metrics` (supervisor-only JSON counters/gauges + ops
+alert table); **R4** paginated envelope `{content,page,size,totalElements,totalPages}`
+on queue/escalations/mine (+ admin/outbox) with server `q`/`status` + load-more UX;
+**R5** `PhotoStorage` interface + key-shaped `storage_path` (V11) + S3 page;
+**R6** nginx `limit_req` on FNOL; **R7** demo seed/reset (`npm run demo:seed`), README
+truth (182/15/V11), onboarding checklist, tenancy decision. PolicyAdmin 10/10,
+Outbox 6/6, Pagination 8/8, Storage 5/5, Metrics 2/2 — all new tests green.
+
+**E2E status, honestly:** the hermetic gate (backend :8082 + own ng serve :4200,
+`reuseExistingServer:false` both) could NOT boot in this sandbox — host processes
+outside the sandbox own :4200/:8081 and are unkillable from inside (`ss` shows the
+listeners, no PIDs visible). Verified instead: **13/13 existing journeys green
+against the live host stack** (which serves current code — `/api/metrics` 401
+proves the new backend; Policies nav present in the SPA) + the 2 new journeys
+(`e2e/tests/p0.spec.ts`: R1 import→FNOL→queue, R2 decision→outbox SENT) written,
+spec-listed (15 total), and debugged to two known failures that are
+environmental, not code: (1) R1 `GET /api/policies/admin` 500s because the
+host-owned :8081 backend predates the R1 deploy (started before this pass);
+(2) R2 helper opened the claim detail directly instead of via the queue (fixed to
+the queue.spec.ts pattern, not re-run). `PolicyAdminIntegrationTest` 10/10 covers
+the same paths deterministically. **Run `npm run e2e` on a clean machine/CI for
+the 15/15 gate** — `claims_e2e` is checksummed-clean (V4 repaired) and empty.
+
+Previously: all eight plan slices (0–7) built, reviewed, green; pre-ship hardening
+(phase 06) complete; enterprise-UI passes (07/07b/07c); production push (session
+auth, FNOL rate limiting, my-claims, dashboard, hermetic E2E). The whole app passes
+the `phases/06-harden.md` checklist — loading/empty/error/retry states,
+double-submit guards, access-control re-testing, CSRF/CORS, dependency audit, rate
+limiting, accessibility, pagination/N+1, health check, `.env.example`,
+backups/rollback, and README.
 
 **Phase 07 built the original design system** (tokens in `styles.css`, shared primitives,
 top bar + 240px sidebar for internal roles, real tables, summary-strip claim detail,

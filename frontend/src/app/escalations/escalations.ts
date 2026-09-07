@@ -1,8 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, OnDestroy, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
+import { Toasts, serverMessage } from '../toasts';
+import { normalizePage, pageParams } from '../paged';
 
 interface QueueClaimView {
   claimNumber: string;
@@ -16,6 +18,8 @@ interface QueueClaimView {
   assignedTo: string | null;
 }
 
+const PAGE_SIZE = 25;
+
 /** The supervisor's escalation queue (supervisor-only; needs a decision). */
 @Component({
   imports: [RouterLink],
@@ -23,12 +27,19 @@ interface QueueClaimView {
   styleUrl: './escalations.css',
   templateUrl: './escalations.html',
 })
-export class Escalations {
+export class Escalations implements OnDestroy {
   private readonly http = inject(HttpClient);
+  private readonly toasts = inject(Toasts);
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   protected readonly claims = signal<QueueClaimView[]>([]);
+  protected readonly totalElements = signal(0);
+  protected readonly totalPages = signal(1);
+  protected readonly page = signal(0);
+  protected readonly serverPaged = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
+  protected readonly loadingMore = signal(false);
   protected readonly query = signal('');
 
   protected statusBadge(status: string): string {
@@ -36,10 +47,20 @@ export class Escalations {
   }
 
   constructor() {
-    void this.load();
+    void this.load(true);
   }
 
+  ngOnDestroy(): void {
+    if (this.searchTimer !== null) {
+      clearTimeout(this.searchTimer);
+    }
+  }
+
+  /** Server-paged: rows arrive searched; legacy array: client filter fallback. */
   protected visible(): QueueClaimView[] {
+    if (this.serverPaged()) {
+      return this.claims();
+    }
     const q = this.query().trim().toLowerCase();
     if (!q) {
       return this.claims();
@@ -53,22 +74,58 @@ export class Escalations {
     );
   }
 
-  protected setQuery(value: string): void {
-    this.query.set(value);
+  protected escCount(): number {
+    return this.serverPaged() ? this.totalElements() : this.claims().length;
   }
 
-  async load() {
+  protected hasMore(): boolean {
+    return this.serverPaged() && this.page() + 1 < this.totalPages();
+  }
+
+  protected setQuery(value: string): void {
+    this.query.set(value);
+    if (this.searchTimer !== null) {
+      clearTimeout(this.searchTimer);
+    }
+    this.searchTimer = setTimeout(() => void this.load(true), 300);
+  }
+
+  async load(reset: boolean) {
+    if (reset) {
+      this.loaded.set(false);
+      this.page.set(0);
+    } else {
+      this.loadingMore.set(true);
+    }
     this.error.set(null);
-    this.loaded.set(false);
     try {
-      const rows = await firstValueFrom(
-        this.http.get<QueueClaimView[]>('/api/escalations'),
+      const target = reset ? 0 : this.page() + 1;
+      const body = await firstValueFrom(
+        this.http.get<QueueClaimView[] | import('../paged').Page<QueueClaimView>>(
+          '/api/escalations',
+          { params: pageParams(target, PAGE_SIZE, this.query()) },
+        ),
       );
-      this.claims.set(rows);
-    } catch {
-      this.error.set('Could not load the escalation queue. Please try again.');
+      const envelope = !Array.isArray(body);
+      const page = normalizePage(body, PAGE_SIZE);
+      this.serverPaged.set(envelope);
+      this.totalElements.set(page.totalElements);
+      this.totalPages.set(page.totalPages);
+      this.page.set(page.page);
+      this.claims.set(reset ? page.content : [...this.claims(), ...page.content]);
+    } catch (err) {
+      if (reset) {
+        this.error.set(serverMessage(err, 'Could not load the escalation queue. Please try again.'));
+      } else {
+        this.toasts.error('Could not load more escalations.', err);
+      }
     } finally {
       this.loaded.set(true);
+      this.loadingMore.set(false);
     }
+  }
+
+  protected loadMore(): void {
+    void this.load(false);
   }
 }

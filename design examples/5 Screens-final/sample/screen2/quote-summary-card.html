@@ -1,0 +1,126 @@
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet" />
+<style>
+    :root {
+        --border-color: #e2e8f0;
+        --text-muted: #64748b;
+        --primary-blue: #0056b3;
+    }
+    .info-card {
+        background: white;
+        border-radius: 8px;
+        padding: 20px;
+        border: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: 'Inter', sans-serif;
+    }
+    .info-left h2 {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+    .draft-tag {
+        background: #f3e8ff;
+        color: #7e22ce;
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+        text-transform: capitalize;
+    }
+    .quote-num {
+        color: var(--text-muted);
+        font-size: 12px;
+        margin-top: 4px;
+    }
+    .info-stats {
+        display: flex;
+        gap: 24px;
+        align-items: center;
+    }
+    .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .stat-label {
+        font-size: 11px;
+        color: #0f172a;
+        font-weight: 700;
+        margin-bottom: 2px;
+    }
+    .stat-value {
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 500;
+    }
+    .docs-img {
+        height: 80px;
+        width: auto;
+        object-fit: contain;
+        margin-left: 10px;
+    }
+</style>
+<div class="info-card">
+    <div class="info-left">
+        <h2>
+            GroupAssetProtection345
+            <span class="draft-tag">Draft</span>
+        </h2>
+        <div class="quote-num">QUOTE NUMBER: QU-26-6608-00000015</div>
+    </div>
+    <div class="info-stats">
+        <div class="stat-item" style="margin-right: 24px">
+            <div
+                class="stat-icon"
+                style="
+                    background: #eff6ff;
+                    color: #3b82f6;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 6px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                "
+            >
+                <i class="far fa-calendar-alt" style="font-size: 14px"></i>
+            </div>
+            <div style="margin-left: 12px">
+                <div class="stat-label">Quote Creation Date</div>
+                <div class="stat-value">02/02/2026</div>
+            </div>
+        </div>
+        <div class="stat-item" style="margin-right: 24px">
+            <div
+                class="stat-icon"
+                style="
+                    background: #eff6ff;
+                    color: #3b82f6;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 6px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    flex-shrink: 0;
+                "
+            >
+                <i class="far fa-calendar-alt" style="font-size: 14px"></i>
+            </div>
+            <div style="margin-left: 12px">
+                <div class="stat-label">Policy Start Date</div>
+                <div class="stat-value">02/02/2026</div>
+            </div>
+        </div>
+        <div style="position: relative">
+            <img src="groupasset.png" alt="Documents" class="docs-img" />
+        </div>
+    </div>
+</div>

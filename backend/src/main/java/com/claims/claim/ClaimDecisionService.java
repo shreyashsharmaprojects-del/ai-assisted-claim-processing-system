@@ -14,6 +14,8 @@ import com.claims.api.InvalidRequestException;
 import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
+import com.claims.metrics.ClaimsMetrics;
+import com.claims.outbox.EmailOutboxWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityConfig;
@@ -50,11 +52,13 @@ public class ClaimDecisionService {
     private final ClaimAssigner assigner;
     private final PaymentRepository payments;
     private final AuditLogWriter auditLog;
+    private final ClaimsMetrics metrics;
+    private final EmailOutboxWriter outboxWriter;
 
     public ClaimDecisionService(ClaimRepository claims, PolicyRepository policies,
             AuthorityConfigRepository authorityConfigs, AppUserRepository appUsers,
             ClaimAccess access, ClaimAssigner assigner, PaymentRepository payments,
-            AuditLogWriter auditLog) {
+            AuditLogWriter auditLog, ClaimsMetrics metrics, EmailOutboxWriter outboxWriter) {
         this.claims = claims;
         this.policies = policies;
         this.authorityConfigs = authorityConfigs;
@@ -63,6 +67,8 @@ public class ClaimDecisionService {
         this.assigner = assigner;
         this.payments = payments;
         this.auditLog = auditLog;
+        this.metrics = metrics;
+        this.outboxWriter = outboxWriter;
     }
 
     /**
@@ -117,13 +123,20 @@ public class ClaimDecisionService {
             String rationale, Instant now) {
         claim.deny(rationale, now);
         claims.save(claim);
+        metrics.decision("DENIED");
         auditLog.append(actor.getKeycloakSub(), "DECISION", "CLAIM", claim.getId(),
                 AuditJson.of(Map.of("status", "UNDER_REVIEW")),
                 AuditJson.of(Map.of("claimNumber", claim.getClaimNumber(),
                         "decision", "DENIED", "decisionRemarks", rationale,
                         "status", "CLOSED")),
                 rationale);
-        return outcome(claim, policy, null);
+        ClaimDecisionOutcome result = outcome(claim, policy, null);
+        // R2: the decision mail is an outbox row in this same transaction — it commits or
+        // rolls back with the closure, so the notice is never lost and never sent for a
+        // decision that did not happen.
+        outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
+                policy.getHolderName(), result.view());
+        return result;
     }
 
     private ClaimDecisionOutcome approve(Claim claim, AppUser actor, Policy policy,
@@ -137,6 +150,7 @@ public class ClaimDecisionService {
             case APPROVE -> {
                 claim.approve(amount, now);
                 claims.save(claim);
+                metrics.decision("APPROVED");
                 payments.save(new Payment(claim.getId(), amount, actor.getId(), now));
                 auditLog.append(actor.getKeycloakSub(), "DECISION", "CLAIM", claim.getId(),
                         AuditJson.of(Map.of("status", "UNDER_REVIEW", "level", previousLevel)),
@@ -144,7 +158,11 @@ public class ClaimDecisionService {
                                 "decision", "APPROVED", "indemnityAmount", amount,
                                 "status", "CLOSED")),
                         rationale);
-                return outcome(claim, policy, null);
+                ClaimDecisionOutcome result = outcome(claim, policy, null);
+                // R2: same-transaction outbox write (see deny above).
+                outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
+                        policy.getHolderName(), result.view());
+                return result;
             }
             case ESCALATE_TO_L2 -> {
                 // Above the actor's level but within the L2 limit: a system re-assignment to
@@ -165,6 +183,7 @@ public class ClaimDecisionService {
                     escalatedTo = "SUPERVISOR";
                 }
                 claims.save(claim);
+                metrics.escalation(escalatedTo);
                 Map<String, Object> after = new java.util.HashMap<>();
                 after.put("claimNumber", claim.getClaimNumber());
                 after.put("attemptedDecision", "APPROVED");
@@ -185,6 +204,7 @@ public class ClaimDecisionService {
             case ESCALATE_TO_SUPERVISOR -> {
                 claim.escalateToSupervisor();
                 claims.save(claim);
+                metrics.escalation("SUPERVISOR");
                 auditLog.append(actor.getKeycloakSub(), "CLAIM_ESCALATED", "CLAIM",
                         claim.getId(),
                         AuditJson.of(Map.of("status", "UNDER_REVIEW", "level", previousLevel,

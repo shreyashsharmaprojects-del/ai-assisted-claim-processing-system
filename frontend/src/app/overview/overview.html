@@ -90,7 +90,140 @@
       </div>
       <div class="footer-actions__right">
         <a routerLink="/admin/authority" class="btn btn--tertiary">Authority settings</a>
+        <a routerLink="/admin/policies" class="btn btn--tertiary">Policies</a>
       </div>
     </div>
   }
+
+  <section class="panel" data-testid="outbox-panel" aria-label="Email outbox">
+    <div class="panel__header">
+      <div class="panel__head-icon">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 3.5h12v9H2z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+          <path d="m2.5 4 5.5 4 5.5-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h2>Email outbox</h2>
+      @if (outboxLoaded() && !outboxError()) {
+        <span class="panel__count">{{ outboxPending() }} pending · {{ outboxFailed() }} failed</span>
+      }
+    </div>
+
+    @if (outboxError(); as message) {
+      <div class="panel__body--tight outbox-state">
+        <p class="notice notice--error" data-testid="outbox-error" role="alert">{{ message }}</p>
+        <button type="button" class="btn btn--secondary" data-testid="outbox-retry-list" (click)="loadOutbox(true)">
+          Try again
+        </button>
+      </div>
+    } @else if (!outboxLoaded()) {
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="outbox-loading" aria-label="Loading email outbox">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--s"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--l"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+            </div>
+          }
+        </div>
+      </div>
+    } @else {
+      <div class="toolbar" data-testid="outbox-toolbar">
+        <div class="toolbar__search">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          <input
+            type="search"
+            class="input toolbar__input"
+            placeholder="Search claim, recipient, subject…"
+            aria-label="Search the outbox"
+            data-testid="outbox-search"
+            [value]="outboxQuery()"
+            (input)="setOutboxQuery($any($event.target).value)"
+          />
+        </div>
+        <div class="toolbar__filters" role="group" aria-label="Filter by outbox status">
+          <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'ALL'" (click)="setOutboxStatus('ALL')" data-testid="outbox-filter-all">All</button>
+          <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'PENDING'" (click)="setOutboxStatus('PENDING')" data-testid="outbox-filter-pending">Pending</button>
+          <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'SENT'" (click)="setOutboxStatus('SENT')" data-testid="outbox-filter-sent">Sent</button>
+          <button type="button" class="chip-btn" [class.is-active]="outboxStatus() === 'FAILED'" (click)="setOutboxStatus('FAILED')" data-testid="outbox-filter-failed">Failed</button>
+        </div>
+      </div>
+
+      @if (outboxVisible().length === 0) {
+        <div class="state-panel" data-testid="outbox-empty">
+          <p class="state-panel__title">Outbox is clear</p>
+          <p class="state-panel__body">
+            Every decision notice has been sent. Failed sends land here for a retry.
+          </p>
+        </div>
+      } @else {
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Claim</th>
+                <th scope="col">Kind</th>
+                <th scope="col">To</th>
+                <th scope="col">Subject</th>
+                <th scope="col">Status</th>
+                <th scope="col">Attempts</th>
+                <th scope="col"><span class="sr-only">Retry</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of outboxVisible(); track row.id) {
+                <tr data-testid="outbox-row">
+                  <td class="mono identifier" data-testid="outbox-claim">{{ claimLabel(row) }}</td>
+                  <td data-testid="outbox-kind">{{ row.kind }}</td>
+                  <td data-testid="outbox-to">{{ row.toAddress }}</td>
+                  <td class="cell-truncate" title="{{ row.subject }}" data-testid="outbox-subject">{{ row.subject }}</td>
+                  <td>
+                    <span class="{{ outboxBadge(row.status) }}" data-testid="outbox-status">{{ row.status }}</span>
+                    @if (row.lastError && (row.status ?? '').toUpperCase() === 'FAILED') {
+                      <span class="outbox-error" title="{{ row.lastError }}">{{ row.lastError }}</span>
+                    }
+                  </td>
+                  <td class="num" data-testid="outbox-attempts">{{ row.attempts }}</td>
+                  <td class="td-action">
+                    @if ((row.status ?? '').toUpperCase() === 'FAILED') {
+                      <button
+                        type="button"
+                        class="btn btn--secondary btn--sm"
+                        [attr.data-testid]="'outbox-retry-' + row.id"
+                        [disabled]="retrying() === row.id"
+                        (click)="retryRow(row)"
+                      >
+                        {{ retrying() === row.id ? 'Queuing…' : 'Retry' }}
+                      </button>
+                    } @else {
+                      <span class="muted">—</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+        @if (outboxHasMore()) {
+          <div class="load-more">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-testid="outbox-load-more"
+              [disabled]="outboxLoadingMore()"
+              (click)="loadMoreOutbox()"
+            >
+              {{ outboxLoadingMore() ? 'Loading…' : 'Load more' }}
+            </button>
+            <span class="muted load-more__count">{{ outboxVisible().length }} of {{ outboxTotal() }}</span>
+          </div>
+        }
+      }
+    }
+  </section>
 </main>

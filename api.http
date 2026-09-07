@@ -195,3 +195,58 @@ Content-Type: application/json
 # Append-only is enforced at the data layer (V7 trigger): raw UPDATE/DELETE are rejected.
 GET {{host}}/api/claims/CLM-000001/audit
 Authorization: Bearer {{token}}
+
+### Policy admin — create (SUPERVISOR only). Unknown product code -> 400 naming valid
+# codes (HOME, AUTO); duplicate number -> 409. Coverage is a JSON object or omitted.
+POST {{host}}/api/policies
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "policyNumber": "POL-30001",
+  "productCode": "HOME",
+  "holderName": "Alice Example",
+  "holderEmail": "alice@example.com",
+  "coverage": {"type": "home", "sum_insured": 5000}
+}
+
+### Policy admin — CSV import (SUPERVISOR only). Multipart `file`, header
+# policy_number,product_code,holder_name,holder_email,coverage (coverage optional raw
+# JSON); <= 500 rows. Always HTTP 200 with the per-row summary
+# [{row,policyNumber,ok,error}] — never a bare 500 on row 400; only a bad header or an
+# over-limit file is a 400. Valid rows persist, bad rows report errors.
+# Use a real file: create policies.csv with the header + rows, then uncomment:
+# POST {{host}}/api/policies/import
+# Authorization: Bearer {{token}}
+# Content-Type: multipart/form-data; boundary=import-boundary
+#
+# --import-boundary
+# Content-Disposition: form-data; name="file"; filename="policies.csv"
+# Content-Type: text/csv
+#
+# < ./policies.csv
+# --import-boundary--
+
+### Policy admin — retire (SUPERVISOR only). ACTIVE -> RETIRED; already-RETIRED returns
+# as-is. Unknown number -> 404. Retired policies stay readable for history; FNOL against
+# one is rejected with the existing policy-mismatch 404 shape.
+POST {{host}}/api/policies/POL-30001/retire
+Authorization: Bearer {{token}}
+
+### Policy admin — list (SUPERVISOR only). All rows incl. RETIRED, newest first;
+# page/size (defaults 0/25, max 100) + q (number/holder/product substring) + status
+# (ACTIVE/RETIRED) filter. Envelope {content,page,size,totalElements,totalPages}.
+GET {{host}}/api/policies/admin?page=0&size=25
+Authorization: Bearer {{token}}
+
+### Email outbox — list (SUPERVISOR only). Rows newest first with status filter
+# (PENDING/SENT/FAILED) + page/size + q (claim number/address/subject). Envelope
+# {content,page,size,totalElements,totalPages}. Triage query for failures: filter
+# status=FAILED — each row carries kind, claimNumber, attempts and last_error.
+GET {{host}}/api/outbox?status=FAILED&page=0&size=25
+Authorization: Bearer {{token}}
+
+### Email outbox — retry (SUPERVISOR only). Resets a FAILED row to PENDING (attempts
+# preserved); retrying a SENT/PENDING row -> 400, unknown id -> 400.
+POST {{host}}/api/outbox/1/retry
+Authorization: Bearer {{token}}

@@ -64,6 +64,126 @@ docker run --rm -v claims-prod_claims-uploads:/data -v "$PWD:/in" \
 Restore checklist: re-point `SPRING_DATASOURCE_URL` if the DB moved, then hit
 `/api/ready` before opening traffic.
 
+### Restore-pairing gate (DB + volume together — both, or neither)
+
+`attachment.storage_path` is a database pointer to a file on the
+`claims-uploads` volume. A DB backup without the volume snapshot (or vice versa)
+silently orphans evidence: every restore MUST apply the matching pair from the
+same timestamp (`claims-YYYY-MM-DD.dump` + `uploads-YYYY-MM-DD.tgz`). After the
+restore, confirm the pairing before opening traffic:
+
+```bash
+# Orphan check: every attachment row must resolve to a file on the volume.
+# <UPLOADS_DIR> is the host path behind the claims-uploads volume.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e PGPASSWORD="$DB_PASSWORD" db \
+  psql -U "$DB_USERNAME" -d claims -t -A -c "SELECT storage_path FROM attachment;" \
+  | while read -r p; do [ -e "<UPLOADS_DIR>/$p" ] || echo "MISSING: $p"; done
+curl -sf http://localhost:8080/api/ready   # traffic gate, as above
+```
+
+A `MISSING` line means the pair is mismatched — stop and re-restore the correct
+pair. (R5 storage seam, LANDED: `PhotoStorage` is now an interface, the only
+implementation is `FilesystemPhotoStorage` (bean name `photoStorage` unchanged), and
+`attachment.storage_path` holds the portable object key `{claimId}/{uuid}{ext}` — V11
+converted legacy absolute-path rows, null-safe. `claims-uploads` stays a named volume;
+S3 wiring is P1 — see "moving to S3" below.)
+
+## Metrics & alerting (R3)
+
+`GET /api/metrics` (supervisor-scoped bearer token; anonymous → 401, claimant/adjuster
+→ 403) returns JSON counters + live gauges — the numbers to dashboard and page on
+instead of log-grep. No per-claim PII appears (claim numbers never label values).
+Deliberately dependency-free JSON (not Prometheus text) so the offline build stays
+hermetic; a Prometheus registry + `/actuator/prometheus` is the P1 upgrade path, mapping
+each JSON key 1:1 to a gauge/counter (PromQL sketches in the table).
+
+Shape: `{claims_fnol_total, claims_fnol_rejected_total{reason}, claims_decisions_total
+{outcome}, claims_escalations_total{target}, claims_queue_depth{level},
+claims_outbox_pending, claims_outbox_failed_total}`. The outbox keys report 0 until the
+V10 `email_outbox` table lands (rule 1 is pending V10).
+
+### What to alert on
+
+| # | Signal | Threshold (tune per carrier) | JSON check (today) | PromQL (P1 prometheus) |
+|---|---|---|---|---|
+| 1 | Outbox FAILED growth | `claims_outbox_failed_total` increases over 15m | poll `/api/metrics`, diff `claims_outbox_failed_total` | `increase(claims_outbox_failed_total[15m]) > 0` (V10 table live) |
+| 2 | 5xx rate | > 1% of responses over 5m | count `Reference:` log lines vs access log | `sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m])) / sum(rate(http_server_requests_seconds_count[5m])) > 0.01` |
+| 3 | FNOL 429 spike | `claims_fnol_rejected_total{reason="rate_limited"}` jumps | diff `claims_fnol_rejected_total.rate_limited` over 5m | `increase(claims_fnol_rejected_total{reason="rate_limited"}[5m]) > 50` |
+| 4 | Queue depth by level | `UNDER_REVIEW` > 200 or `ESCALATED_SUPERVISOR` > 50 | `claims_queue_depth.UNDER_REVIEW`, `.ESCALATED_SUPERVISOR` | `claims_queue_depth{level="UNDER_REVIEW"} > 200`, `claims_queue_depth{level="ESCALATED_SUPERVISOR"} > 50` |
+
+Triage query for FAILED outbox rows (V10+): `SELECT id, claim_id, kind, to_address,
+attempts, last_error FROM email_outbox WHERE status = 'FAILED' ORDER BY created_at DESC
+LIMIT 50;` — `last_error` + the claim number go to the carrier; the request id is in the
+error log.
+
+## Photo storage & moving to S3 (R5)
+
+Evidence photos live behind the `PhotoStorage` interface (`store/load/deleteClaimDir`).
+The only implementation is `FilesystemPhotoStorage` (bean name `photoStorage`, so every
+injection point is unchanged): files at `{baseDir}/{claimId}/{uuid}{ext}`, and
+`attachment.storage_path` holds the portable object key (`{claimId}/{uuid}{ext}`) — the
+base dir (`claims.uploads.dir` / `CLAIMS_UPLOADS_DIR`) is resolved at runtime, never
+stored. V11 converted legacy absolute-path rows to key form
+(`regexp_replace(storage_path, '^.*([^/]+/[^/]+)$', '\1')`, null-safe; non-absolute and
+short paths untouched). Downloads dual-read (absolute legacy paths still resolve), and
+rollback-delete (`deleteClaimDir`) still removes the claim dir when the FNOL transaction
+rolls back.
+
+### Moving to S3 (no schema migration needed)
+
+1. **Implement the interface** against your SDK (S3/MinIO): `store` PUTs the bytes under
+   the same `{claimId}/{uuid}{ext}` key and returns it; `load` GETs by key;
+   `deleteClaimDir` lists+deletes the `{claimId}/` prefix. Register it as the
+   `photoStorage` bean (profile or conditional) — no caller changes.
+2. **Config keys** (new, S3 only): `claims.storage.s3.endpoint`,
+   `claims.storage.s3.bucket`, `claims.storage.s3.region`,
+   `claims.storage.s3.access-key` / `secret-key` (env-only, never git). The existing
+   `claims.uploads.*` caps (count/size/type) stay enforced before upload.
+3. **Backfill sketch** (one-shot job, idempotent — keys are content-independent):
+   `SELECT id, storage_path FROM attachment` → for each key, `PUT s3://bucket/{key}`
+   from `{baseDir}/{key}` → verify ETag/size → next. New writes go straight to S3 once
+   the bean flips; reads already key-addressed. Keep the volume snapshot until the
+   backfill verifies 100%.
+
+## IP-level flood protection (R6)
+
+nginx `limit_req` on FNOL (`frontend/nginx.conf`): `limit_req_zone
+$binary_remote_addr zone=fnol:10m rate=5r/s` + `limit_req zone=fnol burst=10 nodelay` on
+`location = /api/claims`. 5 req/s sustained per client IP with a 10-request burst
+(delayed, not rejected): real claimants file once, multipart uploads are slow, and a
+botnet of throwaway claimant accounts hits per-IP shaping before it hits the app. The
+per-claimant 20/day app rule still applies inside. No Java changes; no compose changes
+(the frontend image already ships `nginx.conf` — the `frontend` service needs no new
+wiring). App-layer per-IP accounting (per-IP counters, adaptive bans) is the WAF's job
+if this ever needs to be smarter — nginx here is coarse flood protection, not policy.
+
+## Carrier onboarding checklist (sale #1: one realm, one stack per carrier)
+
+Tenancy decision (see `docs/decisions.md`, R7 entry): each carrier gets a full
+stack with its own Keycloak realm rendered from the template — row-level
+multi-tenancy is Series-A, not this sale.
+
+```bash
+# 1. Realm render — copy keycloak/realm-export.template.json entry for the new
+#    carrier (new realm name, e.g. "carrier-acme"), then render secrets in:
+DB_USERNAME=... DB_PASSWORD=... KEYCLOAK_ADMIN_PASSWORD=... \
+ADJUSTER_PASSWORD=... SUPERVISOR_PASSWORD=... npm run realm:render
+# 2. Provision — staff Keycloak users + matching app_user rows (level L1/L2).
+#    The supervisor needs a Keycloak user ONLY (no app_user row, by design).
+# 3. Authority limits — PUT /api/config/authority/{HOME,AUTO} (supervisor) to the
+#    carrier's ladder; examples in api.http. New rows route/classify immediately.
+# 4. Import policies — POST /api/policies/import (supervisor, ≤ 500 rows/CSV,
+#    header policy_number,product_code,holder_name,holder_email,coverage).
+#    Unknown product codes are rejected per row with the valid list — fix the
+#    authority table first if the carrier brings a new product.
+# 5. Demo seed (sales walkthroughs only, dev claims DB — never prod):
+npm run demo:seed    # 6 POL-DEMO-* policies + claims at each ladder rung, wall-safe
+npm run demo:reset   # removes seeded rows (audit_log rows stay: append-only)
+# 6. Verify gate — /api/ready → 200, an FNOL against an imported policy
+#    classifies + assigns, a supervisor decision closes, the decision mail lands.
+```
+
 ## Common incidents
 
 **Users see "Your session has expired" everywhere.**
@@ -106,8 +226,11 @@ Restore both together (above).
   them as job env). Rotate Keycloak bootstrap + realm passwords per environment.
 - The `claims` DB user should own only the `claims` database; backups are encrypted
   at rest by your storage layer.
-- Rate limiting is per-claimant (application layer). Put a WAF / reverse-proxy limit
-  (e.g. nginx `limit_req`) in front of `/api/claims` for IP-level floods.
+- Rate limiting is per-claimant (application layer, 20/day) plus nginx IP-level
+  flood protection on FNOL: `limit_req_zone $binary_remote_addr zone=fnol:10m
+  rate=5r/s`, `limit_req zone=fnol burst=10 nodelay` on `location = /api/claims`
+  (see "IP-level flood protection" above). App-layer per-IP accounting is the WAF's
+  job if this ever needs to be smarter.
 - CORS: the SPA is same-origin through nginx in prod (no cross-origin API exposure).
   If you split the frontend to a CDN later, lock `Access-Control-Allow-Origin` to
   that origin — never `*` with credentials.

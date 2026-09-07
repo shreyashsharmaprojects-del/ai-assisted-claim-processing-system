@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Master Policy - Insure Craft</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        :root {
+            --bg-light: #f4f7f9;
+            --sidebar-bg: #ffffff;
+            --primary-blue: #0056b3;
+            --text-dark: #333333;
+            --text-muted: #666666;
+            --border-color: #e0e6ed;
+            --accent-blue: #eef4ff;
+            --status-completed: #e6f9ed;
+            --status-completed-text: #28a745;
+            --status-inprogress: #e7f0fe;
+            --status-inprogress-text: #0056b3;
+            --status-yet: #f2f4f7;
+            --status-yet-text: #666666;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top Header */
+        .top-header {
+            background: #fff;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .auto-save {
+            font-size: 13px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-outline {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background: #fff;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-cancel {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #333;
+        }
+
+        /* Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+            flex-shrink: 0;
+        }
+
+        .logo-container {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 20px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: #003399;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+
+        .logo-text h1 {
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #003399;
+        }
+
+        .logo-text p {
+            font-size: 9px;
+            color: var(--text-muted);
+        }
+
+        .nav-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .nav-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .nav-header i {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .nav-status {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            width: fit-content;
+        }
+
+        .status-completed { background: var(--status-completed); color: var(--status-completed-text); }
+        .status-inprogress { background: var(--status-inprogress); color: var(--status-inprogress-text); }
+        .status-yet { background: var(--status-yet); color: var(--status-yet-text); }
+
+        .sub-nav {
+            margin-top: 8px;
+        }
+
+        .sub-item {
+            padding: 10px 20px;
+            font-size: 14px;
+            color: var(--text-muted);
+        }
+
+        .sub-item.active {
+            background: var(--accent-blue);
+            color: var(--primary-blue);
+            border-radius: 6px;
+            margin: 0 10px;
+            font-weight: 500;
+        }
+
+        /* Content Area */
+        .content-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .content {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .policy-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .policy-info-main h2 {
+            font-size: 20px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .quote-num {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .date-widgets {
+            display: flex;
+            gap: 24px;
+            align-items: center;
+        }
+
+        .date-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .date-box i {
+            color: var(--primary-blue);
+            font-size: 18px;
+        }
+
+        .date-label {
+            font-size: 12px;
+            color: var(--text-dark);
+            font-weight: 600;
+        }
+
+        .date-val {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        /* Form Sections */
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 24px;
+        }
+
+        .section-title i {
+            color: var(--primary-blue);
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-group label {
+            font-size: 13px;
+            font-weight: 500;
+            color: #444;
+        }
+
+        .form-control {
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            color: var(--text-dark);
+        }
+
+        .form-control::placeholder {
+            color: #b0bac9;
+        }
+
+        .select-wrapper {
+            position: relative;
+        }
+
+        .select-wrapper::after {
+            content: '\f107';
+            font-family: 'Font Awesome 5 Free';
+            font-weight: 900;
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: var(--text-muted);
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .radio-btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .radio-btn.active {
+            border-color: var(--primary-blue);
+            background: #f0f7ff;
+        }
+
+        .radio-circle {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-color);
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .active .radio-circle {
+            border-color: var(--primary-blue);
+        }
+
+        .active .radio-circle::after {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--primary-blue);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Age Range Section */
+        .age-range-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .age-card {
+            background: #fcfdfe;
+            border: 1px solid #f0f2f5;
+            border-radius: 12px;
+            padding: 16px;
+        }
+
+        .age-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .age-header input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+
+        .age-label {
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .age-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text-muted);
+        }
+
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .range-label {
+            font-size: 13px;
+            font-weight: 700;
+            color: #003399;
+            width: 35px;
+        }
+
+        .range-inputs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 1;
+        }
+
+        .input-pair {
+            display: flex;
+            align-items: center;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 4px 8px;
+            background: #fff;
+            flex: 1;
+        }
+
+        .input-pair input {
+            border: none;
+            width: 30px;
+            outline: none;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .unit-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        .dash {
+            font-weight: bold;
+            color: var(--primary-blue);
+        }
+
+        .age-dropdown {
+            margin-left: auto;
+            border: 1px solid var(--border-color);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Footer Actions */
+        .footer-actions {
+            background: #fff;
+            padding: 16px 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .btn-save {
+            background: #0056b3;
+            color: #fff;
+            padding: 12px 28px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="top-header">
+        <div class="header-left">
+            <i class="fas fa-chevron-left" style="font-size: 14px; color: #666;"></i>
+            Create Master Policy
+        </div>
+        <div class="header-right">
+            <div class="auto-save">
+                Auto Saving as Drafts <i class="fas fa-sync-alt"></i>
+            </div>
+            <button class="btn-outline">Reset</button>
+            <button class="btn-outline btn-cancel">
+                Cancel <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-container">
+                <div class="logo">
+                    <div class="logo-icon">B</div>
+                    <div class="logo-text">
+                        <h1>INSURE CRAFT</h1>
+                        <p>Crafting Personalised Insurance Solutions</p>
+                    </div>
+                </div>
+            </div>
+
+            <nav>
+                <div class="nav-item">
+                    <div class="nav-header">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i class="far fa-file-alt"></i> Master Policy
+                        </div>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <span class="nav-status status-completed">Completed</span>
+                </div>
+
+                <div class="nav-item" style="background: #f8fbff;">
+                    <div class="nav-header">
+                        <div style="display: flex; align-items: center; gap: 8px; color: #333;">
+                            <i class="far fa-file-alt"></i> Plan Configuration
+                        </div>
+                        <i class="fas fa-chevron-up"></i>
+                    </div>
+                    <span class="nav-status status-inprogress">In Progress</span>
+                </div>
+
+                <div class="sub-nav">
+                    <div class="sub-item">Plan Details</div>
+                    <div class="sub-item">Channel Details</div>
+                    <div class="sub-item active">Additional Details</div>
+                    <div class="sub-item">Cover and Section Data</div>
+                    <div class="sub-item">Clauses</div>
+                    <div class="sub-item">Non Rating Data</div>
+                </div>
+
+                <div class="nav-item" style="margin-top: 20px;">
+                    <div class="nav-header">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <i class="far fa-file-alt"></i> Master Policy
+                        </div>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                    <span class="nav-status status-yet">Yet to Fill</span>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main Content Area with its own Footer -->
+        <div class="content-wrapper">
+            <main class="content">
+                <!-- Policy Header Info -->
+                <div class="card" style="padding: 16px 24px;">
+                    <div class="policy-header">
+                        <div class="policy-info-main">
+                            <h2>GroupAssetProtection345 <span class="nav-status status-inprogress" style="font-size: 11px;">In-Progress</span></h2>
+                            <div class="quote-num">QUOTE NUMBER: QU-26-6608-00000015</div>
+                        </div>
+                        <div class="date-widgets">
+                            <div class="date-box">
+                                <i class="far fa-calendar-alt"></i>
+                                <div>
+                                    <div class="date-label">Quote Creation Date</div>
+                                    <div class="date-val">02/02/2026</div>
+                                </div>
+                            </div>
+                            <div class="date-box">
+                                <i class="far fa-calendar-alt"></i>
+                                <div>
+                                    <div class="date-label">Policy Start Date</div>
+                                    <div class="date-val">02/02/2026</div>
+                                </div>
+                            </div>
+                            <div style="position: relative; width: 40px; height: 40px;">
+                                <img src="https://cdn-icons-png.flaticon.com/512/3209/3209265.png" alt="Policy" style="width: 100%;">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Additional Details Form -->
+                <div class="card">
+                    <div class="section-title">
+                        <i class="far fa-copy"></i> Additional Details
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>BGIL RM Code (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter BGIL RM Code">
+                        </div>
+                        <div class="form-group">
+                            <label>SP/POSP Code (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter SP/POSP Code">
+                        </div>
+                        <div class="form-group">
+                            <label>SP Name (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter SP Name">
+                        </div>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Remarks</label>
+                            <input type="text" class="form-control" placeholder="Enter Remarks">
+                        </div>
+                        <div class="form-group">
+                            <label>Back Days Allowed (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter Back Days Allowed">
+                        </div>
+                        <div class="form-group">
+                            <label>Future Days Allowed</label>
+                            <input type="text" class="form-control" placeholder="Enter Future Days Allowed">
+                        </div>
+                    </div>
+
+                    <div class="grid-3">
+                        <div class="form-group">
+                            <label>Reference Type (Optional)</label>
+                            <div class="select-wrapper">
+                                <input type="text" class="form-control" placeholder="Enter Reference Type" readonly>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Bank Reference ID (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter Bank Reference ID">
+                        </div>
+                        <div class="form-group">
+                            <label>Reference Number (Optional)</label>
+                            <input type="text" class="form-control" placeholder="Enter Reference Number">
+                        </div>
+                    </div>
+
+                    <div class="grid-3" style="grid-template-columns: 1fr 1fr 1fr;">
+                        <div class="form-group">
+                            <label>New Business Allowed</label>
+                            <div class="radio-group">
+                                <div class="radio-btn active">
+                                    <span>Yes</span>
+                                    <div class="radio-circle"></div>
+                                </div>
+                                <div class="radio-btn">
+                                    <span>No</span>
+                                    <div class="radio-circle"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Family Floater</label>
+                            <div class="radio-group">
+                                <div class="radio-btn active">
+                                    <span>Yes</span>
+                                    <div class="radio-circle"></div>
+                                </div>
+                                <div class="radio-btn">
+                                    <span>No</span>
+                                    <div class="radio-circle"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Age Range Rows -->
+                    <div class="age-range-container">
+                        <!-- Self -->
+                        <div class="age-card">
+                            <div class="age-header">
+                                <input type="checkbox" checked>
+                                <span class="age-label">Self</span>
+                            </div>
+                            <div class="age-title">Select Age Range</div>
+                            <div class="range-row">
+                                <div class="range-label">NB</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                </div>
+                            </div>
+                            <div class="range-row">
+                                <div class="range-label">RNW</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Spouse -->
+                        <div class="age-card">
+                            <div class="age-header">
+                                <input type="checkbox">
+                                <span class="age-label">Spouse</span>
+                            </div>
+                            <div class="age-title">Select Age Range</div>
+                            <div class="range-row">
+                                <div class="range-label">NB</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                </div>
+                            </div>
+                            <div class="range-row">
+                                <div class="range-label">RNW</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">Year</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Children -->
+                        <div class="age-card">
+                            <div class="age-header">
+                                <input type="checkbox">
+                                <span class="age-label">Self</span>
+                                <div class="age-dropdown">
+                                    No. of Children <i class="fas fa-chevron-down"></i>
+                                </div>
+                            </div>
+                            <div class="age-title">Select Age Range</div>
+                            <div class="range-row">
+                                <div class="range-label">NB</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="MM"><span class="unit-label">M Y</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">M Y</span></div>
+                                </div>
+                            </div>
+                            <div class="range-row">
+                                <div class="range-label">RNW</div>
+                                <div class="range-inputs">
+                                    <div class="input-pair"><input type="text" placeholder="MM"><span class="unit-label">M Y</span></div>
+                                    <span class="dash">-</span>
+                                    <div class="input-pair"><input type="text" placeholder="YY"><span class="unit-label">M Y</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Bottom Footer fixed to content-wrapper -->
+            <footer class="footer-actions">
+                <button class="btn-outline" style="padding: 10px 24px;">Cancel</button>
+                <button class="btn-save">Save & Next</button>
+            </footer>
+        </div>
+    </div>
+
+</body>
+</html>

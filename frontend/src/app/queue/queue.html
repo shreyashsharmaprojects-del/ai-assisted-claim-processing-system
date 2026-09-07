@@ -3,8 +3,8 @@
     <div class="page-banner__main">
       <div class="page-banner__title-row">
         <h1>My queue</h1>
-        @if (loaded() && claims().length > 0) {
-          <span class="chip">{{ claims().length }} open</span>
+        @if (loaded() && queueCount() > 0) {
+          <span class="chip">{{ queueCount() }} open</span>
         }
       </div>
       <p class="page-banner__sub">
@@ -20,7 +20,7 @@
         </div>
         <div>
           <p class="stat__label">Assigned to you</p>
-          <p class="stat__value">{{ loaded() ? claims().length : '—' }}</p>
+          <p class="stat__value">{{ loaded() ? queueCount() : '—' }}</p>
         </div>
       </div>
     </div>
@@ -28,7 +28,7 @@
 
   @if (error(); as message) {
     <p class="notice notice--error" data-testid="queue-error" role="alert">{{ message }}</p>
-    <button type="button" class="btn btn--secondary retry" data-testid="queue-retry" (click)="load()">
+    <button type="button" class="btn btn--secondary retry" data-testid="queue-retry" (click)="load(true)">
       Try again
     </button>
   } @else if (!loaded()) {
@@ -57,8 +57,8 @@
           </svg>
         </div>
         <h2>Open claims</h2>
-        @if (claims().length > 0) {
-          <span class="panel__count">{{ visible().length }} of {{ claims().length }}</span>
+        @if (queueCount() > 0) {
+          <span class="panel__count">{{ visible().length }} of {{ queueCount() }}</span>
         }
       </div>
 
@@ -93,7 +93,7 @@
         </div>
       </div>
 
-      @if (claims().length === 0) {
+      @if (queueCount() === 0 && !hasActiveFilters()) {
         <div class="state-panel" data-testid="queue-empty">
           <p class="state-panel__title">No claims in your queue</p>
           <p class="state-panel__body">
@@ -157,6 +157,20 @@
             </tbody>
           </table>
         </div>
+        @if (hasMore()) {
+          <div class="load-more">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-testid="queue-load-more"
+              [disabled]="loadingMore()"
+              (click)="loadMore()"
+            >
+              {{ loadingMore() ? 'Loading…' : 'Load more' }}
+            </button>
+            <span class="muted load-more__count">{{ visible().length }} of {{ totalElements() }}</span>
+          </div>
+        }
       }
     </section>
   }

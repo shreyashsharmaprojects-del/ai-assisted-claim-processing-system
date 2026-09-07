@@ -5,6 +5,141 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-07 — Sale-readiness build (R1–R6 + E2E): what shipped, what bent, what's next
+
+**Context:** Autonomous sale-readiness pass executing `docs/sale-readiness-
+requirements.md` (build contract from the analysis + roadmap review) with five
+parallel subagents on `muse-spark-1.3-contributor`: backend-A (R1 policy admin + R2
+outbox), backend-B (R3 metrics + R4 pagination + R5 storage + R6 nginx), frontend
+(policies screen + outbox panel + load-more), tests (E2E scaffolding → journeys),
+docs (R7 packaging). Verified: **backend 182/182**, frontend build green, **13/13
+existing E2E green** on the live host stack + 2 new P0 journeys written for the
+hermetic gate.
+
+**What shipped:**
+- **R1 policy admin** (backend-A): V9 `policy.status` (ACTIVE/RETIRED, default
+  ACTIVE) + `created_at`; supervisor-only `POST /api/policies` (unknown product →
+  400 naming valid codes), `POST /api/policies/import` (multipart `file`, ≤500
+  rows, always HTTP 200 with per-row `{row,policyNumber,ok,error}`), `POST
+  /api/policies/{n}/retire`, `GET /api/policies/admin` (paginated, newest first);
+  FNOL rejects RETIRED with the existing policy-mismatch 400 shape; duplicate
+  number → 409 (DB unique stays the guard). Frontend Policies screen
+  (`/admin/policies`, supervisor guard + nav): table, create form, CSV upload with
+  dry-run preview → confirm + per-row errors, retire confirm. Pins:
+  `PolicyAdminIntegrationTest` 10/10.
+- **R2 email outbox** (backend-A): V10 `email_outbox` written in the FNOL/
+  assignment/closure transactions (never the send); 60s dispatcher (max-attempts
+  8, 1m→4h backoff, batch 50, `claims.outbox.enabled` off in tests — same pattern
+  as aging); immediate send kept + dispatcher flush after commit (Mailpit pins
+  unchanged); `GET /api/outbox` + `POST /api/outbox/{id}/retry` (retry non-FAILED
+  → 400); overview outbox panel (counts, filter, per-row retry, quiet toast).
+  Pins: `EmailOutboxIntegrationTest` 6/6 (SMTP-down → PENDING + closed; redelivery
+  → SENT; poison → FAILED → retry → PENDING; auth matrix).
+- **R3 metrics** (backend-B, descoped shape): `GET /api/metrics` supervisor-only
+  JSON (fnol total/rejected-by-reason, decisions-by-outcome,
+  escalations-by-target, queue-depth-by-status, outbox pending/failed live from
+  V10) + ops alert table with JSON checks and PromQL P1 sketches. Pins:
+  `MetricsIntegrationTest` 2/2.
+- **R4 pagination + server search** (backend-B + frontend): `{content,page,size,
+  totalElements,totalPages}` on queue/escalations/mine (+ admin/outbox), `?page/
+  size/q/status` (default 25, cap 100), stable ordering, claimant `q` own-rows-
+  only; load-more + debounced server search in all five lists (plain-array
+  fallback kept). Pins: `QueuePaginationIntegrationTest` 8/8.
+- **R5 storage seam** (backend-B): `PhotoStorage` interface +
+  `FilesystemPhotoStorage` (bean name unchanged), key-shaped `storage_path`
+  (`{claimId}/{uuid}{ext}`), V11 legacy-path rewrite (null-safe), dual-read
+  downloads, S3 page + restore-pairing gate in operations. Pins:
+  `StorageSeamIntegrationTest` 5/5.
+- **R6 IP limits** (backend-B): nginx `limit_req` (5r/s, burst 10 nodelay) on
+  `= /api/claims`, syntax-verified; "app-layer per-IP is the WAF's job" recorded.
+- **Tests/E2E:** `e2e/tests/p0.spec.ts` (2 journeys: R1 import→FNOL→queue incl.
+  retire; R2 decision→outbox SENT) + `e2e/tests/fixtures/policy-import.csv`;
+  13/13 existing green on the live host stack (current code).
+- **Docs (R7 + R1/R2 deltas):** `api.http` ×6 new examples, operations (alert
+  table, S3 page, R6, pairing gate, onboarding checklist), README truth
+  (182/13+2/V11), R7 packaging entry, demo seed/reset SQL + npm scripts.
+
+**What bent (forced adapts, all recorded):**
+- **Prometheus registry → dependency-free JSON.** `micrometer-registry-prometheus`
+  is not in the read-only offline Maven cache (`~/.m2` unwritable) — offline
+  build failed. Actuator stayed (cached); metrics are plain `AtomicLong` +
+  `JdbcTemplate` gauges at `GET /api/metrics`. PromQL kept as P1 sketches.
+- **Full S3/MinIO → seam + key + docs.** Correct per the roadmap review's own
+  verdict (half-right: seam now, switch P1) — no checksum/migration risk mid-sale.
+- **2 of 8 planned outbox tests descoped** (supervisor-closure row,
+  unassigned-FNOL assignment row — implicitly covered; core paths pinned).
+- **Hermetic E2E gate not runnable in-sandbox** (host :4200/:8081 squatters
+  unkillable from the bwrap sandbox; hermetic boot needs both free). 13/13
+  verified on the live host stack serving current code; `claims_e2e` repaired
+  (V4 checksum `1362416422 → 472220875`) + truncated for a clean gate run on
+  CI/a clean machine. The V4 mismatch itself: the `claims_e2e` DB was migrated
+  when V4 still said `realm-export.json`; commit `c836d36` renamed it to
+  `.template.json` in the file, changing the checksum for already-migrated DBs.
+  **V4 on disk was NOT touched** (immutability holds) — the applied row's
+  checksum was updated to the committed file, which is the documented repair.
+- **Test-pool cap 10→3** in `TestcontainersConfiguration`: ~14 cached Spring
+  contexts × Hikari 10 exhausted PG `max_connections`. Shared-file fix, flagged.
+
+**Load-bearing rules re-verified:** V1–V8 untouched (no diff); wall/gate/audit/
+404/atomicity/aging all green at 182; testids + exact-text contracts additive-only;
+no secrets in git (`.env`/`realm-export.json` still ignored). P1 queue next:
+frontend component tests, reopen/appeal, staff surface, notification prefs, audit
+export, 409-on-conflict, a11y audit, GDPR note, MinIO, white-label, landing page.
+
+---
+
+### 2026-09-07 — R7 packaging: tenancy, auth-hosting, S3 deferral, tranches, skill fork
+
+**Context:** Sale-readiness pass R7 (docs/packaging only — no backend logic): the
+sale-readiness analysis named five packaging decisions a buyer will ask about
+before signing. Recorded here so sales answers them the same way twice.
+
+**Decisions:**
+
+- **Realm-per-tenant, option (a) for sale #1.** Each carrier gets a full stack
+  with its own Keycloak realm rendered from `keycloak/realm-export.template.json`
+  (new realm name per carrier, same pipeline: `npm run realm:render` →
+  `docker compose -f docker-compose.prod.yml up`). No query changes, no shared
+  tables, no cross-carrier leak surface. Row-level multi-tenancy (option (b)) is
+  explicitly Series-A — after customer two, per the roadmap review. The carrier
+  onboarding checklist in `docs/operations.md` is the procedure.
+- **"Plug into our IdP?" — yes, OIDC-standard.** The backend is a plain OIDC
+  resource server (`spring.security.oauth2.resourceserver.jwt.issuer-uri` in
+  `application.properties`): any OIDC IdP works by pointing that URI at the
+  buyer's issuer — no code change. "Run auth for us?" — yes as a managed service:
+  we operate the Keycloak realm for the carrier (same render pipeline). No new
+  auth code either way; the objection answer is configuration, not a feature.
+- **S3 deferred with the path documented, not wired.** Photos stay on the
+  `claims-uploads` named volume this sale; full MinIO wiring is P1. What the
+  buyer gets now: the restore-pairing gate in `docs/operations.md` (DB dump +
+  volume snapshot restore as one atomic pair, with an orphan check) and this
+  migration path — `PhotoStorage` becomes an interface, `storage_path` stores a
+  per-claim object key instead of a host path, one backfill job rewrites legacy
+  rows. No schema migration is needed later beyond the key rewrite.
+- **Tranches (partial/multiple payments) are a non-goal, not a deferral.** The
+  one-payment-per-claim uniqueness constraint is the atomicity story ("a decision
+  closes the claim, exactly one payment"). Partial payments would need a
+  sum-check migration that risks that story mid-sale — buyer-roadmap line only.
+- **Skill fork: commit, don't delete.** `.agents/skills/enterprise ui/` + `design
+  examples/` are still untracked (`git status`, 2026-09-07). The skill was
+  corrected in phase 07b to teach the shipped "Insure Craft" language
+  (SKILL.md, tokens, component specs, review checklist; packaged `.skill`
+  rebuilt) — deleting it re-opens the dated-vs-modern argument on the next UI
+  pass. Recommendation: `git add` both paths in the single R7 commit (no secrets
+  inside — verify with `git status` + a content scan before adding). Nothing was
+  committed by this agent (docs/packaging files only, commit left to the
+  coordinator).
+
+**Verified (R7 docs scope):** demo seed/reset applied live against the dev
+`claims` DB (6 `POL-DEMO-*` policies, 6 claims across UNASSIGNED →
+UNDER_REVIEW → ESCALATED_SUPERVISOR → CLOSED-APPROVED/DENIED, audit rows,
+supervisor payment with NULL authorizer; reset removes all demo rows and leaves
+the 2 real seeded policies); `api.http` re-checked against the controllers —
+policy-admin/outbox endpoints do not exist on disk yet, so no examples were
+invented for them.
+
+---
+
 ### 2026-09-07 — Production push: session auth, hardening endpoints, my-claims, overview, E2E hermeticity
 
 **Context:** Post-07c autonomous production push (user: make it production-ready and

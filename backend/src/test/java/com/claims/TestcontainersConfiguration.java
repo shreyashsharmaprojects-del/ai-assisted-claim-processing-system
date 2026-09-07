@@ -39,19 +39,30 @@ public class TestcontainersConfiguration {
     @Bean(destroyMethod = "")
     DataSource dataSource() {
         if (CONTAINER != null) {
-            return DataSourceBuilder.create()
-                    .type(HikariDataSource.class)
-                    .url(CONTAINER.getJdbcUrl())
-                    .username(CONTAINER.getUsername())
-                    .password(CONTAINER.getPassword())
-                    .build();
+            return pooled(CONTAINER.getJdbcUrl(), CONTAINER.getUsername(),
+                    CONTAINER.getPassword());
         }
-        return DataSourceBuilder.create()
+        return pooled(env("TEST_DB_URL", "jdbc:postgresql://localhost:5432/claims_test"),
+                env("TEST_DB_USER", "claims"), env("TEST_DB_PASSWORD", "claims"));
+    }
+
+    /**
+     * Small pools on purpose: the suite now holds ~14 cached Spring contexts (one per
+     * integration-test class, each with distinct properties), and the default pool of 10
+     * each exhausts Postgres max_connections (100) mid-suite ("too many clients"). Three
+     * per context is plenty — tests file sequentially; the tightest concurrent use is
+     * the assignment lock test (2 connections).
+     */
+    private static DataSource pooled(String url, String username, String password) {
+        HikariDataSource ds = DataSourceBuilder.create()
                 .type(HikariDataSource.class)
-                .url(env("TEST_DB_URL", "jdbc:postgresql://localhost:5432/claims_test"))
-                .username(env("TEST_DB_USER", "claims"))
-                .password(env("TEST_DB_PASSWORD", "claims"))
+                .url(url)
+                .username(username)
+                .password(password)
                 .build();
+        ds.setMaximumPoolSize(3);
+        ds.setMinimumIdle(1);
+        return ds;
     }
 
     private static String env(String name, String fallback) {

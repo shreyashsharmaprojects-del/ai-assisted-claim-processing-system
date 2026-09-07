@@ -18,13 +18,21 @@ public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
+    private final com.claims.metrics.ClaimsMetrics metrics;
+
+    public ApiExceptionHandler(com.claims.metrics.ClaimsMetrics metrics) {
+        this.metrics = metrics;
+    }
+
     @ExceptionHandler(FnolValidationException.class)
     public ResponseEntity<ErrorResponse> badRequest(FnolValidationException ex) {
+        metrics.fnolRejected("validation");
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
     }
 
     @ExceptionHandler(PolicyMismatchException.class)
     public ResponseEntity<ErrorResponse> notFound(PolicyMismatchException ex) {
+        metrics.fnolRejected("policy_mismatch");
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(ex.getMessage()));
     }
 
@@ -42,6 +50,15 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidRequestException.class)
     public ResponseEntity<ErrorResponse> invalidRequest(InvalidRequestException ex) {
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
+    }
+
+    /**
+     * R1: the {@code policy_number} UNIQUE constraint is the duplicate guard — surface it
+     * as a clean 409, never a 500 with driver internals.
+     */
+    @ExceptionHandler(DuplicatePolicyNumberException.class)
+    public ResponseEntity<ErrorResponse> duplicatePolicy(DuplicatePolicyNumberException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(ex.getMessage()));
     }
 
     /**
@@ -64,6 +81,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(UnroutableException.class)
     public ResponseEntity<ErrorResponse> unroutable(UnroutableException ex) {
         log.error("Claim could not be routed", ex);
+        metrics.fnolRejected("unroutable");
         // Log the detail; the caller only gets a generic message (never internal config).
         return ResponseEntity.internalServerError()
                 .body(new ErrorResponse("We could not route your claim. Please try again."));
@@ -86,6 +104,7 @@ public class ApiExceptionHandler {
     @ExceptionHandler(RateLimitedException.class)
     public ResponseEntity<ErrorResponse> rateLimited(RateLimitedException ex) {
         log.warn("Rate limit hit; retry after {}s", ex.getRetryAfterSeconds());
+        metrics.fnolRejected("rate_limited");
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(new ErrorResponse(ex.getMessage()));

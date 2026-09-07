@@ -1,0 +1,247 @@
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet" />
+<style>
+    :root {
+        --text-main: #1e293b;
+        --border-color: #e2e8f0;
+        --text-muted: #64748b;
+        --primary-blue: #0056b3;
+    }
+    .form-card {
+        background: white;
+        border-radius: 8px;
+        padding: 32px 32px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        font-family: 'Inter', sans-serif;
+    }
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 24px;
+        font-size: 18px;
+        font-weight: 600;
+    }
+    .section-icon {
+        color: #555;
+    }
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        align-items: start;
+    }
+    .form-group {
+        margin-bottom: 20px;
+    }
+    .form-group label {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        color: #64748b;
+        margin-bottom: 8px;
+    }
+    .input-wrapper {
+        position: relative;
+    }
+    input[type='text'],
+    select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: inherit;
+        outline: none;
+        color: #1e293b;
+        transition: border-color 0.2s;
+    }
+    select {
+        appearance: none;
+        cursor: pointer;
+    }
+    .chevron-down-icon {
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        pointer-events: none;
+        font-size: 12px;
+    }
+    input[type='text']::placeholder {
+        color: #94a3b8;
+    }
+    input[type='text']:focus,
+    select:focus {
+        border-color: #85b1e6;
+    }
+    .radio-group {
+        display: flex;
+        gap: 8px;
+    }
+    .radio-option {
+        flex: 1;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 16px;
+        transition: all 0.2s;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        color: #94a3b8;
+        background-color: white;
+    }
+    .radio-option.selected {
+        color: var(--text-main);
+        border-color: #85b1e6;
+    }
+    .radio-circle {
+        width: 18px;
+        height: 18px;
+        border: 1px solid #cbd5e1;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .radio-option.selected .radio-circle {
+        background: var(--primary-blue);
+        border-color: var(--primary-blue);
+    }
+    .radio-option.selected .radio-circle::after {
+        content: '\f00c';
+        font-family: 'Font Awesome 5 Free';
+        font-weight: 900;
+        color: white;
+        font-size: 10px;
+    }
+</style>
+<div class="form-card">
+    <div class="section-header">
+        <i class="fas fa-file-invoice section-icon"></i>
+        <span>Additional Details</span>
+    </div>
+
+    <div class="form-grid">
+        <!-- Row 1 -->
+        <div class="form-group">
+            <label>BGIL RM Code (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter BGIL RM Code" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>SP/POSP Code (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter SP/POSP Code" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>SP Name (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter SP Name" />
+            </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="form-group">
+            <label>Remarks</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter Remarks" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Back Days Allowed (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter Back Days Allowed" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Future Days Allowed</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter Future Days Allowed" />
+            </div>
+        </div>
+
+        <!-- Row 3 -->
+        <div class="form-group">
+            <label>Reference Type (Optional)</label>
+            <div class="input-wrapper">
+                <select>
+                    <option value="" disabled selected hidden>Enter Reference Type</option>
+                </select>
+                <i class="fas fa-chevron-down chevron-down-icon"></i>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Bank Reference ID (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter Bank Reference ID" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Reference Number (Optional)</label>
+            <div class="input-wrapper">
+                <input type="text" placeholder="Enter Reference Number" />
+            </div>
+        </div>
+
+        <!-- Spacer to align the next items on the left -->
+        <div class="form-group"></div>
+        <div class="form-group"></div>
+        <div class="form-group"></div>
+
+        <!-- Row 4 Toggles -->
+        <div class="form-group">
+            <label>New Business Allowed</label>
+            <div class="radio-group" data-toggle-group="new-business">
+                <div class="radio-option selected">
+                    <span>Yes</span>
+                    <div class="radio-circle"></div>
+                </div>
+                <div class="radio-option">
+                    <span>No</span>
+                    <div class="radio-circle"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Family Floater</label>
+            <div class="radio-group" data-toggle-group="family-floater">
+                <div class="radio-option">
+                    <span>Yes</span>
+                    <div class="radio-circle"></div>
+                </div>
+                <div class="radio-option selected">
+                    <span>No</span>
+                    <div class="radio-circle"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    // JS Handler for Radio Option Tabs
+    document.querySelectorAll('.radio-group').forEach((group) => {
+        const options = group.querySelectorAll('.radio-option');
+        options.forEach((option) => {
+            option.addEventListener('click', () => {
+                options.forEach((opt) => opt.classList.remove('selected'));
+                option.classList.add('selected');
+            });
+        });
+    });
+</script>

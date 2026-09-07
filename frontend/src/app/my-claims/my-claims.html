@@ -3,8 +3,8 @@
     <div class="page-banner__main">
       <div class="page-banner__title-row">
         <h1>My claims</h1>
-        @if (loaded() && claims().length > 0) {
-          <span class="chip">{{ claims().length }} filed</span>
+        @if (loaded() && mineCount() > 0) {
+          <span class="chip">{{ mineCount() }} filed</span>
         }
       </div>
       <p class="page-banner__sub">
@@ -20,7 +20,7 @@
 
   @if (error(); as message) {
     <p class="notice notice--error" data-testid="my-claims-error" role="alert">{{ message }}</p>
-    <button type="button" class="btn btn--secondary retry" data-testid="my-claims-retry" (click)="load()">
+    <button type="button" class="btn btn--secondary retry" data-testid="my-claims-retry" (click)="load(true)">
       Try again
     </button>
   } @else if (!loaded()) {
@@ -48,17 +48,51 @@
           </svg>
         </div>
         <h2>Your claims</h2>
-        @if (claims().length > 0) {
-          <span class="panel__count">{{ claims().length }}</span>
+        @if (mineCount() > 0) {
+          <span class="panel__count">{{ visible().length }} of {{ mineCount() }}</span>
         }
       </div>
 
-      @if (claims().length === 0) {
+      <div class="toolbar" data-testid="my-claims-toolbar">
+        <div class="toolbar__search">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          <input
+            type="search"
+            class="input toolbar__input"
+            placeholder="Search claim, product…"
+            aria-label="Search your claims"
+            data-testid="my-claims-search"
+            [value]="query()"
+            (input)="setQuery($any($event.target).value)"
+          />
+        </div>
+        <div class="toolbar__filters" role="group" aria-label="Filter by decision">
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="my-claims-filter-all">All</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'OPEN'" (click)="setStatusFilter('OPEN')" data-testid="my-claims-filter-open">Open</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'APPROVED'" (click)="setStatusFilter('APPROVED')" data-testid="my-claims-filter-approved">Approved</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'DENIED'" (click)="setStatusFilter('DENIED')" data-testid="my-claims-filter-denied">Not approved</button>
+        </div>
+      </div>
+
+      @if (mineCount() === 0 && !hasActiveFilters()) {
         <div class="state-panel" data-testid="my-claims-empty">
           <p class="state-panel__title">No claims yet</p>
           <p class="state-panel__body">
             When you file a claim it appears here with its current status.
           </p>
+        </div>
+      } @else if (visible().length === 0) {
+        <div class="state-panel" data-testid="my-claims-no-results">
+          <p class="state-panel__title">No claims match</p>
+          <p class="state-panel__body">
+            Nothing here matches the current search and filters.
+          </p>
+          <button type="button" class="btn btn--secondary" data-testid="my-claims-clear-filters" (click)="clearFilters()">
+            Clear search and filters
+          </button>
         </div>
       } @else {
         <div class="table-scroll">
@@ -74,7 +108,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (claim of claims(); track claim.claimNumber) {
+              @for (claim of visible(); track claim.claimNumber) {
                 <tr data-testid="my-claims-row">
                   <td class="mono identifier" data-testid="my-claims-number">{{ claim.claimNumber }}</td>
                   <td>
@@ -104,6 +138,20 @@
             </tbody>
           </table>
         </div>
+        @if (hasMore()) {
+          <div class="load-more">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-testid="my-claims-load-more"
+              [disabled]="loadingMore()"
+              (click)="loadMore()"
+            >
+              {{ loadingMore() ? 'Loading…' : 'Load more' }}
+            </button>
+            <span class="muted load-more__count">{{ visible().length }} of {{ totalElements() }}</span>
+          </div>
+        }
       }
     </section>
   }

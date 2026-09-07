@@ -19,6 +19,7 @@ import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.claim.Claim;
 import com.claims.claim.ClaimRepository;
+import com.claims.metrics.ClaimsMetrics;
 import com.claims.staff.AppUser;
 
 /**
@@ -45,13 +46,15 @@ public class AgingService {
     private final ClaimAssigner assigner;
     private final AuditLogWriter auditLog;
     private final JdbcTemplate jdbcTemplate;
+    private final ClaimsMetrics metrics;
 
     public AgingService(ClaimRepository claims, ClaimAssigner assigner,
-            AuditLogWriter auditLog, JdbcTemplate jdbcTemplate) {
+            AuditLogWriter auditLog, JdbcTemplate jdbcTemplate, ClaimsMetrics metrics) {
         this.claims = claims;
         this.assigner = assigner;
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
+        this.metrics = metrics;
     }
 
     /**
@@ -85,10 +88,12 @@ public class AgingService {
             switch (step) {
                 case REASSIGN_TO_L2 -> {
                     reassignToL2(claim);
+                    metrics.escalation("L2");
                     aged++;
                 }
                 case ESCALATE_TO_SUPERVISOR -> {
                     escalateToSupervisor(claim);
+                    metrics.escalation("SUPERVISOR");
                     aged++;
                 }
                 default -> {

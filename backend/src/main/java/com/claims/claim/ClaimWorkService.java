@@ -51,11 +51,12 @@ public class ClaimWorkService {
     private final ClaimAccess access;
     private final AuditLogWriter auditLog;
     private final JdbcTemplate jdbcTemplate;
+    private final PhotoStorage photoStorage;
 
     public ClaimWorkService(ClaimRepository claims, PolicyRepository policies,
             AttachmentRepository attachments, InternalNoteRepository notes,
             AppUserRepository appUsers, ClaimAccess access, AuditLogWriter auditLog,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate, PhotoStorage photoStorage) {
         this.claims = claims;
         this.policies = policies;
         this.attachments = attachments;
@@ -64,6 +65,7 @@ public class ClaimWorkService {
         this.access = access;
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
+        this.photoStorage = photoStorage;
     }
 
     public InternalClaimView fullView(String claimNumber, String actorSub, boolean supervisor) {
@@ -117,7 +119,7 @@ public class ClaimWorkService {
         Attachment attachment = attachments.findById(attachmentId)
                 .filter(a -> a.getClaimId().equals(claim.getId()))
                 .orElseThrow(ClaimNotFoundException::new);
-        Path file = Path.of(attachment.getStoragePath());
+        Path file = photoStoragePath(attachment.getStoragePath());
         if (!Files.isRegularFile(file)) {
             log.error("Attachment {} for claim {} points at a missing file: {}",
                     attachment.getId(), claimNumber, file);
@@ -129,6 +131,18 @@ public class ClaimWorkService {
         } catch (java.io.IOException ex) {
             throw new IllegalStateException("Could not read attachment " + attachmentId, ex);
         }
+    }
+
+    /**
+     * R5: the DB holds an object key ({@code {claimId}/{uuid}{ext}}); legacy absolute-path
+     * rows (pre-V11 migration) resolve as-is. The filesystem implementation knows both
+     * forms; a future S3 implementation resolves keys against its bucket instead.
+     */
+    private Path photoStoragePath(String storageKeyOrPath) {
+        if (photoStorage instanceof FilesystemPhotoStorage filesystem) {
+            return filesystem.resolve(storageKeyOrPath);
+        }
+        return Path.of(storageKeyOrPath);
     }
 
     private Claim requireVisible(String claimNumber, String actorSub, boolean supervisor) {

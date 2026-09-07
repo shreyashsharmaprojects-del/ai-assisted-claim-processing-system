@@ -3,8 +3,8 @@
     <div class="page-banner__main">
       <div class="page-banner__title-row">
         <h1>Escalations</h1>
-        @if (loaded() && claims().length > 0) {
-          <span class="chip">{{ claims().length }} awaiting decision</span>
+        @if (loaded() && escCount() > 0) {
+          <span class="chip">{{ escCount() }} awaiting decision</span>
         }
       </div>
       <p class="page-banner__sub">
@@ -22,7 +22,7 @@
         </div>
         <div>
           <p class="stat__label">Waiting on you</p>
-          <p class="stat__value">{{ loaded() ? claims().length : '—' }}</p>
+          <p class="stat__value">{{ loaded() ? escCount() : '—' }}</p>
         </div>
       </div>
     </div>
@@ -30,7 +30,7 @@
 
   @if (error(); as message) {
     <p class="notice notice--error" data-testid="esc-error" role="alert">{{ message }}</p>
-    <button type="button" class="btn btn--secondary retry" data-testid="esc-retry" (click)="load()">
+    <button type="button" class="btn btn--secondary retry" data-testid="esc-retry" (click)="load(true)">
       Try again
     </button>
   } @else if (!loaded()) {
@@ -61,8 +61,8 @@
           </svg>
         </div>
         <h2>Escalated claims</h2>
-        @if (claims().length > 0) {
-          <span class="panel__count">{{ visible().length }} of {{ claims().length }}</span>
+        @if (escCount() > 0) {
+          <span class="panel__count">{{ visible().length }} of {{ escCount() }}</span>
         }
       </div>
 
@@ -84,7 +84,7 @@
         </div>
       </div>
 
-      @if (claims().length === 0) {
+      @if (escCount() === 0 && query().trim() === '') {
         <div class="state-panel" data-testid="esc-empty">
           <p class="state-panel__title">Nothing escalated right now</p>
           <p class="state-panel__body">
@@ -143,6 +143,20 @@
             </tbody>
           </table>
         </div>
+        @if (hasMore()) {
+          <div class="load-more">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-testid="esc-load-more"
+              [disabled]="loadingMore()"
+              (click)="loadMore()"
+            >
+              {{ loadingMore() ? 'Loading…' : 'Load more' }}
+            </button>
+            <span class="muted load-more__count">{{ visible().length }} of {{ totalElements() }}</span>
+          </div>
+        }
       }
     </section>
   }

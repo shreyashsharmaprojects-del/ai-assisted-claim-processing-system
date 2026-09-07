@@ -1,0 +1,128 @@
+<style>
+    .sidebar {
+        width: 260px;
+        background: #ffffff;
+        border-right: 1px solid #e0e6ed;
+        display: flex;
+        flex-direction: column;
+        padding: 20px 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .logo-container {
+        padding: 0 20px 20px;
+        border-bottom: 1px solid #f0f0f0;
+        margin-bottom: 20px;
+    }
+    .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .logo-icon {
+        width: 32px;
+        height: 32px;
+        background: #003399;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        border-radius: 4px;
+    }
+    .logo-text h1 {
+        font-size: 16px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #003399;
+        margin: 0;
+    }
+    .logo-text p {
+        font-size: 9px;
+        color: #666;
+        margin: 0;
+    }
+    .nav-item {
+        padding: 12px 20px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .nav-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .nav-status {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        width: fit-content;
+    }
+    .status-completed { background: #e6f9ed; color: #28a745; }
+    .status-inprogress { background: #e7f0fe; color: #0056b3; }
+    .status-yet { background: #f2f4f7; color: #666; }
+    .sub-nav { margin-top: 8px; }
+    .sub-item {
+        padding: 10px 20px;
+        font-size: 14px;
+        color: #666;
+    }
+    .sub-item.active {
+        background: #eef4ff;
+        color: #0056b3;
+        border-radius: 6px;
+        margin: 0 10px;
+        font-weight: 500;
+    }
+</style>
+<aside class="sidebar">
+    <div class="logo-container">
+        <div class="logo">
+            <div class="logo-icon">B</div>
+            <div class="logo-text">
+                <h1>INSURE CRAFT</h1>
+                <p>Crafting Personalised Insurance Solutions</p>
+            </div>
+        </div>
+    </div>
+    <nav>
+        <div class="nav-item">
+            <div class="nav-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="far fa-file-alt"></i> Master Policy
+                </div>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+            <span class="nav-status status-completed">Completed</span>
+        </div>
+        <div class="nav-item" style="background: #f8fbff;">
+            <div class="nav-header">
+                <div style="display: flex; align-items: center; gap: 8px; color: #333;">
+                    <i class="far fa-file-alt"></i> Plan Configuration
+                </div>
+                <i class="fas fa-chevron-up"></i>
+            </div>
+            <span class="nav-status status-inprogress">In Progress</span>
+        </div>
+        <div class="sub-nav">
+            <div class="sub-item">Plan Details</div>
+            <div class="sub-item">Channel Details</div>
+            <div class="sub-item active">Additional Details</div>
+            <div class="sub-item">Cover and Section Data</div>
+            <div class="sub-item">Clauses</div>
+            <div class="sub-item">Non Rating Data</div>
+        </div>
+        <div class="nav-item" style="margin-top: 20px;">
+            <div class="nav-header">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i class="far fa-file-alt"></i> Master Policy
+                </div>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+            <span class="nav-status status-yet">Yet to Fill</span>
+        </div>
+    </nav>
+</aside>

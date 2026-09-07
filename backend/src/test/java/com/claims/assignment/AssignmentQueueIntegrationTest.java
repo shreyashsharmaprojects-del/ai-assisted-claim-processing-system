@@ -311,7 +311,8 @@ class AssignmentQueueIntegrationTest extends ClaimTableResettingTest {
     void queueIsEmptyForAnAdjusterWithNoAssignments() throws Exception {
         // No claims filed; an adjuster of an unused level must get an empty queue, not an error.
         String body = getQueue(JwtTestConfig.tokenFor(SUB_L2, "adjuster_l2"));
-        assertTrue(body.trim().equals("[]"), body);
+        assertTrue(body.contains("\"content\":[]"), body);
+        assertTrue(body.contains("\"totalElements\":0"), body);
     }
 
     // --- helpers ---------------------------------------------------------------
