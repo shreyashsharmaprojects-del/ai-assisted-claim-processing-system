@@ -1,0 +1,5 @@
+{
+  "keycloakUrl": "https://auth.example.com",
+  "keycloakRealm": "claims",
+  "keycloakClientId": "claims-frontend"
+}

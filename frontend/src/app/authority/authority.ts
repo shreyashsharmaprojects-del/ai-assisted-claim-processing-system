@@ -1,8 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { accessToken } from '../auth/auth.service';
+import { Toasts, serverMessage } from '../toasts';
 
 interface ConfigRow {
   productCode: string;
@@ -22,7 +22,7 @@ interface EditableRow {
   l2Text: string;
 }
 
-/** The supervisor's authority config editor (route-table row /admin/authority, slice 7). */
+/** The supervisor's authority config editor (supervisor-only). */
 @Component({
   imports: [FormsModule],
   selector: 'app-authority',
@@ -31,12 +31,13 @@ interface EditableRow {
 })
 export class Authority {
   private readonly http = inject(HttpClient);
+  private readonly toasts = inject(Toasts);
 
   protected readonly rows = signal<EditableRow[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly saved = signal<string | null>(null);
   protected readonly loaded = signal(false);
-  protected readonly saving = signal(false);
+  protected readonly saving = signal<string | null>(null);
 
   constructor() {
     void this.load();
@@ -46,13 +47,7 @@ export class Authority {
     this.error.set(null);
     this.loaded.set(false);
     try {
-      const headers = await this.authHeaders();
-      if (!headers) {
-        return;
-      }
-      const rows = await firstValueFrom(
-        this.http.get<ConfigRow[]>('/api/config/authority', { headers }),
-      );
+      const rows = await firstValueFrom(this.http.get<ConfigRow[]>('/api/config/authority'));
       this.rows.set(
         rows.map((row) => ({
           productCode: row.productCode,
@@ -61,22 +56,38 @@ export class Authority {
           l2Text: row.l2LimitAmount.toFixed(2),
         })),
       );
-    } catch {
-      this.error.set('Could not load the authority settings. Please try again.');
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not load the authority settings. Please try again.'));
     } finally {
       this.loaded.set(true);
     }
   }
 
+  /** Client-side ladder check: L1 must not exceed L2 (the server re-validates). */
+  protected ladderError(row: EditableRow): string | null {
+    const l1 = Number(row.l1Text);
+    const l2 = Number(row.l2Text);
+    if (row.l1Text.trim() === '' || row.l2Text.trim() === '' || Number.isNaN(l1) || Number.isNaN(l2)) {
+      return 'Both limits need a numeric amount.';
+    }
+    if (l1 <= 0 || l2 <= 0) {
+      return 'Limits must be greater than zero.';
+    }
+    if (l1 > l2) {
+      return 'The L1 limit cannot exceed the L2 limit.';
+    }
+    return null;
+  }
+
   async save(row: EditableRow) {
     this.error.set(null);
     this.saved.set(null);
-    this.saving.set(true);
-    const headers = await this.authHeaders();
-    if (!headers) {
-      this.saving.set(false);
+    const ladder = this.ladderError(row);
+    if (ladder) {
+      this.error.set(`${row.productCode}: ${ladder}`);
       return;
     }
+    this.saving.set(row.productCode);
     try {
       await firstValueFrom(
         this.http.put(
@@ -86,27 +97,17 @@ export class Authority {
             l1LimitAmount: Number(row.l1Text),
             l2LimitAmount: Number(row.l2Text),
           },
-          { headers },
         ),
       );
       this.saved.set(
         `Saved ${row.productCode}. The change applies to the next claim filed and the next decision.`,
       );
+      this.toasts.success(`Authority settings saved for ${row.productCode}.`);
       await this.load();
     } catch (err) {
-      const message = (err as { error?: { message?: string } })?.error?.message;
-      this.error.set(message ?? 'Could not save the authority settings.');
+      this.error.set(serverMessage(err, 'Could not save the authority settings.'));
     } finally {
-      this.saving.set(false);
+      this.saving.set(null);
     }
-  }
-
-  private async authHeaders(): Promise<HttpHeaders | null> {
-    const token = await accessToken();
-    if (!token) {
-      this.error.set('You are not signed in.');
-      return null;
-    }
-    return new HttpHeaders().set('Authorization', 'Bearer ' + token);
   }
 }

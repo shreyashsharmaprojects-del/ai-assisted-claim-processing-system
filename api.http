@@ -1,14 +1,36 @@
 # Working examples for the API. Load in VS Code (REST Client) or IntelliJ (HTTP Client).
 # The backend runs on :8081 in dev; the SPA proxy also forwards /api there.
+# Every response carries X-Request-Id (request tracing); errors carry it in the
+# message as "(Reference: xxxx)" — grep the backend log for rid=xxxx.
 @host = http://localhost:8081
 
-### Walking-skeleton page data: seeded policies (public)
+### Walking-skeleton page data: seeded policies (any signed-in role; 401 anonymous)
 GET {{host}}/api/policies
+Authorization: Bearer {{token}}
 
 ### Health — public liveness probe for deploy orchestration (no auth, no DB check)
 GET {{host}}/api/health
 
+### Readiness — traffic gate: migrations current AND a query succeeds (public)
+GET {{host}}/api/ready
+
+### Claimant history — every claim this subject filed, newest first (CLAIMANT only)
+# Public facts per row (status/product/loss date + decision when closed); never the
+# reserve, notes, assignee, or coverage (the visibility wall holds per row).
+GET {{host}}/api/claims/mine
+Authorization: Bearer {{token}}
+
+### Supervisor dashboard — aggregate ops numbers (SUPERVISOR only; 403 otherwise)
+# Counts (open/unassigned/under-review/escalated/closed, 7-day aging pressure) plus the
+# month-to-date approved indemnity total. Aggregates only, no per-claim data.
+GET {{host}}/api/dashboard
+Authorization: Bearer {{token}}
+
 ### FNOL — file a claim (CLAIMANT only, 401 without a token)
+# Flood guard: at most claims.fnol.rate-limit-per-day filings per claimant per rolling
+# 24h (default 20) — beyond that the API answers 429 with a Retry-After hint.
+# Validation: holder email must parse, loss date must be yyyy-MM-dd and not in the
+# future, description <= 5000 chars, remarks <= 2000 chars.
 # Auth: the SPA signs the user in via Keycloak (authorization-code + PKCE, public client
 # "claims-frontend", realm "claims", http://localhost:8090). There is no password grant,
 # so for ad-hoc requests grab an access token from a browser session on http://localhost:4200

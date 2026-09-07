@@ -1,193 +1,441 @@
-<main data-testid="claim-detail-page">
+<main class="page" data-testid="claim-detail-page">
   @if (error(); as message) {
-    <p class="error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
-    <button type="button" class="retry" data-testid="claim-detail-retry" (click)="load()">
+    <p class="notice notice--error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="claim-detail-retry" (click)="load()">
       Try again
     </button>
   } @else if (!loaded()) {
-    <p class="loading" data-testid="claim-detail-loading">Loading…</p>
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="claim-detail-loading" aria-label="Loading claim">
+          <div class="skeleton-row"><span class="skeleton-bar skeleton-bar--l"></span></div>
+          <div class="skeleton-row"><span class="skeleton-bar skeleton-bar--full"></span></div>
+          <div class="skeleton-row"><span class="skeleton-bar skeleton-bar--full"></span></div>
+          <div class="skeleton-row"><span class="skeleton-bar skeleton-bar--full"></span></div>
+        </div>
+      </div>
+    </div>
   } @else if (view(); as claim) {
-    <h1>
-      Claim <span data-testid="detail-claim-number">{{ claim.claimNumber }}</span>
-    </h1>
-    <p class="tagline" data-testid="detail-status">
-      {{ claim.status }} · {{ claim.level }} · {{ claim.assignedTo ?? 'unassigned' }}
-    </p>
-
-    <section class="panel">
-      <h2>Policy &amp; coverage</h2>
-      <dl>
-        <div>
-          <dt>Policy</dt>
-          <dd data-testid="detail-policy">{{ claim.policyNumber }}</dd>
+    <!-- Banner card: identity + status + key facts -->
+    <div class="page-banner">
+      <div class="page-banner__main">
+        <div class="page-banner__title-row">
+          <h1>Claim <span class="mono identifier" data-testid="detail-claim-number">{{ claim.claimNumber }}</span></h1>
+          <span class="{{ statusBadge(claim.status) }}" data-testid="detail-status">{{ claim.status }}</span>
+          <span class="chip">{{ claim.level }}</span>
         </div>
-        <div>
-          <dt>Product</dt>
-          <dd data-testid="detail-product">{{ claim.productCode }}</dd>
-        </div>
-        <div>
-          <dt>Holder</dt>
-          <dd data-testid="detail-holder">{{ claim.holderName }}</dd>
-        </div>
-      </dl>
-      <pre class="coverage" data-testid="detail-coverage">{{ coverageText() }}</pre>
-    </section>
-
-    <section class="panel">
-      <h2>Loss</h2>
-      <dl>
-        <div>
-          <dt>Date</dt>
-          <dd data-testid="detail-loss-date">{{ claim.lossDate }}</dd>
-        </div>
-        <div>
-          <dt>Location</dt>
-          <dd data-testid="detail-loss-location">{{ claim.lossLocation }}</dd>
-        </div>
-        <div>
-          <dt>Description</dt>
-          <dd data-testid="detail-loss-description">{{ claim.lossDescription }}</dd>
-        </div>
-        @if (claim.claimantRemarks; as remarks) {
+        <p class="page-banner__sub">
+          @if (claim.assignedTo; as assignee) {
+            Assigned to {{ assignee }}.
+          } @else {
+            Unassigned.
+          }
+        </p>
+      </div>
+      <div class="page-banner__aside">
+        <div class="stat">
+          <div class="stat__icon">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 2h11v9.5h-11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              <path d="M2.5 5.5h11" stroke="currentColor" stroke-width="1.3" />
+            </svg>
+          </div>
           <div>
-            <dt>Claimant remarks</dt>
-            <dd data-testid="detail-remarks">{{ remarks }}</dd>
+            <p class="stat__label">Policy</p>
+            <p class="stat__value mono identifier" data-testid="detail-policy">{{ claim.policyNumber }}</p>
           </div>
-        }
-      </dl>
-    </section>
-
-    <section class="panel">
-      <h2>Reserve</h2>
-      <p data-testid="detail-reserve-value">
-        Current reserve:
-        {{ claim.reserveAmount == null ? 'not set' : '£' + claim.reserveAmount.toFixed(2) }}
-      </p>
-      <form (ngSubmit)="saveReserve()" class="inline">
-        <label for="reserve">New reserve</label>
-        <input
-          id="reserve"
-          type="number"
-          min="0"
-          step="0.01"
-          data-testid="detail-reserve-input"
-          [(ngModel)]="reserveInput"
-          name="reserve"
-        />
-        <button
-          type="submit"
-          data-testid="detail-reserve-save"
-          [disabled]="savingReserve() || !reserveInput.trim()"
-        >
-          Save reserve
-        </button>
-      </form>
-    </section>
-
-    <section class="panel">
-      <h2>Internal notes</h2>
-      @if (claim.notes.length === 0) {
-        <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
-      } @else {
-        <ul data-testid="detail-note-list">
-          @for (note of claim.notes; track note.id) {
-            <li class="note" data-testid="detail-note-item">
-              <p>{{ note.body }}</p>
-              <p class="muted">{{ note.author ?? 'Internal' }}</p>
-            </li>
-          }
-        </ul>
-      }
-      <form (ngSubmit)="addNote()">
-        <label for="note">Add a note</label>
-        <textarea
-          id="note"
-          rows="3"
-          data-testid="detail-note-input"
-          [(ngModel)]="noteInput"
-          name="note"
-        ></textarea>
-        <button
-          type="submit"
-          data-testid="detail-note-add"
-          [disabled]="savingNote() || !noteInput.trim()"
-        >
-          Add note
-        </button>
-      </form>
-    </section>
-
-    <section class="panel" data-testid="detail-decision-panel">
-      <h2>Decision</h2>
-      @if (decisionResult(); as message) {
-        <p class="outcome" data-testid="detail-decision-result" role="status">{{ message }}</p>
-      }
-      @if (canDecide()) {
-        <p class="muted">Decide the claim: an indemnity amount is required to approve it.</p>
-        <form (ngSubmit)="approve()" data-testid="detail-decision-form">
-          <label for="decision-amount">Indemnity amount (£)</label>
-          <input
-            id="decision-amount"
-            type="number"
-            min="0.01"
-            step="0.01"
-            data-testid="detail-decision-amount"
-            [(ngModel)]="decisionAmount"
-            name="decisionAmount"
-          />
-          <label for="decision-rationale">Rationale (required)</label>
-          <textarea
-            id="decision-rationale"
-            rows="3"
-            data-testid="detail-decision-rationale"
-            [(ngModel)]="decisionRationale"
-            name="decisionRationale"
-          ></textarea>
-          <div class="button-row">
-            <button
-              type="submit"
-              data-testid="detail-approve"
-              [disabled]="deciding() || !decisionAmount || !decisionRationale.trim()"
-            >
-              Approve
-            </button>
-            <button
-              type="button"
-              data-testid="detail-deny"
-              [disabled]="deciding() || !decisionRationale.trim()"
-              (click)="deny()"
-            >
-              Deny
-            </button>
+        </div>
+        <div class="stat">
+          <div class="stat__icon">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2 12V7.5M6 12V4.5M10 12V6M14 12V2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            </svg>
           </div>
-        </form>
-      } @else if (claim.status === 'CLOSED') {
-        <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
-      }
-    </section>
+          <div>
+            <p class="stat__label">Product</p>
+            <p class="stat__value" data-testid="detail-product">{{ claim.productCode }}</p>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat__icon">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="5.4" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3" />
+              <path d="M2.6 13.4c.6-2.7 2.6-4.1 5.4-4.1s4.8 1.4 5.4 4.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div>
+            <p class="stat__label">Policyholder</p>
+            <p class="stat__value" data-testid="detail-holder">{{ claim.holderName }}</p>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat__icon">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M2.5 4.5h11v9h-11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              <path d="M2.5 7h11M5 2.5v3.5M11 2.5v3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div>
+            <p class="stat__label">Loss date</p>
+            <p class="stat__value num" data-testid="detail-loss-date">{{ claim.lossDate }}</p>
+          </div>
+        </div>
+        <div class="stat">
+          <div class="stat__icon">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3" />
+              <path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div>
+            <p class="stat__label">Current reserve</p>
+            <p class="stat__value num" data-testid="detail-reserve-value">
+              {{ claim.reserveAmount == null ? '—' : '£' + claim.reserveAmount.toFixed(2) }}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <section class="panel">
-      <h2>Photos</h2>
-      @if (claim.attachments.length === 0) {
-        <p class="muted" data-testid="detail-photos-empty">No photos attached.</p>
-      } @else {
-        <ul>
-          @for (attachment of claim.attachments; track attachment.id) {
-            <li>
+    <!-- Main work area: section cards in two columns -->
+    <div class="detail-columns">
+      <div class="detail-main">
+        <section class="panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 12.5V5.5h11v7z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                <path d="M5 2.5h6v3H5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Loss details</h2>
+          </div>
+          <div class="panel__body">
+            <dl class="kv-list">
+              <div class="kv">
+                <dt class="kv__label">Date of loss</dt>
+                <dd class="kv__value num" data-testid="detail-loss-date-field">{{ claim.lossDate }}</dd>
+              </div>
+              <div class="kv">
+                <dt class="kv__label">Location</dt>
+                <dd class="kv__value" data-testid="detail-loss-location">{{ claim.lossLocation }}</dd>
+              </div>
+              <div class="kv kv--full">
+                <dt class="kv__label">Description</dt>
+                <dd class="kv__value" data-testid="detail-loss-description">{{ claim.lossDescription }}</dd>
+              </div>
+              @if (claim.claimantRemarks; as remarks) {
+                <div class="kv kv--full">
+                  <dt class="kv__label">Claimant remarks</dt>
+                  <dd class="kv__value" data-testid="detail-remarks">{{ remarks }}</dd>
+                </div>
+              }
+            </dl>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 2.5h3.2l1 1.4h6.8v9.6H2.5z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Reserve</h2>
+          </div>
+          <div class="panel__body">
+            <p class="muted reserve-hint">
+              An internal estimate of what this claim may cost — never shown to the claimant.
+            </p>
+            <form (ngSubmit)="saveReserve()" class="inline-form">
+              <div class="field">
+                <label for="reserve">New reserve (£)</label>
+                <input
+                  id="reserve"
+                  class="input"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  data-testid="detail-reserve-input"
+                  [(ngModel)]="reserveInput"
+                  name="reserve"
+                />
+              </div>
               <button
-                type="button"
-                class="linklike"
-                data-testid="detail-attachment"
-                (click)="download(attachment)"
+                type="submit"
+                class="btn btn--secondary"
+                data-testid="detail-reserve-save"
+                [disabled]="savingReserve() || !reserveReady()"
               >
-                Download {{ attachment.originalName }}
+                Save reserve
               </button>
-            </li>
-          }
-        </ul>
-      }
-    </section>
+            </form>
+          </div>
+        </section>
 
-    <p><a routerLink="/queue" data-testid="detail-back-to-queue">Back to my queue</a></p>
+        <section class="panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 8.5h5l1.5-4.5 2.5 8 1.5-3.5h0.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Internal notes</h2>
+            <span class="panel__count">{{ claim.notes.length }}</span>
+          </div>
+          <div class="panel__body">
+            @if (claim.notes.length === 0) {
+              <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
+            } @else {
+              <ul class="note-list" data-testid="detail-note-list">
+                @for (note of claim.notes; track note.id) {
+                  <li class="note-item" data-testid="detail-note-item">
+                    <p class="note-item__body">{{ note.body }}</p>
+                    <p class="note-item__meta">{{ note.author ?? 'Internal' }}</p>
+                  </li>
+                }
+              </ul>
+            }
+            <form (ngSubmit)="addNote()" class="field" style="margin-top: var(--space-4)">
+              <label for="note">Add a note</label>
+              <textarea
+                id="note"
+                class="input"
+                rows="3"
+                placeholder="Observations, follow-ups, coverage checks…"
+                data-testid="detail-note-input"
+                [(ngModel)]="noteInput"
+                name="note"
+              ></textarea>
+              <div class="form-actions note-form-actions">
+                <button
+                  type="submit"
+                  class="btn btn--secondary"
+                  data-testid="detail-note-add"
+                  [disabled]="savingNote() || !noteInput.trim()"
+                >
+                  Add note
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <aside class="detail-side">
+        <section class="panel" data-testid="detail-decision-panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.5 14 4v4.5c0 3.2-2.3 5.3-6 6-3.7-.7-6-2.8-6-6V4l6-2.5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Decision</h2>
+          </div>
+          <div class="panel__body">
+            @if (decisionResult(); as message) {
+              <p class="notice notice--info" data-testid="detail-decision-result" role="status">
+                {{ message }}
+              </p>
+            }
+            @if (canDecide()) {
+              <form (ngSubmit)="approve()" data-testid="detail-decision-form" class="field">
+                <p class="muted decision-hint">
+                  Approving requires an indemnity amount within your authority; a rationale is
+                  recorded for both outcomes.
+                </p>
+                <div class="field">
+                  <label for="decision-amount">Indemnity amount (£)</label>
+                  <input
+                    id="decision-amount"
+                    class="input"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="0.00"
+                    data-testid="detail-decision-amount"
+                    [(ngModel)]="decisionAmount"
+                    name="decisionAmount"
+                  />
+                </div>
+                <div class="field">
+                  <label for="decision-rationale">Rationale</label>
+                  <textarea
+                    id="decision-rationale"
+                    class="input"
+                    rows="3"
+                    placeholder="Required for approval and denial"
+                    data-testid="detail-decision-rationale"
+                    [(ngModel)]="decisionRationale"
+                    name="decisionRationale"
+                  ></textarea>
+                </div>
+                <div class="button-row decision-actions">
+                  <button
+                    type="submit"
+                    class="btn btn--primary"
+                    data-testid="detail-approve"
+                    [disabled]="deciding() || !decisionAmount || !decisionRationale.trim()"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--danger"
+                    data-testid="detail-deny"
+                    [disabled]="deciding() || !decisionRationale.trim()"
+                    (click)="deny()"
+                  >
+                    Deny
+                  </button>
+                </div>
+              </form>
+            } @else if (claim.status === 'CLOSED') {
+              <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
+            }
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3h11v10h-11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                <path d="M5.5 6 8 8.5 10.5 6M8 8.5V12.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Policy &amp; coverage</h2>
+          </div>
+          <div class="panel__body">
+            <pre class="code-block" data-testid="detail-coverage">{{ coverageText() }}</pre>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="2.5" y="3" width="11" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" />
+                <circle cx="5.8" cy="6.2" r="1" fill="none" stroke="currentColor" stroke-width="1.3" />
+                <path d="m4 11.5 3-3 2.2 2.2L11 9l1.5 2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Photos</h2>
+            <span class="panel__count">{{ claim.attachments.length }}</span>
+          </div>
+          <div class="panel__body">
+            @if (claim.attachments.length === 0) {
+              <p class="muted" data-testid="detail-photos-empty">No photos attached.</p>
+            } @else {
+              <ul class="photo-list">
+                @for (attachment of claim.attachments; track attachment.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="btn btn--tertiary btn--sm"
+                      data-testid="detail-attachment"
+                      (click)="download(attachment)"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      {{ attachment.originalName }}
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </section>
+
+        @if (isSupervisor()) {
+          <section class="panel" data-testid="detail-reassign-panel">
+            <div class="panel__header">
+              <div class="panel__head-icon">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3 8h8M8 4.5 11.5 8 8 11.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M13 3v10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h2>Reassign</h2>
+            </div>
+            <div class="panel__body">
+              <p class="muted reserve-hint">
+                Move this claim to the least-loaded adjuster of the target level.
+              </p>
+              <form (ngSubmit)="reassign()" class="inline-form">
+                <div class="field">
+                  <label for="reassign-level">Target level</label>
+                  <select
+                    id="reassign-level"
+                    class="input"
+                    data-testid="detail-reassign-level"
+                    [(ngModel)]="reassignLevel"
+                    name="reassignLevel"
+                  >
+                    <option value="L1">L1</option>
+                    <option value="L2">L2</option>
+                  </select>
+                </div>
+                <button
+                  type="submit"
+                  class="btn btn--secondary"
+                  data-testid="detail-reassign"
+                  [disabled]="reassigning()"
+                >
+                  {{ reassigning() ? 'Reassigning…' : 'Reassign' }}
+                </button>
+              </form>
+            </div>
+          </section>
+
+          <section class="panel" data-testid="detail-audit-panel">
+            <div class="panel__header">
+              <div class="panel__head-icon">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M2.5 3h11v10h-11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                  <path d="M5.5 5h5M5.5 8h5M5.5 11h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                </svg>
+              </div>
+              <h2>Audit trail</h2>
+              @if (auditTrail().length > 0) {
+                <span class="panel__count">{{ auditTrail().length }}</span>
+              }
+            </div>
+            <div class="panel__body">
+              @if (auditError(); as auditMessage) {
+                <p class="notice notice--error" data-testid="detail-audit-error" role="alert">{{ auditMessage }}</p>
+              } @else if (auditTrail().length === 0) {
+                <p class="muted" data-testid="detail-audit-empty">No audit entries yet.</p>
+              } @else {
+                <ol class="audit-list" data-testid="detail-audit-list">
+                  @for (entry of auditTrail(); track entry.id) {
+                    <li class="audit-item" data-testid="detail-audit-item">
+                      <span class="{{ auditActionLabel(entry.action) }}" data-testid="detail-audit-action">{{ entry.action }}</span>
+                      <span class="audit-item__meta" data-testid="detail-audit-meta">{{ entry.createdAt }}</span>
+                      @if (entry.rationale) {
+                        <p class="audit-item__rationale" data-testid="detail-audit-rationale">{{ entry.rationale }}</p>
+                      }
+                    </li>
+                  }
+                </ol>
+              }
+            </div>
+          </section>
+        }
+      </aside>
+    </div>
+
+    <div class="footer-actions">
+      <div class="footer-actions__left">
+        <a routerLink="/queue" class="btn btn--tertiary" data-testid="detail-back-to-queue">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M9.8 3 5 8l4.8 5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          Back to my queue
+        </a>
+      </div>
+    </div>
   }
 </main>

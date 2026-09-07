@@ -1,12 +1,15 @@
 package com.claims.claim;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.claims.api.FnolValidationException;
 import com.claims.api.PolicyMismatchException;
+import com.claims.api.RateLimitedException;
 import com.claims.api.UnroutableException;
 import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
@@ -34,6 +38,20 @@ import com.claims.staff.AppUser;
 @Service
 public class ClaimService {
 
+    /**
+     * Rolling FNOL window: at most this many filings per claimant per 24h. Generous on
+     * purpose — real claimants file once in a blue moon; a burst is abuse or a stuck
+     * retry loop. Configurable via {@code claims.fnol.rate-limit-per-day}.
+     */
+    static final int DEFAULT_FNOL_PER_DAY = 20;
+    private static final java.time.Duration FNOL_WINDOW = java.time.Duration.ofHours(24);
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
+    private static final int MAX_TEXT = 200;
+    private static final int MAX_DESCRIPTION = 5000;
+    private static final int MAX_REMARKS = 2000;
+
     private final ClaimRepository claims;
     private final PolicyRepository policies;
     private final AuthorityConfigRepository authorityConfigs;
@@ -42,11 +60,14 @@ public class ClaimService {
     private final AuditLogWriter auditLog;
     private final ClaimAssigner assigner;
     private final JdbcTemplate jdbcTemplate;
+    private final FnolSubmissionRepository submissions;
+    private final int fnolPerDay;
 
     public ClaimService(ClaimRepository claims, PolicyRepository policies,
             AuthorityConfigRepository authorityConfigs, AttachmentRepository attachments,
             PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
-            JdbcTemplate jdbcTemplate) {
+            JdbcTemplate jdbcTemplate, FnolSubmissionRepository submissions,
+            @Value("${claims.fnol.rate-limit-per-day:20}") int fnolPerDay) {
         this.claims = claims;
         this.policies = policies;
         this.authorityConfigs = authorityConfigs;
@@ -55,11 +76,19 @@ public class ClaimService {
         this.auditLog = auditLog;
         this.assigner = assigner;
         this.jdbcTemplate = jdbcTemplate;
+        this.submissions = submissions;
+        this.fnolPerDay = fnolPerDay;
     }
 
     @Transactional
     public FnolResult fileFnol(FnolInput input) {
+        return fileFnol(input, null);
+    }
+
+    @Transactional
+    public FnolResult fileFnol(FnolInput input, String clientIp) {
         LocalDate lossDate = validate(input);
+        enforceRateLimit(input.claimantSub());
         String policyNumber = normalizePolicyNumber(input.policyNumber());
 
         Policy policy = policies.findByPolicyNumber(policyNumber).orElse(null);
@@ -105,6 +134,8 @@ public class ClaimService {
                     photo.contentType(), photo.originalName()));
         }
 
+        submissions.save(new FnolSubmission(input.claimantSub(), claimId, clientIp, Instant.now()));
+
         auditLog.append(input.claimantSub(), "CLAIM_CREATED", "CLAIM", claimId, null,
                 AuditJson.of(Map.of(
                         "claimNumber", claim.getClaimNumber(),
@@ -134,18 +165,32 @@ public class ClaimService {
         List<String> errors = new ArrayList<>();
         if (isBlank(input.policyNumber())) {
             errors.add("Policy number is required.");
+        } else if (input.policyNumber().trim().length() > MAX_TEXT) {
+            errors.add("Policy number is too long.");
         }
         if (isBlank(input.holderName())) {
             errors.add("Policyholder name is required.");
+        } else if (input.holderName().trim().length() > MAX_TEXT) {
+            errors.add("Policyholder name is too long.");
         }
         if (isBlank(input.holderEmail())) {
             errors.add("Policyholder email is required.");
+        } else if (input.holderEmail().trim().length() > MAX_TEXT
+                || !EMAIL_PATTERN.matcher(input.holderEmail().trim()).matches()) {
+            errors.add("Policyholder email must be a valid email address.");
         }
         if (isBlank(input.lossLocation())) {
             errors.add("Loss location is required.");
+        } else if (input.lossLocation().trim().length() > MAX_TEXT) {
+            errors.add("Loss location is too long.");
         }
         if (isBlank(input.lossDescription())) {
             errors.add("A description of what happened is required.");
+        } else if (input.lossDescription().trim().length() > MAX_DESCRIPTION) {
+            errors.add("The description is too long (maximum 5000 characters).");
+        }
+        if (input.remarks() != null && input.remarks().trim().length() > MAX_REMARKS) {
+            errors.add("Remarks are too long (maximum 2000 characters).");
         }
         LocalDate date = null;
         if (isBlank(input.lossDate())) {
@@ -156,11 +201,35 @@ public class ClaimService {
             } catch (DateTimeParseException ex) {
                 errors.add("Loss date must be in yyyy-MM-dd format.");
             }
+            if (date != null) {
+                if (date.isAfter(LocalDate.now())) {
+                    errors.add("Loss date cannot be in the future.");
+                } else if (date.isBefore(LocalDate.now().minusYears(10))) {
+                    errors.add("Loss date looks too far in the past — check the year.");
+                }
+            }
         }
         if (!errors.isEmpty()) {
             throw new FnolValidationException(String.join(" ", errors));
         }
         return date;
+    }
+
+    /**
+     * Rolling-window flood guard: counts this claimant's filings in the last 24h and
+     * rejects the burst with a 429 (the ledger write happens later in this same
+     * transaction, so the counted rows are committed filings only).
+     */
+    private void enforceRateLimit(String claimantSub) {
+        if (claimantSub == null || claimantSub.isBlank()) {
+            return;
+        }
+        long recent = submissions.countSince(claimantSub, Instant.now().minus(FNOL_WINDOW));
+        if (recent >= Math.max(1, fnolPerDay)) {
+            throw new RateLimitedException(
+                    "Too many claims filed recently. Please wait a day before filing another claim.",
+                    FNOL_WINDOW.toSeconds());
+        }
     }
 
     /** Policy numbers are matched leniently on input: trimmed and case-insensitive. */

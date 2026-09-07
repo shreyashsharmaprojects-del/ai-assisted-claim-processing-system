@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.claims.mail.AssignmentEmailSender;
 import com.claims.mail.FnolEmailSender;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 /** Claimant FNOL submission (multipart: text fields + evidence photos). */
 @RestController
 @RequestMapping("/api/claims")
@@ -43,11 +45,12 @@ public class ClaimController {
             @RequestParam("lossLocation") String lossLocation,
             @RequestParam("lossDescription") String lossDescription,
             @RequestParam(value = "remarks", required = false) String remarks,
-            @RequestPart(value = "photos", required = false) MultipartFile[] photos) {
+            @RequestPart(value = "photos", required = false) MultipartFile[] photos,
+            HttpServletRequest request) {
         List<MultipartFile> photoList = photos == null ? List.of() : List.of(photos);
         FnolResult result = claimService.fileFnol(new FnolInput(policyNumber, holderName,
                 holderEmail, lossDate, lossLocation, lossDescription, remarks,
-                jwt.getSubject(), photoList));
+                jwt.getSubject(), photoList), request.getRemoteAddr());
         // After the claim is committed: best-effort emails to the verified policy-holder
         // address; never blocks or rolls back (see docs/decisions.md).
         fnolEmailSender.sendFnolConfirmation(holderEmail, result.view().claimNumber(), holderName);

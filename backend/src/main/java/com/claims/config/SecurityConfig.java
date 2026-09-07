@@ -20,10 +20,11 @@ import org.springframework.security.web.SecurityFilterChain;
  * claimant, adjuster_l1, adjuster_l2, supervisor) and map to ROLE_* authorities.
  *
  * <p>The URL rules encode the whole surface's authorization matrix: the claimant surface
- * (FNOL + own-claim status), the internal work surface (queue, full view, reserve, notes,
- * attachments), the decision endpoints (assigned adjuster vs supervisor escalation), and
- * the supervisor admin surface (escalation queue, authority config, reassign, audit).
- * Only {@code GET /api/policies} and the health endpoint are public; everything else is
+ * (FNOL + own-claim status + own claim history), the internal work surface (queue, full
+ * view, reserve, notes, attachments), the decision endpoints (assigned adjuster vs
+ * supervisor escalation), and the supervisor admin surface (escalation queue, authority
+ * config, reassign, audit, dashboard stats).
+ * Only {@code GET /api/health} and {@code GET /api/ready} are public; everything else is
  * authenticated, and object-level authorization (404 for non-assignee / cross-tenant)
  * lives in the services, not here.
  */
@@ -38,6 +39,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/mine").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
                                 "/api/claims/*/attachments/*")
@@ -58,6 +60,9 @@ public class SecurityConfig {
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/escalations")
                                 .hasRole("SUPERVISOR")
+                        // Production dashboard: aggregate ops numbers, supervisor-only.
+                        .requestMatchers(HttpMethod.GET, "/api/dashboard")
+                                .hasRole("SUPERVISOR")
                         // Slice 7: the supervisor's compliance & admin surfaces — the
                         // authority config editor, claim reassignment, and the claim audit
                         // log. Only a supervisor; an adjuster or claimant is a 403 before
@@ -72,8 +77,11 @@ public class SecurityConfig {
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "SUPERVISOR")
-                        .requestMatchers(HttpMethod.GET, "/api/policies").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        // Policy reference carries holder names: authenticated staff and
+                        // claimants only (never anonymous). The E2E readiness probe uses
+                        // /api/health instead.
+                        .requestMatchers(HttpMethod.GET, "/api/policies").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/health", "/api/ready").permitAll()
                         .anyRequest().authenticated())
                 // CSRF is disabled because this is a stateless bearer-token API: there are no
                 // cookies to forge, so CSRF protection would only reject legitimate clients.

@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test';
 
-test('skeleton page shows the seeded policy from the real database', async ({ page }) => {
+/**
+ * Skeleton page: anonymous visitors see the marketing banner and the sign-in prompt for
+ * the policy reference (holder names are personal data — the list needs a session).
+ * The primary CTAs stay usable: filing a claim triggers sign-in through the guard.
+ */
+test('skeleton page invites anonymous visitors to sign in for the policy reference', async ({
+  page,
+}) => {
   await page.goto('/');
 
-  await expect(page.getByTestId('policy-error')).toHaveCount(0);
-  await expect(page.getByTestId('policy-list')).toBeVisible();
-
-  // The seeded row (V2__seed_policy.sql) must be present and render the right data.
-  // Deliberately no exact row-count assertion: later slices add more seed policies.
-  const seedRow = page.getByTestId('policy-row').filter({ hasText: 'POL-10001' });
-  await expect(seedRow).toHaveCount(1);
-  await expect(seedRow.getByTestId('policy-number')).toHaveText('POL-10001');
-  await expect(seedRow.getByTestId('policy-holder')).toHaveText('Ada Lovelace');
+  await expect(page.getByTestId('policy-signin')).toBeVisible();
+  await expect(page.getByTestId('policy-list')).toHaveCount(0);
+  await expect(page.getByTestId('home-file-claim')).toBeVisible();
 });

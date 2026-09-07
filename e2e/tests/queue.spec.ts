@@ -33,6 +33,15 @@ async function registerClaimant(page: Page): Promise<void> {
   await expect(page.getByTestId('fnol-policy-number')).toBeVisible();
 }
 
+/** Completes FNOL step 1 (policy) so the loss-details step is on screen. */
+async function completeFnolStep1(page: Page): Promise<void> {
+  await page.getByTestId('fnol-policy-number').fill('POL-10001');
+  await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-next').click();
+  await expect(page.getByTestId('fnol-loss-date')).toBeVisible();
+}
+
 /**
  * Signs in a provisioned adjuster (username/password at Keycloak — adjusters cannot
  * self-register) and lands on the queue page.
@@ -84,6 +93,8 @@ test('a filed claim lands in exactly one L1 adjuster queue and never in the L2 q
   await claimantPage.getByTestId('fnol-policy-number').fill('POL-10001');
   await claimantPage.getByTestId('fnol-holder-name').fill('Ada Lovelace');
   await claimantPage.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await claimantPage.getByTestId('fnol-next').click();
+  await expect(claimantPage.getByTestId('fnol-loss-date')).toBeVisible();
   await claimantPage.getByTestId('fnol-loss-date').fill('2026-09-01');
   await claimantPage.getByTestId('fnol-loss-location').fill('London');
   await claimantPage.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
@@ -93,6 +104,12 @@ test('a filed claim lands in exactly one L1 adjuster queue and never in the L2 q
   const claimNumber = (await claimantPage.getByTestId('claim-number').textContent())!.trim();
   // The claimant's process-steps screen reflects the assignment (status -> under review).
   await expect(claimantPage.getByTestId('claim-steps')).toContainText('Under review');
+  // The new claim is in the claimant's own history too.
+  await claimantPage.goto('/claims');
+  await expect(claimantPage.getByTestId('my-claims-page')).toBeVisible();
+  await expect(
+    claimantPage.getByTestId('my-claims-row').filter({ hasText: claimNumber }),
+  ).toHaveCount(1);
   await claimantContext.close();
 
   // Each adjuster opens their own queue in a fresh browser context (own Keycloak session).
@@ -130,6 +147,8 @@ async function fileFnolWithPhoto(page: Page): Promise<string> {
   await page.getByTestId('fnol-policy-number').fill('POL-10001');
   await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
   await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-next').click();
+  await expect(page.getByTestId('fnol-loss-date')).toBeVisible();
   await page.getByTestId('fnol-loss-date').fill('2026-09-01');
   await page.getByTestId('fnol-loss-location').fill('London');
   await page.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
@@ -329,6 +348,9 @@ test('supervisor approves an escalated claim with rationale and it closes', asyn
   await escalationRow.getByTestId('esc-open-claim').click();
   await expect(supervisorPage.getByTestId('claim-detail-page')).toBeVisible();
   await expect(supervisorPage.getByTestId('detail-status')).toContainText('ESCALATED_SUPERVISOR');
+  // The supervisor sees the immutable audit trail and the reassign panel.
+  await expect(supervisorPage.getByTestId('detail-audit-panel')).toBeVisible();
+  await expect(supervisorPage.getByTestId('detail-audit-list')).toContainText('CLAIM_ESCALATED');
 
   // Approve with a rationale: the claim closes and leaves the escalation queue.
   await supervisorPage.getByTestId('detail-decision-amount').fill('12000.00');
@@ -475,6 +497,8 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   await claimantPage.getByTestId('fnol-policy-number').fill('POL-20002');
   await claimantPage.getByTestId('fnol-holder-name').fill('Grace Hopper');
   await claimantPage.getByTestId('fnol-holder-email').fill('grace.hopper@example.test');
+  await claimantPage.getByTestId('fnol-next').click();
+  await expect(claimantPage.getByTestId('fnol-loss-date')).toBeVisible();
   await claimantPage.getByTestId('fnol-loss-date').fill('2026-09-01');
   await claimantPage.getByTestId('fnol-loss-location').fill('Manchester');
   await claimantPage
@@ -528,4 +552,70 @@ test('a config edit re-routes AUTO and the next AUTO FNOL classifies to the new 
   await expect(supervisorPage.getByTestId('auth-error')).toHaveCount(0);
   await expect(restoredRow.getByTestId('auth-route')).toHaveValue('L2');
   await supervisorContext.close();
+});
+
+/**
+ * Journey 10 (production hardening): the supervisor's operations overview aggregates the
+ * live state — open/escalated/closed counts plus the monthly approved total — and every
+ * number links to the queue it describes. Runs last so earlier journeys' claims are the
+ * fixture; asserts structure and internal consistency, never exact counts.
+ */
+test('supervisor overview aggregates open, escalated and closed claims', async ({ browser }) => {
+  const supervisorContext = await browser.newContext();
+  const supervisorPage = await supervisorContext.newPage();
+  await signInSupervisor(supervisorPage);
+  await supervisorPage.goto('/overview');
+  await expect(supervisorPage.getByTestId('overview-page')).toBeVisible();
+  await expect(supervisorPage.getByTestId('overview-error')).toHaveCount(0);
+
+  const openText = (await supervisorPage.getByTestId('overview-open').textContent()) ?? '';
+  const escalatedText = (await supervisorPage.getByTestId('overview-escalated').textContent()) ?? '';
+  const closedText = (await supervisorPage.getByTestId('overview-closed').textContent()) ?? '';
+  const open = Number(openText.replace(/[^0-9]/g, '') || '0');
+  const escalated = Number(escalatedText.replace(/[^0-9]/g, '') || '0');
+  const closed = Number(closedText.replace(/[^0-9]/g, '') || '0');
+  expect(open, 'overview must report the open claims earlier journeys filed').toBeGreaterThan(0);
+  expect(closed, 'overview must report the closed claims earlier journeys decided').toBeGreaterThan(0);
+  expect(
+    escalated,
+    'escalated claims are a subset of open claims',
+  ).toBeLessThanOrEqual(open);
+
+  // The escalation shortcut reaches the real queue.
+  await supervisorPage.getByTestId('overview-escalated').getByRole('link').click();
+  await expect(supervisorPage.getByTestId('escalations-page')).toBeVisible();
+  await supervisorContext.close();
+});
+
+/**
+ * Journey 11 (production hardening): the queue's search and status filter narrow the
+ * table client-side. Uses the L2 adjuster's queue (stable fixture: escalated claims from
+ * earlier journeys) — types a claim number, filters, then clears back to the full list.
+ */
+test('queue search and status filters narrow the visible rows', async ({ browser }) => {
+  const l2Context = await browser.newContext();
+  const l2Page = await l2Context.newPage();
+  await signInAdjuster(l2Page, 'adjuster.three');
+  await expect(l2Page.getByTestId('queue-page')).toBeVisible();
+  await expect(
+    l2Page.getByTestId('queue-error').or(l2Page.getByTestId('queue-empty')).or(l2Page.getByTestId('queue-row').first()),
+  ).toBeVisible();
+  await expect(l2Page.getByTestId('queue-error')).toHaveCount(0);
+
+  const firstRow = l2Page.getByTestId('queue-row').first();
+  await expect(firstRow).toBeVisible();
+  const claimNumber = ((await firstRow.getByTestId('queue-claim-number').textContent()) ?? '').trim();
+  expect(claimNumber).toMatch(/CLM-\d{6}/);
+
+  // Search narrows to the one matching row.
+  await l2Page.getByTestId('queue-search').fill(claimNumber);
+  await expect(l2Page.getByTestId('queue-row')).toHaveCount(1);
+  await expect(l2Page.getByTestId('queue-row').getByTestId('queue-claim-number')).toHaveText(claimNumber);
+
+  // A nonsense search matches nothing and offers the clear action.
+  await l2Page.getByTestId('queue-search').fill('CLM-000000');
+  await expect(l2Page.getByTestId('queue-no-results')).toBeVisible();
+  await l2Page.getByTestId('queue-clear-filters').click();
+  await expect(l2Page.getByTestId('queue-row').first()).toBeVisible();
+  await l2Context.close();
 });

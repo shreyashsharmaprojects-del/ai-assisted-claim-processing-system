@@ -7,6 +7,12 @@ Loaded by `02-plan.md` to choose a strategy, and by `04-slice.md` to follow it.
 **Unit** — pure logic, no database, no network. Milliseconds. Validation rules, pricing,
 date handling, state machines, permission checks as functions.
 
+This is language-agnostic: it covers frontend component logic (Angular/React/Vue) as much
+as backend classes. Form validation, enabled/disabled state, route guards, and derived
+display fields are all unit-testable branching. A "button never enables" bug is a
+component test (Vitest/Jest + Testing Library), not an E2E test — catch it in
+milliseconds, not in a browser run.
+
 Only worth writing where there's real branching. Testing a getter or a framework's ORM
 is maintenance cost with no protection.
 
@@ -24,7 +30,8 @@ shape, the route that 404s in production build only.
 
 Expensive and flake-prone, so keep the set small and deliberate. **5 to 10 journeys for a
 typical app.** Cover the paths where breakage is unacceptable. Everything else belongs at
-a lower layer.
+a lower layer. E2E is not the frontend's only test layer — it covers the seams (wiring,
+routing, the real browser); component logic belongs in Unit.
 
 Name the journeys in `plan.md`. An unnamed E2E suite grows into a slow, flaky mess that
 gets disabled.
@@ -65,6 +72,11 @@ setup through the UI makes tests slow and makes unrelated failures cascade.
 
 **Zero tolerance for flakes.** A test that fails 1 in 20 runs teaches everyone to rerun CI
 instead of reading it, which is how real failures get ignored. Fix it or delete it.
+
+**Boot your own servers, or verify the one you reuse.** Don't let E2E silently reuse an
+already-running dev server — a stale `ng serve`/`next dev` with an old proxy config can
+masquerade as the test frontend and give a false green. Boot the test stack explicitly, or
+assert the reused server is the right build.
 
 ## Test data
 

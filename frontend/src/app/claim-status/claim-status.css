@@ -1,42 +1,32 @@
-.tagline {
-  color: #555;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.85rem;
+.panel--approved {
+  border: 1px solid var(--status-success-br);
+  background: var(--status-success-bg);
 }
 
-.error {
-  color: #b00020;
+.panel--denied {
+  border: 1px solid var(--status-danger-br);
+  background: var(--status-danger-bg);
 }
 
-.section-title {
-  margin-top: 1.5rem;
-  font-size: 0.95rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #555;
+.panel--approved .panel__body,
+.panel--denied .panel__body {
+  padding: var(--space-6);
 }
 
-.panel {
-  margin-top: 0.75rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #d8d4cf;
-  border-radius: 8px;
-  background: #faf8f5;
+.decision-summary {
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  margin-top: var(--space-1);
 }
 
-.decision .section-title {
-  margin-top: 0;
+.decision-summary strong {
+  font-variant-numeric: tabular-nums;
 }
 
-.decision.approved {
-  border-left: 4px solid #1a7f37;
-}
-
-.decision.denied {
-  border-left: 4px solid #b00020;
-}
-
-.remarks {
+.decision-remarks {
+  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
   white-space: pre-wrap;
 }

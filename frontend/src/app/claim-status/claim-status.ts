@@ -1,20 +1,21 @@
 import { Component, inject, signal } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { accessToken } from '../auth/auth.service';
+import { badgeClass } from '../ui';
+import { serverMessage } from '../toasts';
 
 interface ClaimantClaimView {
   claimNumber: string;
   status: string;
   steps: string[];
-  /** Slice 6: present only once the claim is decided (omitted from the wire when null). */
+  /** Present only once the claim is decided (omitted from the wire when null). */
   decision?: 'APPROVED' | 'DENIED' | null;
   indemnityAmount?: number | null;
   decisionRemarks?: string | null;
 }
 
-/** The claimant's own claim status screen (journey 2, 8): only claimant-visible data. */
+/** The claimant's own claim status screen: only claimant-visible data. */
 @Component({
   imports: [RouterLink],
   selector: 'app-claim-status',
@@ -29,11 +30,15 @@ export class ClaimStatus {
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
 
+  protected statusBadge(status: string): string {
+    return badgeClass(status);
+  }
+
   constructor() {
     void this.load();
   }
 
-  /** The approved amount, rendered in pounds with two decimals (journey 8 asserts it). */
+  /** The approved amount, rendered in pounds with two decimals. */
   protected approvedAmountText(): string {
     const amount = this.view()?.indemnityAmount;
     return amount == null ? '' : '£' + amount.toFixed(2);
@@ -49,19 +54,12 @@ export class ClaimStatus {
       return;
     }
     try {
-      const token = await accessToken();
-      if (!token) {
-        this.error.set('You are not signed in.');
-        this.loaded.set(true);
-        return;
-      }
-      const headers = new HttpHeaders().set('Authorization', 'Bearer ' + token);
       const view = await firstValueFrom(
-        this.http.get<ClaimantClaimView>(`/api/claims/${claimNumber}`, { headers }),
+        this.http.get<ClaimantClaimView>(`/api/claims/${claimNumber}`),
       );
       this.view.set(view);
-    } catch {
-      this.error.set('We could not find that claim.');
+    } catch (err) {
+      this.error.set(serverMessage(err, 'We could not find that claim.'));
     } finally {
       this.loaded.set(true);
     }

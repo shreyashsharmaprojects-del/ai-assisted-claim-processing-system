@@ -7,12 +7,61 @@ seen this project. Rewrite it, don't append to it.
 
 ## Right now
 
-**All eight plan slices (0–7) are built, reviewed, and green, and the pre-ship hardening
-pass (phase 06) is complete.** The whole app passed the `phases/06-harden.md` checklist —
-loading/empty/error/retry states, double-submit guards, access-control re-testing,
-CSRF/CORS, dependency audit, rate limiting, accessibility, pagination/N+1, health check,
-`.env.example`, backups/rollback, and README. The load-bearing rules were re-verified and
-remain green (140 backend tests + 11 E2E journeys; CI structure unchanged).
+**All eight plan slices (0–7) are built, reviewed, and green, the pre-ship hardening pass
+(phase 06) is complete, the frontend had an enterprise-UI redesign pass (phase 07), the look
+was corrected to the modern "Insure Craft" language (phase 07b), the UI was then
+**structurally rebuilt** to the reference composition (phase 07c) — floating chrome,
+banner cards, icon-tile section cards, footer action bars — because 07b alone (tokens only)
+left the old HTML skeleton intact, and an autonomous **production push** has since landed:
+session auth (silent SSO + interceptor), FNOL rate limiting, claimant history, supervisor
+dashboard, prod deploy pack + runbook, and hermetic E2E. See `docs/decisions.md` for the
+production-push entry (newest) and all three 07 entries. The whole app passes the
+`phases/06-harden.md` checklist — loading/empty/error/retry states, double-submit guards,
+access-control re-testing, CSRF/CORS, dependency audit, rate limiting, accessibility,
+pagination/N+1, health check, `.env.example`, backups/rollback, and README.
+
+**Phase 07 built the original design system** (tokens in `styles.css`, shared primitives,
+top bar + 240px sidebar for internal roles, real tables, summary-strip claim detail,
+centralized status→badge mapping in `src/app/ui.ts`) with every data-testid and copy
+contract preserved. The user then judged that look dated ("2000s style") and directed the
+work to the workspace `design examples/` folder as the visual reference.
+
+**Phase 07b reskinned the app to the reference's modern SaaS idiom** — white rounded cards
+with one quiet shadow recipe floating on a light grey canvas, Inter, corporate blue
+`#0056B3`, tinted bordered status pills — and updated the `enterprise-ui` skill itself
+(SKILL.md, tokens, component specs, review checklist; packaged `.skill` rebuilt) so the
+language is taught going forward instead of re-argued.
+
+**Phase 07c rebuilt the markup to the reference composition** (user: "it looks the same —
+you only updated css, not html and structure"): floating rounded top bar and sidebar-card
+with a logo block, a banner card atop every screen (queue/escalations get stat tiles;
+claim detail gets five icon-stat tiles), section cards with 32px icon-tile headers,
+two-column claim detail, footer action bars, and FNOL as a two-step intake with a
+`.form-grid`. All 56 E2E testids and exact-text contracts preserved. Verified after 07b and
+07c: frontend build green, programmatic structure/geometry/contrast audits green, and
+**11/11 E2E journeys** on the Playwright-booted stack (backend :8082 + Angular :4200).
+
+**Production push (post-07c, autonomous):** session auth via Keycloak silent SSO +
+token interceptor (`/assets/config.json` runtime config, renewal timer); FNOL flood
+protection (20/day/claimant, 429 + Retry-After, V8 `fnol_submission` ledger) plus
+email/date/length validation; `GET /api/claims/mine` (claimant history, wall-holding
+rows); `GET /api/dashboard` (supervisor aggregates); `/api/policies` now
+authenticated-only (holder names are PII); readiness probe + request-id tracing +
+reference-tagged errors; E2E made hermetic (`reuseExistingServer: false` both servers)
+after stale dev servers on :4200/:8081 poisoned runs for hours; proxy-HTML error leak
+fixed in `serverMessage`. Verified: **151 backend tests**, frontend build,
+**13/13 E2E journeys** (11 + overview + queue-filters). Prod pack: Dockerfiles, nginx,
+`docker-compose.prod.yml`, `docs/operations.md`, `deploy/config.json`, `api.http`.
+
+**Two post-hardening regressions were found by a clean E2E run and are now fixed and
+re-verified green** (see `docs/decisions.md`, 2026-09-07 "post-hardening regression fixes"
+entry): (1) the hardening pass edited a comment inside the already-applied Flyway V4
+migration, changing its checksum and breaking every pre-existing DB — reverted, and the
+local DBs re-reset to re-migrate cleanly; (2) the reserve "Save" button was permanently
+disabled because hardening called `.trim()` on the number-bound `reserveInput` — now typed
+`number | null` with a null/NaN guard. Verified green: 140 backend tests, frontend build,
+**11/11 E2E journeys** (including journey 4, the reserve test), and a clean backend boot
+against the freshly-migrated DB (no checksum error).
 
 What the hardening pass changed (see `docs/decisions.md`, 2026-09-07 hardening entry for
 the full three-list report — fixed / needs-a-decision / deliberately accepted):
@@ -60,10 +109,10 @@ fires only at 03:00; the audit view and reassign endpoints are API-only — see 
 ## Tests
 
 ```bash
-npm run backend:test     # 140: 54 unit + 86 integration (Testcontainers, or claims_test fallback)
+JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm run backend:test   # 151: unit + integration (Testcontainers, or claims_test fallback)
 npm --prefix frontend run build
 docker compose up -d --wait db mailpit keycloak   # once (after npm run setup)
-JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm run e2e   # boots backend :8082 + Angular dev server
+JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm run e2e   # boots backend :8082 + own ng serve :4200 (hermetic — kill :4200/:8081/:8082 squatters first if "already used")
 ```
 
 ## Slices
@@ -79,6 +128,9 @@ JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm run e2e   # boots backend :8082
 | 6 | Claimant decision & notification | done | yes |
 | 7 | Compliance & admin | done | yes |
 | — | **Phase 06 — pre-ship hardening** | **done (2026-09-07)** | — |
+| — | **Phase 07 — enterprise-UI frontend pass** | **done (2026-09-07)** | — |
+| — | **Phase 07b — "Insure Craft" modern look + skill update** | **done (2026-09-07)** | — |
+| — | **Phase 07c — structural rebuild (banner cards, icon-tile sections)** | **done (2026-09-07)** | — |
 
 ## Blocked on
 
@@ -118,5 +170,32 @@ JAVA_HOME=/usr/lib/jvm/jdk-21.0.8-oracle-x64 npm run e2e   # boots backend :8082
   terminal queue state before counting rows. E2E reads `ADJUSTER_PASSWORD`/`SUPERVISOR_PASSWORD`
   from env (`requiredEnv`), loaded from `../.env` by an inline loader in `playwright.config.ts`
   (no dotenv dependency); CI injects the same vars as job-level env.
+- **E2E is hermetic: both webServer entries are `reuseExistingServer: false`** with
+  `stdout/stderr: pipe`. A stale `ng serve` (:4200, dev proxy → :8081) or dev backend
+  (:8081) answers the readiness probes and silently runs journeys against the wrong stack
+  (symptoms: anonymous policy list works, `/mine`+`/dashboard` 404, FNOL 502s). If E2E
+  fails with "already used" or wrong-stack symptoms, `ss -tlnp` :4200/:8081/:8082 and kill
+  the squatters (they may be parented to the DSH harness supervisor, pid 9538 lineage —
+  killing them does not harm the harness itself). The DSH host shell also resurrects
+  `npm start`/backend watchers periodically; re-check ports before every E2E run.
 - Frontend pages each carry `data-testid`s and a `loading`/`error` + retry pattern; forms
   disable their submit buttons during in-flight requests (double-submit guards).
+- **Flyway migrations are immutable.** Never edit a migration that has shipped — Flyway
+  checksums the whole file. V4's header comment still says `keycloak/realm-export.json`
+  even though that file is now generated from `keycloak/realm-export.template.json`; the
+  stale comment is deliberate (the hardening pass briefly "fixed" it to `.template.json`
+  and broke every already-migrated DB — see the 2026-09-07 regression-fix entry). Leave V4
+  alone.
+- **Number-bound form fields must not be `.trim()`ed.** The reserve input is bound to
+  `<input type="number">`, so Angular's number value accessor assigns a `number` (or
+  `null`), which has no `.trim()` — calling it throws and the button never enables. The
+  reserve field is typed `number | null` and guarded with a null/NaN check via
+  `reserveReady()` (0 is a legitimate reserve, so a plain `!reserveInput` would be wrong).
+  The decision form's `decisionAmount` is the reference pattern (`!decisionAmount`, no
+  `.trim()`).
+- **Functional route guards must call `inject()` before any `await`.** The three guards in
+  `auth.guard.ts` originally called `inject(Router)` *after* `await ensureAuthenticated()`;
+  an `await` leaves the injection context Angular establishes for the guard's synchronous
+  call, so `inject()` on the redirect path (unauthenticated or wrong-role) throws NG0203.
+  E2E missed it because its journeys always sign in before navigating. Keep every
+  `inject()` at the top of a functional guard.

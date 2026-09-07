@@ -1,55 +1,163 @@
-<main data-testid="queue-page">
-  <h1>My queue</h1>
+<main class="page" data-testid="queue-page">
+  <div class="page-banner">
+    <div class="page-banner__main">
+      <div class="page-banner__title-row">
+        <h1>My queue</h1>
+        @if (loaded() && claims().length > 0) {
+          <span class="chip">{{ claims().length }} open</span>
+        }
+      </div>
+      <p class="page-banner__sub">
+        Claims assigned to you, oldest first. Open a claim to work it.
+      </p>
+    </div>
+    <div class="page-banner__aside">
+      <div class="stat">
+        <div class="stat__icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2.5 4h11M2.5 8h11M2.5 12h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <p class="stat__label">Assigned to you</p>
+          <p class="stat__value">{{ loaded() ? claims().length : '—' }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   @if (error(); as message) {
-    <p class="error" data-testid="queue-error" role="alert">{{ message }}</p>
-    <button type="button" class="retry" data-testid="queue-retry" (click)="load()">
+    <p class="notice notice--error" data-testid="queue-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="queue-retry" (click)="load()">
       Try again
     </button>
   } @else if (!loaded()) {
-    <p class="loading" data-testid="queue-loading">Loading…</p>
-  } @else {
-    @if (claims().length === 0) {
-      <p data-testid="queue-empty">No claims in your queue right now.</p>
-    } @else {
-      <ul class="queue-list">
-        @for (claim of claims(); track claim.claimNumber) {
-          <li class="queue-row" data-testid="queue-row">
-            <div class="queue-head">
-              <strong data-testid="queue-claim-number">{{ claim.claimNumber }}</strong>
-              <span class="badge" data-testid="queue-status">{{ claim.status }}</span>
-              <span class="badge level" data-testid="queue-level">{{ claim.level }}</span>
-              @if (claim.assignedTo; as assignee) {
-                <span data-testid="queue-assigned">→ {{ assignee }}</span>
-              }
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="queue-loading" aria-label="Loading your queue">
+          @for (row of [1, 2, 3, 4, 5, 6]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--l"></span>
             </div>
-            <dl>
-              <div>
-                <dt>Policy</dt>
-                <dd data-testid="queue-policy">{{ claim.policyNumber }}</dd>
-              </div>
-              <div>
-                <dt>Loss date</dt>
-                <dd data-testid="queue-loss-date">{{ claim.lossDate }}</dd>
-              </div>
-              <div>
-                <dt>Location</dt>
-                <dd data-testid="queue-loss-location">{{ claim.lossLocation }}</dd>
-              </div>
-              <div>
-                <dt>Description</dt>
-                <dd data-testid="queue-loss-description">{{ claim.lossDescription }}</dd>
-              </div>
-            </dl>
-            <a
-              class="open"
-              [routerLink]="['/claims', claim.claimNumber]"
-              data-testid="queue-open-claim"
-              >Open claim</a
-            >
-          </li>
+          }
+        </div>
+      </div>
+    </div>
+  } @else {
+    <section class="panel">
+      <div class="panel__header">
+        <div class="panel__head-icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2.5 4h11M2.5 8h11M2.5 12h6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <h2>Open claims</h2>
+        @if (claims().length > 0) {
+          <span class="panel__count">{{ visible().length }} of {{ claims().length }}</span>
         }
-      </ul>
-    }
+      </div>
+
+      <div class="toolbar" data-testid="queue-toolbar">
+        <div class="toolbar__search">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          <input
+            type="search"
+            class="input toolbar__input"
+            placeholder="Search claim, policy, location…"
+            aria-label="Search the queue"
+            data-testid="queue-search"
+            [value]="query()"
+            (input)="setQuery($any($event.target).value)"
+          />
+        </div>
+        <div class="toolbar__filters" role="group" aria-label="Filter by status">
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ALL'" (click)="setStatusFilter('ALL')" data-testid="queue-filter-all">All</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'UNDER_REVIEW'" (click)="setStatusFilter('UNDER_REVIEW')" data-testid="queue-filter-review">Under review</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'UNASSIGNED'" (click)="setStatusFilter('UNASSIGNED')" data-testid="queue-filter-unassigned">Unassigned</button>
+          <button type="button" class="chip-btn" [class.is-active]="statusFilter() === 'ESCALATED'" (click)="setStatusFilter('ESCALATED')" data-testid="queue-filter-escalated">Escalated</button>
+        </div>
+        <div class="toolbar__sort">
+          <label for="queue-sort">Sort</label>
+          <select id="queue-sort" class="input input--sm" data-testid="queue-sort" [value]="sortKey()" (change)="setSortKey($any($event.target).value)">
+            <option value="OLDEST">Oldest first</option>
+            <option value="NEWEST">Newest first</option>
+          </select>
+        </div>
+      </div>
+
+      @if (claims().length === 0) {
+        <div class="state-panel" data-testid="queue-empty">
+          <p class="state-panel__title">No claims in your queue</p>
+          <p class="state-panel__body">
+            New claims are load-balanced to the adjuster with the fewest open claims, so this
+            stays empty when nothing is assigned to you.
+          </p>
+        </div>
+      } @else if (visible().length === 0) {
+        <div class="state-panel" data-testid="queue-no-results">
+          <p class="state-panel__title">No claims match</p>
+          <p class="state-panel__body">
+            Nothing in your queue matches the current search and filters.
+          </p>
+          <button type="button" class="btn btn--secondary" data-testid="queue-clear-filters" (click)="clearFilters()">
+            Clear search and filters
+          </button>
+        </div>
+      } @else {
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Claim</th>
+                <th scope="col">Status</th>
+                <th scope="col">Level</th>
+                <th scope="col">Policy</th>
+                <th scope="col">Loss date</th>
+                <th scope="col">Location</th>
+                <th scope="col">Description</th>
+                <th scope="col">Owner</th>
+                <th scope="col"><span class="sr-only">Open</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (claim of visible(); track claim.claimNumber) {
+                <tr data-testid="queue-row">
+                  <td class="mono identifier" data-testid="queue-claim-number">{{ claim.claimNumber }}</td>
+                  <td>
+                    <span class="{{ statusBadge(claim.status) }}" data-testid="queue-status">{{ claim.status }}</span>
+                  </td>
+                  <td>
+                    <span class="chip" data-testid="queue-level">{{ claim.level }}</span>
+                  </td>
+                  <td class="mono identifier" data-testid="queue-policy">{{ claim.policyNumber }}</td>
+                  <td data-testid="queue-loss-date">{{ claim.lossDate }}</td>
+                  <td data-testid="queue-loss-location">{{ claim.lossLocation }}</td>
+                  <td class="cell-truncate" title="{{ claim.lossDescription }}" data-testid="queue-loss-description">
+                    {{ claim.lossDescription }}
+                  </td>
+                  <td data-testid="queue-assigned">{{ claim.assignedTo ?? '—' }}</td>
+                  <td class="td-action">
+                    <a
+                      class="btn btn--secondary btn--sm"
+                      [routerLink]="['/claims', claim.claimNumber]"
+                      data-testid="queue-open-claim"
+                      >Open claim</a
+                    >
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
   }
 </main>

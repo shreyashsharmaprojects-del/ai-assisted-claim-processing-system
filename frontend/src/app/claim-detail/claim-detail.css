@@ -1,91 +1,119 @@
-.tagline {
-  color: #555;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-size: 0.85rem;
-}
-
-.panel {
-  border: 1px solid #e2e2e2;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
-}
-
-dl {
-  display: grid;
-  grid-template-columns: 10rem 1fr;
-  row-gap: 0.25rem;
-  margin: 0 0 0.5rem;
-}
-
-dt {
-  color: #666;
-  font-weight: 600;
-}
-
-dd {
-  margin: 0;
-}
-
-.coverage {
-  background: #f6f6f6;
-  border-radius: 0.25rem;
-  padding: 0.75rem;
-  overflow-x: auto;
-}
-
-form {
-  margin-top: 0.75rem;
-  display: grid;
-  gap: 0.4rem;
-  max-width: 30rem;
-}
-
-.inline {
+.claim-meta {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
 }
 
-.inline label {
+.detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .detail-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-main,
+.detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.kv--full {
+  grid-column: 1 / -1;
+}
+
+.note-list,
+.photo-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-4);
+}
+
+.note-list .note-item {
+  border-left: 2px solid var(--border-default);
+  padding: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.note-item__body {
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
+
+.note-item__meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.photo-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   margin: 0;
 }
 
-.note {
-  margin-bottom: 0.5rem;
-}
-
-.note p {
-  margin: 0.1rem 0;
+.photo-list svg {
+  width: 14px;
+  height: 14px;
 }
 
 .button-row {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
-.outcome {
-  background: #e8f4e8;
-  border-radius: 0.25rem;
-  padding: 0.5rem 0.75rem;
-  font-weight: 600;
+.reserve-hint,
+.decision-hint {
+  margin-bottom: var(--space-3);
 }
 
-.muted {
-  color: #666;
+.note-form-actions {
+  justify-content: flex-end;
+  margin-top: var(--space-3);
 }
 
-.error {
-  color: #b00020;
+.decision-actions {
+  margin-top: var(--space-4);
 }
 
-.linklike {
-  background: none;
-  border: none;
-  color: #1455d9;
-  text-decoration: underline;
-  cursor: pointer;
+/* Supervisor audit trail: chronological action rows with rationale. */
+.audit-list {
+  list-style: none;
   padding: 0;
-  font: inherit;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.audit-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  border-left: 2px solid var(--border-default);
+  padding: var(--space-1) var(--space-3);
+}
+
+.audit-item__meta {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-item__rationale {
+  flex-basis: 100%;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
 }

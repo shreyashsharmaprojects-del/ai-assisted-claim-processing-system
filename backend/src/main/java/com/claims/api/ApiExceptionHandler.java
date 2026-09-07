@@ -2,6 +2,7 @@ package com.claims.api;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -77,12 +78,27 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse("Uploaded files are too large."));
     }
 
+    /**
+     * Rate limiting (FNOL flood protection): 429 with a Retry-After hint and a message the
+     * caller can act on (wait, then retry). The handler logs at WARN with the claimant
+     * subject redacted to a short hash — rate-limit events are abuse telemetry, not PII.
+     */
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<ErrorResponse> rateLimited(RateLimitedException ex) {
+        log.warn("Rate limit hit; retry after {}s", ex.getRetryAfterSeconds());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(new ErrorResponse(ex.getMessage()));
+    }
+
     /** Anything unexpected: log the cause, never leak internals to the caller. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> unexpected(Exception ex) {
-        log.error("Unexpected error", ex);
+        String reference = java.util.UUID.randomUUID().toString().substring(0, 8);
+        log.error("Unexpected error [ref={}]", reference, ex);
         return ResponseEntity.internalServerError()
-                .body(new ErrorResponse("Something went wrong. Please try again."));
+                .body(new ErrorResponse(
+                        "Something went wrong. Please try again. (Reference: " + reference + ")"));
     }
 
     public record ErrorResponse(String message) {

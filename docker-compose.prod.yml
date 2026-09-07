@@ -1,0 +1,103 @@
+# Production deployment: backend jar + nginx-served SPA + Postgres + Mailpit-equivalent
+# SMTP + Keycloak. All secrets come from the environment (never committed); the only
+# per-environment file is the mounted frontend config.json (Keycloak coordinates).
+#
+#   DB_USERNAME, DB_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, ADJUSTER_PASSWORD,
+#   SUPERVISOR_PASSWORD, BACKEND_IMAGE (default: claims-backend:local),
+#   FRONTEND_IMAGE (default: claims-frontend:local),
+#   KEYCLOAK_URL (public URL of Keycloak, baked into config.json at deploy time),
+#   SMTP_HOST, SMTP_PORT, MAIL_FROM
+#
+# First boot:  docker compose -f docker-compose.prod.yml up -d --build
+# Health gates: backend readiness http://<host>:8080/api/ready, app http://<host>:8080/
+name: claims-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: claims
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d claims"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-claims-backend:local}
+    build:
+      context: ./backend
+    environment:
+      SERVER_PORT: 8080
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/claims
+      DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: ${KEYCLOAK_URL:?KEYCLOAK_URL is required}/realms/claims
+      SPRING_MAIL_HOST: ${SMTP_HOST:-mailpit}
+      SPRING_MAIL_PORT: ${SMTP_PORT:-1025}
+      CLAIMS_MAIL_FROM: ${MAIL_FROM:-no-reply@claims.test}
+      CLAIMS_UPLOADS_DIR: /var/lib/claims-uploads
+    volumes:
+      - claims-uploads:/var/lib/claims-uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-claims-frontend:local}
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    volumes:
+      # Per-environment runtime config: Keycloak coordinates for THIS deploy.
+      - type: bind
+        source: ./deploy/config.json
+        target: /usr/share/nginx/html/assets/config.json
+        read_only: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:v1.22
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+    # No published ports in prod: internal SMTP catcher only. Point SMTP_HOST at a real
+    # relay (SMTP_HOST/SMTP_PORT) for customer mail; keep Mailpit for staging.
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: ["start", "--import-realm", "--http-port=8080", "--hostname-strict=false"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/claims
+      KC_DB_USERNAME: ${DB_USERNAME:?DB_USERNAME is required}
+      KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  claims-uploads:

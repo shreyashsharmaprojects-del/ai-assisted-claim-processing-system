@@ -270,6 +270,142 @@ class FnolApiIntegrationTest extends ClaimTableResettingTest {
         assertTrue(response.body().contains("At most 5 photos"), response.body());
     }
 
+    // --- production validation -------------------------------------------------
+
+    @Test
+    void fnolWithInvalidEmailIsRejected() throws Exception {
+        HttpResponse<String> response = post("/api/claims", claimantBearer(),
+                multipart(Map.of(
+                        "policyNumber", "POL-10001",
+                        "holderName", "Ada Lovelace",
+                        "holderEmail", "not-an-email",
+                        "lossDate", "2026-09-01",
+                        "lossLocation", "London",
+                        "lossDescription", "Storm damage"),
+                        false));
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("valid email"), response.body());
+    }
+
+    @Test
+    void fnolWithFutureLossDateIsRejected() throws Exception {
+        HttpResponse<String> response = post("/api/claims", claimantBearer(),
+                multipart(Map.of(
+                        "policyNumber", "POL-10001",
+                        "holderName", "Ada Lovelace",
+                        "holderEmail", "ada.lovelace@example.test",
+                        "lossDate", "2099-01-01",
+                        "lossLocation", "London",
+                        "lossDescription", "Storm damage"),
+                        false));
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("future"), response.body());
+    }
+
+    @Test
+    void fnolWithOversizedDescriptionIsRejected() throws Exception {
+        HttpResponse<String> response = post("/api/claims", claimantBearer(),
+                multipart(Map.of(
+                        "policyNumber", "POL-10001",
+                        "holderName", "Ada Lovelace",
+                        "holderEmail", "ada.lovelace@example.test",
+                        "lossDate", "2026-09-01",
+                        "lossLocation", "London",
+                        "lossDescription", "x".repeat(5001)),
+                        false));
+
+        assertEquals(400, response.statusCode(), response.body());
+        assertTrue(response.body().contains("too long"), response.body());
+    }
+
+    @Test
+    void fnolRateLimitRejectsTheBurstWith429AndRetryAfter() throws Exception {
+        // The default limit is 20/day; this test claimant files once directly, then the
+        // 21st filing in the window must be a 429 (the ledger write is in-transaction, so
+        // each accepted filing counts toward the next check).
+        String burstSub = "sub-rate-limit-burst";
+        String burstBearer = JwtTestConfig.tokenFor(burstSub, "claimant");
+        for (int i = 0; i < 20; i++) {
+            HttpResponse<String> ok = post("/api/claims", burstBearer,
+                    multipart(Map.of(
+                            "policyNumber", "POL-10001",
+                            "holderName", "Ada Lovelace",
+                            "holderEmail", "ada.lovelace@example.test",
+                            "lossDate", "2026-09-01",
+                            "lossLocation", "London",
+                            "lossDescription", "Storm damage " + i),
+                            false));
+            assertEquals(201, ok.statusCode(), "filing " + (i + 1) + " should pass: " + ok.body());
+        }
+        HttpResponse<String> limited = post("/api/claims", burstBearer,
+                multipart(Map.of(
+                        "policyNumber", "POL-10001",
+                        "holderName", "Ada Lovelace",
+                        "holderEmail", "ada.lovelace@example.test",
+                        "lossDate", "2026-09-01",
+                        "lossLocation", "London",
+                        "lossDescription", "One too many"),
+                        false));
+        assertEquals(429, limited.statusCode(), limited.body());
+        assertTrue(limited.body().contains("Too many claims"), limited.body());
+        assertTrue(limited.headers().firstValue("Retry-After").isPresent(),
+                "a 429 must carry a Retry-After hint");
+        assertTrue(limited.headers().firstValue("X-Request-Id").isPresent(),
+                "every response carries the request id for support tracing");
+    }
+
+    @Test
+    void myClaimsListsOnlyTheCallersOwnClaimsNewestFirst() throws Exception {
+        String mine = fileHomeFnolWithPhotoAs("sub-my-claims-1");
+        fileHomeFnolWithPhotoAs("sub-someone-else");
+
+        HttpResponse<String> response = getResponse("/api/claims/mine",
+                JwtTestConfig.tokenFor("sub-my-claims-1", "claimant"));
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains(mine), response.body());
+        // Only one row for this caller; the other claimant's filing is invisible.
+        assertEquals(1, response.body().split("claimNumber").length - 1, response.body());
+        for (String internal : new String[] {"reserveAmount", "assignedTo", "claimantSub", "coverage"}) {
+            assertFalse(response.body().contains("\"" + internal + "\""),
+                    "history row must not carry internal field " + internal + ": " + response.body());
+        }
+    }
+
+    @Test
+    void myClaimsWithAnotherClaimantRoleIs403() throws Exception {
+        HttpResponse<String> response = getResponse("/api/claims/mine",
+                JwtTestConfig.tokenFor("sub-adjuster-x", "adjuster_l1"));
+        assertEquals(403, response.statusCode(), response.body());
+    }
+
+    @Test
+    void policiesWithoutTokenIs401AndHealthStaysPublic() throws Exception {
+        assertEquals(401, getStatus("/api/policies"), "holder names are personal data — no anonymous list");
+        assertEquals(200, getStatus("/api/health"));
+        assertEquals(200, getStatus("/api/ready"));
+    }
+
+    @Test
+    void dashboardIsSupervisorOnly() throws Exception {
+        assertEquals(401, getStatus("/api/dashboard"));
+        HttpResponse<String> denied = getResponse("/api/dashboard",
+                JwtTestConfig.tokenFor("sub-adjuster-x", "adjuster_l1"));
+        assertEquals(403, denied.statusCode(), denied.body());
+    }
+
+    @Test
+    void dashboardAggregatesTheSeededPlusFiledState() throws Exception {
+        fileHomeFnolWithPhotoAs("sub-dash-1");
+        HttpResponse<String> response = getResponse("/api/dashboard",
+                JwtTestConfig.tokenFor("sub-super", "supervisor"));
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"openClaims\":1"), response.body());
+        assertTrue(response.body().contains("\"underReviewClaims\":1"), response.body());
+        assertTrue(response.body().contains("\"closedClaims\":0"), response.body());
+    }
+
     // --- auth -------------------------------------------------------------------
 
     @Test
@@ -338,6 +474,39 @@ class FnolApiIntegrationTest extends ClaimTableResettingTest {
 
     private String claimantBearer() {
         return JwtTestConfig.tokenFor("sub-claimant-1", "claimant");
+    }
+
+    /** Files one HOME FNOL as the given subject and returns its claim number. */
+    private String fileHomeFnolWithPhotoAs(String subject) throws Exception {
+        HttpResponse<String> response = post("/api/claims",
+                JwtTestConfig.tokenFor(subject, "claimant"),
+                multipart(Map.of(
+                        "policyNumber", "POL-10001",
+                        "holderName", "Ada Lovelace",
+                        "holderEmail", "ada.lovelace@example.test",
+                        "lossDate", "2026-09-01",
+                        "lossLocation", "London",
+                        "lossDescription", "Kitchen flooded after a pipe burst."),
+                        true));
+        assertEquals(201, response.statusCode(), response.body());
+        return response.body().replaceAll(".*\"claimNumber\":\"([^\"]+)\".*", "$1");
+    }
+
+    private int getStatus(String path) throws Exception {
+        int port = Integer.parseInt(environment.getProperty("local.server.port"));
+        return http.send(HttpRequest.newBuilder(
+                        URI.create("http://localhost:" + port + path)).GET().build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode();
+    }
+
+    private HttpResponse<String> getResponse(String path, String bearer) throws Exception {
+        int port = Integer.parseInt(environment.getProperty("local.server.port"));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port + path)).GET();
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> post(String path, String bearer, byte[] body) throws Exception {

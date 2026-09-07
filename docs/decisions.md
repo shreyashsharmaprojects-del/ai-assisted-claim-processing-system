@@ -5,6 +5,251 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-07 — Production push: session auth, hardening endpoints, my-claims, overview, E2E hermeticity
+
+**Context:** Post-07c autonomous production push (user: make it production-ready and
+sellable). Two tracks: (a) missing production functionality — real session handling,
+FNOL flood protection, claimant history, supervisor dashboard, deploys, runbook; (b) an
+environmental E2E crisis where stale dev servers on :4200/:8081 poisoned every run.
+
+**What changed:**
+
+- **Session auth (Keycloak silent SSO + interceptor).** `AppConfig` loads Keycloak
+  coordinates from `/assets/config.json` at bootstrap (same image runs everywhere);
+  `auth.service` does one `check-sso` init with a proactive 45s/75s-skew renewal timer;
+  `auth.interceptor` signs every `/api` call and rewrites bare 401s into "session
+  expired" messages. Components no longer build Authorization headers by hand. Runtime
+  config needs `frontend/public/assets/config.json` (dev default) and
+  `silent-check-sso.html`.
+- **FNOL rate limit (20/day/claimant, 429 + Retry-After).** Ledger table
+  `fnol_submission` (V8) written in the filing transaction; `enforceRateLimit` counts the
+  rolling 24h window before policy lookup. Same filing also gained: email-format check,
+  future/10-year-past loss-date rejection, length caps (200/5000/2000), IP capture via
+  `request.getRemoteAddr()`. Validation order is validate → rate-limit → lookup, so junk
+  never consumes the quota and probes never learn policy existence cheaply.
+- **`GET /api/claims/mine` (claimant history, CLAIMANT-only).** Newest-first rows of
+  public facts only — same visibility wall as the single-claim view, asserted per-row in
+  `FnolApiIntegrationTest`. Route ordering note: `/mine` lives in its own controller
+  declared before `/{claimNumber}` so it can never be mistaken for a claim number.
+- **`GET /api/dashboard` (supervisor aggregates, SUPERVISOR-only).** Eight numbers
+  (open/unassigned/under-review/escalated/closed, 7-day aging pressure, monthly approved
+  total), single indexed queries (V8 adds the composite queue indexes). Aggregates only —
+  no per-claim data, so no wall surface.
+- **`GET /api/policies` now requires a session.** Holder names are personal data; the
+  anonymous list is gone. Home shows a sign-in panel for visitors; FNOL/claim filing
+  signs in through the guard first. Journey 0 (skeleton) asserts the sign-in prompt, not
+  the rows.
+- **Readiness + tracing.** `GET /api/ready` (migrations current + SELECT 1) is the
+  traffic gate; `X-Request-Id` on every response (MDC `rid` in logs); unexpected errors
+  carry `(Reference: xxxx)` so users can quote a ticket id instead of a stack trace.
+- **FNOL is a 2-step wizard** (policy → loss details) with client photo guards (5 files,
+  10 MB, image/*) and a 429-specific error path; queue/escalations gained search +
+  status filter + sort; claim-detail gained supervisor reassign + audit panels;
+  authority editor gained a client ladder check (L1 ≤ L2); global toast stack.
+- **Prod pack:** `backend/Dockerfile` (multi-stage jar), `frontend/Dockerfile` + nginx
+  (SPA fallback + /api proxy + cache-safe headers), `docker-compose.prod.yml`
+  (secrets-from-env, named volumes for pgdata + uploads), `deploy/config.json`
+  template, `docs/operations.md` (deploy/backup/incident runbook), `api.http` examples
+  for every new endpoint.
+
+**What broke and what it taught:**
+
+- **V4 migration comment edit (reverted same session).** A "docs-only" touch of an
+  applied Flyway file changes its checksum and breaks every migrated DB. Migrations are
+  immutable — full stop. The stale V4 comment stays as the scar.
+- **Stale dev servers poisoned E2E for hours.** Old `ng serve` (:4200, dev proxy → :8081)
+  and old backends (:8081) answered Playwright's readiness probes, so journeys ran
+  against the wrong stack (new UI, old auth rules): policies listed anonymously,
+  `/mine` and `/dashboard` 404'd, FNOL 502'd. Fixed by killing the squatters AND making
+  both webServer entries `reuseExistingServer: false` — with `stdout/stderr: pipe` so a
+  real boot failure surfaces in the log instead of "Exit code: 1" silence. The testing
+  rule in `.agents/skills/project workflow/rules/testing-web.md` now says: boot your own
+  servers, or verify the one you reuse. Open risk: the DSH host shell keeps resurrecting
+  `npm start`/backend watchers (parented to the harness supervisor) — if E2E fails with
+  "already used" or wrong-stack symptoms, `ss -tlnp` :4200/:8081/:8082 first and kill
+  the squatters.
+- **Proxy HTML leaks as user text.** A dead backend makes ng serve answer API calls with
+  an HTML 502 page ("Bad Gateway") that `serverMessage` used to display verbatim.
+  `serverMessage` now falls back to the screen's own wording for empty/HTML/short
+  non-sentence bodies — infrastructure noise never reaches users.
+
+**Verified:** 151 backend tests green (140 + 11 new), frontend prod build green,
+**13/13 E2E journeys** (11 original + overview + queue-filters) on the hermetic
+Playwright-booted stack (backend :8082/claims_e2e + own ng serve :4200/E2E proxy).
+
+---
+
+### 2026-09-07 — Structural rebuild to the Insure Craft composition (phase 07c)
+
+**Context:** After phase 07b the user correctly observed the app still *looked* the same:
+07b had changed tokens (colors, type, shadows, radii) but not the HTML/structure, and the
+reference screens' composition is structural, not just skin-deep. This pass rebuilt the
+markup to mirror the reference grammar — floating chrome, banner card, icon-tile section
+cards, footer action bar — while keeping every data-testid and journey contract intact.
+
+**What changed structurally (all templates rewritten, not just CSS):**
+
+- **Floating shell chrome (reference `header`/`sidebar` pattern).** The app now lives on a
+  grey canvas (`#F1F5F9`) with a floating rounded top bar (60px, white, 12px radius, quiet
+  shadow) holding the brand + user chip + sign-out, and an internal sidebar that is a
+  *rounded white card* with its own logo block ("Claims workspace — Internal"), grouped nav
+  ("Work", "Supervision"), and tinted active items. Public/claimant surfaces keep the
+  floating top bar without the sidebar.
+- **Banner card at the top of every screen** (reference `policy-banner`/`info-card`): queue
+  and escalations get title + count chip + a stat tile ("Assigned to you" / "Waiting on
+  you"); claim detail gets the full treatment — title + status pill + level chip, and five
+  icon-stat tiles (policy, product, policyholder, loss date, current reserve); home, FNOL
+  and claim-status get a title + subtitle banner.
+- **Section cards with icon-tile headers** (reference `form-section`/`Clauses` pattern):
+  every panel now has a `.panel__header` with a 32px icon tile + heading + count pill —
+  "Open claims", "Loss details", "Reserve", "Internal notes", "Decision", "Policy &
+  coverage", "Photos", "Progress", "Policies". Content sits in `.panel__body` with 24px
+  padding.
+- **Two-column claim detail** (main work column + decision/coverage/photos column) and a
+  **footer action bar** card (`.footer-actions`) on claim detail and claim-status
+  ("Back to my queue" / "Back to home").
+- **FNOL is now a true two-section intake** with step chips ("1 Your policy", "2 What
+  happened"), a two-column `.form-grid` for paired fields, and a full-width
+  photo/description/remarks section — mirroring the reference form grammar — with the
+  Submit action in the footer bar.
+
+**Deliberately unchanged:** every data-testid (all 56 referenced by E2E), every exact-text
+contract (status tokens, `£1500.00`, remarks, claim numbers), all `[disabled]` logic and
+decision-flow semantics, the visibility-wall copy rules (claimant pages still never
+contain reserve/internal-notes/coverage), and journey-pinned money formatting.
+
+Verified after the structural pass: frontend build green, structural + geometry audit green
+(banner/section-card/icon-tile composition on all six screens, no horizontal scroll), and
+**11/11 E2E journeys** on the Playwright-booted stack.
+
+---
+
+### 2026-09-07 — Enterprise-UI language correction (phase 07b, "Insure Craft" modern look)
+
+**Context:** After the first UI pass the user called the result dated ("2000s style") and
+pointed at the workspace `design examples/` folder as the canonical reference for the look
+they want. The reference screens — an insurance product-config back office, branded
+"Insure Craft" — show the current (2026) SaaS idiom: **white rounded cards with one quiet
+shadow recipe floating on a light cool-grey canvas, Inter type, a single corporate blue
+(#0056b3), tinted bordered status pills, white sidebar + header chrome.** The phase-07
+interpretation had applied the opposite idiom (flat hairline surfaces, no shadows, tight
+4–6px radii), which now reads as the dated 2010s aesthetic.
+
+**What changed:**
+
+- **The skill now teaches this language.** `SKILL.md` was rewritten: the tells table no
+  longer brands card shadows and 10–12px radii as "generated" — the flat-hairline fusion
+  is now itself the listed dated tell, and "white cards + one shadow recipe on a grey
+  canvas" is the described baseline. `references/design-tokens.css` and
+  `references/component-specs.md` were rewritten to match (slate ramp, `#0056B3` accent
+  ramp, tinted status sets, `--shadow-card`, Inter, 6px controls / 10–12px cards / 999px
+  pills, 44px rows, 38px controls). `references/review-checklist.md` was updated to audit
+  for shadow consistency and card layering. The packaged `enterprise-ui.skill` zip was
+  rebuilt from the updated files.
+- **The app was reskinned to it.** New global token set in `styles.css`; `.panel`,
+  `.summary-strip` and `.form-card` are now white cards with `--shadow-card` and 12px
+  corners; statuses render as tinted bordered pills (`badge--*`) and levels as neutral
+  pills; buttons are 6px (primary solid blue w/ a hint of depth, secondary white w/
+  border); inputs are 38px/6px; table headers sit on `#F8FAFC`, rows 44px with a soft blue
+  hover; sidebar items 40px with tinted active state; Inter is loaded in `index.html`.
+  All 56 E2E data-testids and exact-text contracts were preserved.
+
+**Deliberately unchanged:** every `[disabled]` rule and decision-flow semantic, all
+server-rendered decision strings, the visibility-wall copy rules, and money formatting
+pinned by journeys 4/8 (`£` + `toFixed(2)`, no thousands separators).
+
+Verified after the reskin: frontend build green, programmatic geometry/contrast audit
+green (single shadow recipe per card class, radii 6/12/999, no horizontal scroll,
+4.5:1+ text), and **11/11 E2E journeys** on the Playwright-booted stack.
+
+---
+
+### 2026-09-07 — Enterprise-UI frontend pass (phase 07, UI redesign)
+
+**Context:** The app was functionally complete and hardened, but its frontend still read as
+plain generated styling — floating rounded card rows on grey, pill badges, centered 60rem
+columns, ad-hoc hex colors per screen. This pass rebuilt the entire UI on the
+`enterprise-ui` skill's design system, keeping every data-testid and journey contract
+intact. Verified green after the pass: frontend build + **11/11 E2E journeys** (playwright
+boots its own backend :8082 + frontend :4200, so the gate is the same one CI runs).
+
+**What changed:**
+
+- **Design tokens (wholesale).** `frontend/src/styles.css` now carries the full token set —
+  12-step cool neutral ramp, single institutional-blue accent ramp, six semantic status
+  sets, radius/spacing/type/elevation/density/motion tokens — plus shared primitives
+  (`.btn`, `.input`/`.field`, `.badge`, `.chip`, `.data-table`, `.panel`, `.page-header`,
+  summary strip, kv rows, states, skeleton rows). Every component CSS file was rewritten to
+  reference only tokens; no raw hex values remain outside the token block.
+- **Shell before screens.** `app.html`/`app.css` now build a real application frame: 48px
+  top bar (brand mark, identity chip from `preferred_username`, sign out) and a 240px
+  sidebar for internal roles (My queue; supervisor gets Escalations + Authority settings
+  under a "Supervision" group) with `routerLinkActive` highlight. Claimants/public keep a
+  clean header with a File-a-claim action and no sidebar. One `<main>` per document.
+- **Screens restyled, structure preserved.** Queue/escalations/home are now real
+  `<table>`s (36px rows, mono identifiers, status badge + level chip columns, truncating
+  description, row hover) instead of card lists. Claim detail gained a page header with a
+  status badge, a summary strip (policy/product/holder/loss date/current reserve), and a
+  two-column layout (loss details, reserve, notes | decision, policy & coverage, photos).
+  FNOL/claim-status are token-styled public pages (640px form column, labelled fields).
+  All 56 referenced testids were preserved verbatim, including exact-text contracts
+  (e.g. `claim-status-state` = raw status token, `claim-decision-amount` = `£1500.00`,
+  `detail-claim-number` = bare claim number).
+- **Status mapping centralized.** New `frontend/src/app/ui.ts` maps lifecycle states to
+  semantic badge kinds in one place (`UNDER_REVIEW`→info, `ESCALATED_SUPERVISOR`→special,
+  `CLOSED`/`UNASSIGNED`→neutral, `APPROVED`→success, `DENIED`→danger); screens call
+  `badgeClass(status)` and never color per screen. Badges are icon(text)-and-color (dot +
+  raw token), never color alone.
+- **Audit-driven fixes after the visual pass:** breadcrumb/id text on the sunken page
+  background was bumped from `--text-tertiary` to `--text-secondary` (4.26:1 → 6.68:1,
+  WCAG AA on text); the reserve Save became secondary so the decision Approve stays the
+  view's single primary button; `.table-scroll` got `position: relative` so the
+  visually-hidden action header doesn't leak 12px of document scroll; skeleton widths and
+  remaining inline styles were moved into token classes. Checks run programmatically:
+  no horizontal scroll at 1440/1024/768, h1 ≤20px, no gradients, no oversized radius, no
+  emoji, row height 36px, contrast ratios ≥4.5:1 on body/table/badge text.
+
+**Deliberately unchanged:** all `[disabled]` logic and decision-flow semantics (the
+post-hardening reserve/`.trim()` rules still hold), all server-rendered decision message
+strings, and the claimant-visible copy rules that journey 2 pins (the claimant status
+page still never contains the words reserve/internal notes/coverage). Formatting of money
+keeps the journey-pinned `£` + `toFixed(2)` shape (no thousands separators) because
+journeys 4 and 8 assert on the raw text `1250` / `£1500.00`.
+
+---
+### 2026-09-07 — Post-hardening regression fixes: Flyway V4 immutability + reserve button
+
+**Context:** A clean E2E run after the hardening pass surfaced two regressions the pass
+itself introduced. Both are fixed and the whole suite is green again: 140 backend tests,
+frontend build, **11/11 E2E journeys**, and the backend boots against the freshly-migrated
+DB with no checksum error.
+
+**Fix 1 — Flyway V4 was edited after being applied.** The hardening pass renamed
+`keycloak/realm-export.json` → `keycloak/realm-export.template.json` inside a SQL comment
+in `V4__assignment_queue.sql`. Flyway checksums the whole file, so any database that had
+already applied V4 failed validation on the next boot (`Migration checksum mismatch for
+version 4`); CI and fresh clones were unaffected because they migrate a fresh DB.
+**Reverted the comment back to `keycloak/realm-export.json` and re-reset the local DBs
+(`docker compose down -v && docker compose up -d --wait db mailpit keycloak`) so they
+re-migrate against the reverted file.** Rule recorded: **migrations are immutable** — a
+comment that becomes slightly stale (the file is now rendered from a template) is the
+correct tradeoff versus editing an applied migration. Never edit a migration that has
+shipped.
+
+**Fix 2 — Reserve "Save" button permanently disabled (E2E journey 4).** Hardening added
+`!reserveInput.trim()` to both the `[disabled]` binding and `saveReserve()`, but
+`reserveInput` is bound to `<input type="number">`, so Angular's number value accessor
+assigns a `number` (or `null` when cleared) — and numbers have no `.trim()`. The expression
+threw, so the button never enabled. **Fix:** typed `reserveInput` as `number | null`, seed
+it from `view.reserveAmount` directly, guard with `null`/`Number.isNaN` (a reserve of 0 is
+legitimate, so a plain `!reserveInput` truthiness check would be wrong), and drive the
+`[disabled]` binding from a `reserveReady()` helper — mirroring the decision form, which
+already does this correctly (`!decisionAmount`, no `.trim()` on `decisionAmount`). The
+`.toFixed(2)` *input* seeding was dropped as part of the number typing; the "Current
+reserve" display still renders two decimals.
+
+---
+
 ### 2026-09-07 — Pre-ship hardening pass (phase 06)
 
 **Context:** All slices (0–7) were done, reviewed, and green. This pass worked the whole

@@ -13,7 +13,7 @@ async function registerClaimant(page: Page): Promise<void> {
   const username = `claimant${stamp}`;
   const email = `${username}@example.test`;
 
-  // File a claim is protected -> redirects to Keycloak.
+  // File a claim is protected -> the guard sends the user to Keycloak for sign-in.
   await page.goto('/claim/new');
   await expect(page).toHaveURL(/realms\/claims/);
   await page.getByRole('link', { name: 'Register' }).click();
@@ -27,8 +27,17 @@ async function registerClaimant(page: Page): Promise<void> {
   await page.locator('#password-confirm').fill('claims-Pass-123');
   await page.getByRole('button', { name: 'Register' }).click();
 
-  // Back on the app, on the FNOL form.
+  // Back on the app, on step 1 of the FNOL form.
   await expect(page.getByTestId('fnol-policy-number')).toBeVisible();
+}
+
+/** Completes FNOL step 1 (policy) and lands on step 2 (loss details). */
+async function completeFnolStep1(page: Page): Promise<void> {
+  await page.getByTestId('fnol-policy-number').fill('POL-10001');
+  await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-next').click();
+  await expect(page.getByTestId('fnol-loss-date')).toBeVisible();
 }
 
 /**
@@ -38,10 +47,8 @@ async function registerClaimant(page: Page): Promise<void> {
  */
 test('claimant registers, files an FNOL with a photo and sees the claim number', async ({ page }) => {
   await registerClaimant(page);
+  await completeFnolStep1(page);
 
-  await page.getByTestId('fnol-policy-number').fill('POL-10001');
-  await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
-  await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
   await page.getByTestId('fnol-loss-date').fill('2026-09-01');
   await page.getByTestId('fnol-loss-location').fill('London');
   await page.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
@@ -72,6 +79,8 @@ test('a rejected FNOL keeps the form on screen with the server error', async ({ 
   await page.getByTestId('fnol-policy-number').fill('POL-10001');
   await page.getByTestId('fnol-holder-name').fill('Someone Else');
   await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-next').click();
+  await expect(page.getByTestId('fnol-loss-date')).toBeVisible();
   await page.getByTestId('fnol-loss-date').fill('2026-09-01');
   await page.getByTestId('fnol-loss-location').fill('London');
   await page.getByTestId('fnol-loss-description').fill('Storm damage');
@@ -81,7 +90,7 @@ test('a rejected FNOL keeps the form on screen with the server error', async ({ 
   await expect(page.getByTestId('fnol-error')).toBeVisible();
   await expect(page.getByTestId('fnol-error')).toContainText('could not match');
   // The form is still there to be corrected, and no claim number was fabricated.
-  await expect(page.getByTestId('fnol-policy-number')).toBeVisible();
+  await expect(page.getByTestId('fnol-loss-description')).toBeVisible();
   await expect(page.getByTestId('claim-number')).toHaveCount(0);
 });
 
@@ -110,6 +119,8 @@ test('claimant status screen shows no reserve or internal notes, on screen or wi
   await page.getByTestId('fnol-policy-number').fill('POL-10001');
   await page.getByTestId('fnol-holder-name').fill('Ada Lovelace');
   await page.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await page.getByTestId('fnol-next').click();
+  await expect(page.getByTestId('fnol-loss-date')).toBeVisible();
   await page.getByTestId('fnol-loss-date').fill('2026-09-01');
   await page.getByTestId('fnol-loss-location').fill('London');
   await page.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');

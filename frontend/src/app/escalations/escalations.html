@@ -1,52 +1,149 @@
-<main data-testid="escalations-page">
-  <h1>Escalations</h1>
-  <p class="tagline">Claims waiting on a supervisor decision.</p>
+<main class="page" data-testid="escalations-page">
+  <div class="page-banner">
+    <div class="page-banner__main">
+      <div class="page-banner__title-row">
+        <h1>Escalations</h1>
+        @if (loaded() && claims().length > 0) {
+          <span class="chip">{{ claims().length }} awaiting decision</span>
+        }
+      </div>
+      <p class="page-banner__sub">
+        Claims above the acting adjuster's authority, waiting on a supervisor decision.
+      </p>
+    </div>
+    <div class="page-banner__aside">
+      <div class="stat">
+        <div class="stat__icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1.8 14.4 13H1.6L8 1.8Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <path d="M8 6v3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <circle cx="8" cy="11.6" r="0.4" fill="currentColor" />
+          </svg>
+        </div>
+        <div>
+          <p class="stat__label">Waiting on you</p>
+          <p class="stat__value">{{ loaded() ? claims().length : '—' }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   @if (error(); as message) {
-    <p class="error" data-testid="esc-error" role="alert">{{ message }}</p>
-    <button type="button" class="retry" data-testid="esc-retry" (click)="load()">
+    <p class="notice notice--error" data-testid="esc-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="esc-retry" (click)="load()">
       Try again
     </button>
   } @else if (!loaded()) {
-    <p class="loading" data-testid="esc-loading">Loading…</p>
-  } @else {
-    @if (claims().length === 0) {
-      <p data-testid="esc-empty">No escalated claims right now.</p>
-    } @else {
-      <ul class="esc-list">
-        @for (claim of claims(); track claim.claimNumber) {
-          <li class="esc-row" data-testid="esc-row">
-            <div class="esc-head">
-              <strong data-testid="esc-claim-number">{{ claim.claimNumber }}</strong>
-              <span class="badge" data-testid="esc-status">{{ claim.status }}</span>
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="esc-loading" aria-label="Loading escalations">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--l"></span>
             </div>
-            <dl>
-              <div>
-                <dt>Policy</dt>
-                <dd data-testid="esc-policy">{{ claim.policyNumber }}</dd>
-              </div>
-              <div>
-                <dt>Loss date</dt>
-                <dd data-testid="esc-loss-date">{{ claim.lossDate }}</dd>
-              </div>
-              <div>
-                <dt>Location</dt>
-                <dd data-testid="esc-loss-location">{{ claim.lossLocation }}</dd>
-              </div>
-              <div>
-                <dt>Description</dt>
-                <dd data-testid="esc-loss-description">{{ claim.lossDescription }}</dd>
-              </div>
-            </dl>
-            <a
-              class="open"
-              [routerLink]="['/claims', claim.claimNumber]"
-              data-testid="esc-open-claim"
-              >Review claim</a
-            >
-          </li>
+          }
+        </div>
+      </div>
+    </div>
+  } @else {
+    <section class="panel">
+      <div class="panel__header">
+        <div class="panel__head-icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1.8 14.4 13H1.6L8 1.8Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+            <path d="M8 6v3.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <circle cx="8" cy="11.6" r="0.4" fill="currentColor" />
+          </svg>
+        </div>
+        <h2>Escalated claims</h2>
+        @if (claims().length > 0) {
+          <span class="panel__count">{{ visible().length }} of {{ claims().length }}</span>
         }
-      </ul>
-    }
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar__search">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+          <input
+            type="search"
+            class="input toolbar__input"
+            placeholder="Search claim, policy, location…"
+            aria-label="Search escalations"
+            data-testid="esc-search"
+            [value]="query()"
+            (input)="setQuery($any($event.target).value)"
+          />
+        </div>
+      </div>
+
+      @if (claims().length === 0) {
+        <div class="state-panel" data-testid="esc-empty">
+          <p class="state-panel__title">Nothing escalated right now</p>
+          <p class="state-panel__body">
+            Claims that exceed the acting level's authority land here for your decision.
+          </p>
+        </div>
+      } @else if (visible().length === 0) {
+        <div class="state-panel" data-testid="esc-no-results">
+          <p class="state-panel__title">No escalations match</p>
+          <p class="state-panel__body">Nothing here matches the current search.</p>
+          <button type="button" class="btn btn--secondary" data-testid="esc-clear-search" (click)="setQuery('')">
+            Clear search
+          </button>
+        </div>
+      } @else {
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Claim</th>
+                <th scope="col">Status</th>
+                <th scope="col">Level</th>
+                <th scope="col">Policy</th>
+                <th scope="col">Loss date</th>
+                <th scope="col">Location</th>
+                <th scope="col">Description</th>
+                <th scope="col"><span class="sr-only">Review</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (claim of visible(); track claim.claimNumber) {
+                <tr data-testid="esc-row">
+                  <td class="mono identifier" data-testid="esc-claim-number">{{ claim.claimNumber }}</td>
+                  <td>
+                    <span class="{{ statusBadge(claim.status) }}" data-testid="esc-status">{{ claim.status }}</span>
+                  </td>
+                  <td>
+                    <span class="chip" data-testid="esc-level">{{ claim.level }}</span>
+                  </td>
+                  <td class="mono identifier" data-testid="esc-policy">{{ claim.policyNumber }}</td>
+                  <td data-testid="esc-loss-date">{{ claim.lossDate }}</td>
+                  <td data-testid="esc-loss-location">{{ claim.lossLocation }}</td>
+                  <td class="cell-truncate" title="{{ claim.lossDescription }}" data-testid="esc-loss-description">
+                    {{ claim.lossDescription }}
+                  </td>
+                  <td class="td-action">
+                    <a
+                      class="btn btn--secondary btn--sm"
+                      [routerLink]="['/claims', claim.claimNumber]"
+                      data-testid="esc-open-claim"
+                      >Review claim</a
+                    >
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
   }
 </main>

@@ -36,7 +36,7 @@ public abstract class ClaimTableResettingTest {
     @BeforeEach
     final void resetClaimTablesBetweenTests() {
         jdbcTemplate.execute(
-                "TRUNCATE claim, attachment, internal_note, payment, audit_log "
+                "TRUNCATE claim, attachment, internal_note, payment, audit_log, fnol_submission "
                         + "RESTART IDENTITY CASCADE");
     }
 }

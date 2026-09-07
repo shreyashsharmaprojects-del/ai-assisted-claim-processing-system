@@ -1,8 +1,8 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { accessToken } from '../auth/auth.service';
+import { badgeClass } from '../ui';
 
 interface QueueClaimView {
   claimNumber: string;
@@ -16,7 +16,7 @@ interface QueueClaimView {
   assignedTo: string | null;
 }
 
-/** The supervisor's escalation queue (route-table row for /escalations, slice 5). */
+/** The supervisor's escalation queue (supervisor-only; needs a decision). */
 @Component({
   imports: [RouterLink],
   selector: 'app-escalations',
@@ -29,23 +29,40 @@ export class Escalations {
   protected readonly claims = signal<QueueClaimView[]>([]);
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
+  protected readonly query = signal('');
+
+  protected statusBadge(status: string): string {
+    return badgeClass(status);
+  }
 
   constructor() {
     void this.load();
+  }
+
+  protected visible(): QueueClaimView[] {
+    const q = this.query().trim().toLowerCase();
+    if (!q) {
+      return this.claims();
+    }
+    return this.claims().filter(
+      (claim) =>
+        claim.claimNumber.toLowerCase().includes(q) ||
+        claim.policyNumber.toLowerCase().includes(q) ||
+        claim.lossLocation.toLowerCase().includes(q) ||
+        claim.lossDescription.toLowerCase().includes(q),
+    );
+  }
+
+  protected setQuery(value: string): void {
+    this.query.set(value);
   }
 
   async load() {
     this.error.set(null);
     this.loaded.set(false);
     try {
-      const token = await accessToken();
-      if (!token) {
-        this.error.set('You are not signed in.');
-        return;
-      }
-      const headers = new HttpHeaders().set('Authorization', 'Bearer ' + token);
       const rows = await firstValueFrom(
-        this.http.get<QueueClaimView[]>('/api/escalations', { headers }),
+        this.http.get<QueueClaimView[]>('/api/escalations'),
       );
       this.claims.set(rows);
     } catch {

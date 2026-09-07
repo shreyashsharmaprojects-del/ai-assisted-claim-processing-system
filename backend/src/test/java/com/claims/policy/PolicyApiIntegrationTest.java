@@ -16,12 +16,12 @@ import org.springframework.context.annotation.Import;
 import org.springframework.core.env.Environment;
 
 /**
- * One integration test for the walking skeleton: a real HTTP request through the real
- * Spring context against a real PostgreSQL (Testcontainers when Docker is available,
- * dedicated claims_test database otherwise — see TestcontainersConfiguration).
- * Schema comes from Flyway, which also applies the V2 seed row.
+ * Policy + health integration tests: real HTTP through the real Spring context against a
+ * real PostgreSQL (Testcontainers when Docker is available, dedicated claims_test
+ * database otherwise — see TestcontainersConfiguration). Schema comes from Flyway, which
+ * also applies the seed rows.
  */
-@Import(TestcontainersConfiguration.class)
+@Import({TestcontainersConfiguration.class, com.claims.support.JwtTestConfig.class})
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class PolicyApiIntegrationTest {
 
@@ -34,7 +34,10 @@ class PolicyApiIntegrationTest {
     void seededPolicyIsServedThroughTheRealStack() throws Exception {
         int port = Integer.parseInt(environment.getProperty("local.server.port"));
         HttpResponse<String> response = http.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies")).GET().build(),
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies"))
+                        .header("Authorization", "Bearer "
+                                + com.claims.support.JwtTestConfig.tokenFor("sub-policy-1", "claimant"))
+                        .GET().build(),
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(200, response.statusCode());
@@ -47,6 +50,16 @@ class PolicyApiIntegrationTest {
     }
 
     @Test
+    void policiesAreAuthenticatedBecauseHolderNamesArePersonalData() throws Exception {
+        int port = Integer.parseInt(environment.getProperty("local.server.port"));
+        HttpResponse<Void> response = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies")).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+
+        assertEquals(401, response.statusCode(), "anonymous callers must not list policyholder names");
+    }
+
+    @Test
     void healthEndpointIsPublicAndReportsUp() throws Exception {
         int port = Integer.parseInt(environment.getProperty("local.server.port"));
         HttpResponse<String> response = http.send(
@@ -56,5 +69,16 @@ class PolicyApiIntegrationTest {
         // Public liveness probe: no auth required, reports UP.
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("UP"), "health response should report UP: " + response.body());
+    }
+
+    @Test
+    void readinessEndpointReportsDatabaseReachability() throws Exception {
+        int port = Integer.parseInt(environment.getProperty("local.server.port"));
+        HttpResponse<String> response = http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/ready")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("READY"), "ready response should report READY: " + response.body());
     }
 }

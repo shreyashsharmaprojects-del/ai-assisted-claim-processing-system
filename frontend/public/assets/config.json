@@ -1,0 +1,5 @@
+{
+  "keycloakUrl": "http://localhost:8090",
+  "keycloakRealm": "claims",
+  "keycloakClientId": "claims-frontend"
+}

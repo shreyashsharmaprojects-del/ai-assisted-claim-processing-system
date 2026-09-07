@@ -1,38 +1,81 @@
-<main data-testid="auth-page">
-  <h1>Authority settings</h1>
-  <p class="tagline">
-    Routing level and approval limits per product. A change applies to the next filed claim
-    (routing) and the next decision (limits).
-  </p>
+<main class="page page--narrow" data-testid="auth-page">
+  <div class="page-banner">
+    <div class="page-banner__main">
+      <div class="page-banner__title-row">
+        <h1>Authority settings</h1>
+      </div>
+      <p class="page-banner__sub">
+        Routing level and approval limits per product. A change applies to the next filed
+        claim (routing) and the next decision (limits).
+      </p>
+    </div>
+  </div>
 
   @if (error(); as message) {
-    <p class="error" data-testid="auth-error" role="alert">{{ message }}</p>
-    <button type="button" class="retry" data-testid="auth-retry" (click)="load()">
+    <p class="notice notice--error" data-testid="auth-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" data-testid="auth-retry" (click)="load()">
       Try again
     </button>
   }
   @if (saved(); as message) {
-    <p class="saved" data-testid="auth-saved" role="status">{{ message }}</p>
+    <p class="notice notice--success" data-testid="auth-saved" role="status">{{ message }}</p>
   }
 
   @if (!loaded()) {
-    <p class="loading" data-testid="auth-loading">Loading…</p>
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" data-testid="auth-loading" aria-label="Loading authority settings">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--s"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
   } @else {
-    <ul class="auth-list">
+    <div class="auth-grid">
       @for (row of rows(); track row.productCode) {
-        <li class="auth-row" data-testid="auth-row">
-          <strong class="auth-product" data-testid="auth-product">{{ row.productCode }}</strong>
+        <section class="panel" data-testid="auth-row">
+          <div class="auth-row-head">
+            <div class="auth-row-title">
+              <div class="panel__head-icon">
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M2.5 3h11v10h-11z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+                  <path d="M5 8.5 7 10.5 11 6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </div>
+              <div>
+                <h2 class="mono identifier auth-product" data-testid="auth-product">{{ row.productCode }}</h2>
+                <p class="auth-row-desc">
+                  New {{ row.productCode }} claims route here; decisions are checked against
+                  these limits.
+                </p>
+              </div>
+            </div>
+          </div>
           <form class="auth-fields" (ngSubmit)="save(row)">
-            <label>
-              Route level
-              <select data-testid="auth-route" [(ngModel)]="row.routeLevel" name="route">
+            <div class="field">
+              <label for="route-{{ row.productCode }}">Route level</label>
+              <select
+                id="route-{{ row.productCode }}"
+                class="input"
+                data-testid="auth-route"
+                [(ngModel)]="row.routeLevel"
+                name="route"
+              >
                 <option value="L1">L1</option>
                 <option value="L2">L2</option>
               </select>
-            </label>
-            <label>
-              L1 limit (£)
+            </div>
+            <div class="field">
+              <label for="l1-{{ row.productCode }}">L1 limit (£)</label>
               <input
+                id="l1-{{ row.productCode }}"
+                class="input"
                 type="number"
                 min="0.01"
                 step="0.01"
@@ -40,10 +83,12 @@
                 [(ngModel)]="row.l1Text"
                 name="l1"
               />
-            </label>
-            <label>
-              L2 limit (£)
+            </div>
+            <div class="field">
+              <label for="l2-{{ row.productCode }}">L2 limit (£)</label>
               <input
+                id="l2-{{ row.productCode }}"
+                class="input"
                 type="number"
                 min="0.01"
                 step="0.01"
@@ -51,11 +96,21 @@
                 [(ngModel)]="row.l2Text"
                 name="l2"
               />
-            </label>
-            <button type="submit" data-testid="auth-save" [disabled]="saving()">Save</button>
+            </div>
+            @if (ladderError(row); as ladder) {
+              <p class="field__error" data-testid="auth-ladder-error">{{ ladder }}</p>
+            }
+            <button
+              type="submit"
+              class="btn btn--primary auth-save"
+              data-testid="auth-save"
+              [disabled]="saving() === row.productCode || ladderError(row) !== null"
+            >
+              {{ saving() === row.productCode ? 'Saving…' : 'Save' }}
+            </button>
           </form>
-        </li>
+        </section>
       }
-    </ul>
+    </div>
   }
 </main>

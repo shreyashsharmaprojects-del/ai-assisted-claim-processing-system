@@ -1,26 +1,5 @@
-main {
-  font-family: system-ui, sans-serif;
-}
-
-h1 {
-  font-size: 1.6rem;
-}
-
-.tagline {
-  color: #555;
-}
-
-[data-testid='policy-row'] {
+.home-actions {
   display: flex;
-  gap: 1rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #e2e2e2;
-}
-
-[data-testid='policy-number'] {
-  font-weight: 600;
-}
-
-[data-testid='policy-error'] {
-  color: #b00020;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
 }
