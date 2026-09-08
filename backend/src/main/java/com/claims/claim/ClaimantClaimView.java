@@ -22,13 +22,18 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * <p>V2-2 grows the filed covers: {@code covers} (claimant-supplied figures plus the
  * above-limit flag derived from the already-public sub-limit) and the server-computed
  * {@code claimedTotal}. Both are null on pre-V2-2 and legacy no-cover filings, so those
- * responses are byte-identical to before. Assessed/approved/deductible/net figures,
+ * responses are byte-identical to before. Assessed/deductible/adjustment figures,
  * verifier identity, proposals and notes never enter this shape.
+ *
+ * <p>V2-5 grows the closure outcome: per-cover {@code decision} + approved amounts +
+ * remarks on {@code covers}, the aggregate {@code decision} (which may now be
+ * {@code PARTIALLY_APPROVED}), and {@code netPayableTotal} — the payable figure — on
+ * closure. All three are null while the claim is open.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClaimantClaimView(String claimNumber, String status, List<String> steps,
         String decision, BigDecimal indemnityAmount, String decisionRemarks,
-        List<ClaimantCoverView> covers, BigDecimal claimedTotal) {
+        List<ClaimantCoverView> covers, BigDecimal claimedTotal, BigDecimal netPayableTotal) {
 
     /** Legacy shape: no filed covers (pre-V2-2 rows and the no-covers filing path). */
     public static ClaimantClaimView from(Claim claim) {
@@ -37,12 +42,20 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
 
     public static ClaimantClaimView from(Claim claim, List<ClaimantCoverView> covers,
             BigDecimal claimedTotal) {
+        return from(claim, covers, claimedTotal, null);
+    }
+
+    public static ClaimantClaimView from(Claim claim, List<ClaimantCoverView> covers,
+            BigDecimal claimedTotal, BigDecimal netPayableTotal) {
         String decision = claim.getDecision();
+        boolean approvedLike = "APPROVED".equals(decision)
+                || "PARTIALLY_APPROVED".equals(decision);
         return new ClaimantClaimView(claim.getClaimNumber(), claim.getStatus(),
                 stepsFor(claim.getStatus()), decision,
-                "APPROVED".equals(decision) ? claim.getIndemnityAmount() : null,
+                approvedLike ? claim.getIndemnityAmount() : null,
                 "DENIED".equals(decision) ? claim.getDecisionRemarks() : null,
-                covers, claimedTotal);
+                covers, claimedTotal,
+                approvedLike ? netPayableTotal : null);
     }
 
     /**
@@ -58,7 +71,7 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
     public static List<String> stepsFor(String status) {
         return switch (status) {
             case "UNASSIGNED" -> List.of("FNOL received — your claim is being routed to an adjuster");
-            case "UNDER_REVIEW" -> List.of(
+            case "UNDER_REVIEW", "NEED_INFO" -> List.of(
                     "FNOL received — your claim is being routed to an adjuster",
                     "Under review — an adjuster has been assigned to your claim");
             // Flow 6 (slice 5): while a claim waits on the supervisor the claimant sees the

@@ -128,4 +128,24 @@ public class ClaimCover {
     public Instant getDecidedAt() {
         return decidedAt;
     }
+
+    /** V2-5: assessment sets the within-limits figure the approval then binds. */
+    public void setAssessedAmount(BigDecimal assessedAmount) {
+        this.assessedAmount = assessedAmount;
+    }
+
+    /** V2-5/V2-6: applied figures on closure, or proposed figures while gated. */
+    public void applyDecision(String decision, BigDecimal approvedAmount,
+            BigDecimal deductibleAmount, BigDecimal adjustmentAmount, BigDecimal netPayable,
+            String remarks, Long decidedBy, Instant decidedAt, boolean proposal) {
+        this.decision = decision;
+        this.approvedAmount = approvedAmount;
+        this.deductibleAmount = deductibleAmount;
+        this.adjustmentAmount = adjustmentAmount;
+        this.netPayable = netPayable;
+        this.decisionRemarks = remarks;
+        this.decidedBy = decidedBy;
+        this.decidedAt = decidedAt;
+        this.proposal = proposal;
+    }
 }

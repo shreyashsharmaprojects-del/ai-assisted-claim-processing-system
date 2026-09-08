@@ -126,13 +126,294 @@
       </div>
       <div class="summary-cell">
         <p class="summary-cell__label">Photos</p>
-        <p class="summary-cell__value num">{{ claim.attachments.length }}</p>
+        <p class="summary-cell__value num">{{ attachmentViews().length }}</p>
       </div>
       <div class="summary-cell">
         <p class="summary-cell__label">Notes</p>
-        <p class="summary-cell__value num">{{ claim.notes.length }}</p>
+        <p class="summary-cell__value num">{{ noteViews().length }}</p>
       </div>
     </div>
+
+    <!-- Staged workflow: Review → Verification → Decision (V2-4/V2-5/V2-6) -->
+    @if (isNeedInfo()) {
+      <p class="notice notice--warning" data-testid="detail-need-info-banner" role="status">
+        With the claimant — awaiting their response. Requested: {{ needInfoText() }}
+      </p>
+    }
+    <ol class="stage-stepper" data-testid="detail-stage-stepper" aria-label="Claim stage">
+      <li
+        class="stage-step"
+        [class.is-current]="stage() === 'REVIEW'"
+        [class.is-done]="stageIndex() > 0"
+        data-testid="detail-stage-REVIEW"
+      >
+        <span class="stage-step__dot" aria-hidden="true">1</span>
+        <span class="stage-step__label">Review</span>
+      </li>
+      <li
+        class="stage-step"
+        [class.is-current]="stage() === 'VERIFICATION'"
+        [class.is-done]="stageIndex() > 1"
+        [class.is-locked]="!stageReached('VERIFICATION')"
+        data-testid="detail-stage-VERIFICATION"
+      >
+        <span class="stage-step__dot" aria-hidden="true">2</span>
+        <span class="stage-step__label">Verification</span>
+      </li>
+      <li
+        class="stage-step"
+        [class.is-current]="stage() === 'DECISION'"
+        [class.is-locked]="!stageReached('DECISION')"
+        data-testid="detail-stage-DECISION"
+      >
+        <span class="stage-step__dot" aria-hidden="true">3</span>
+        <span class="stage-step__label">Decision</span>
+      </li>
+    </ol>
+
+    @if (canDecide() || isSupervisor()) {
+      <!-- Review panel -->
+      @if (stage() === 'REVIEW') {
+        <section class="panel" data-testid="detail-review-panel">
+          <div class="panel__header">
+            <h2>Review</h2>
+            <span class="{{ statusBadge(claim.status) }}">{{ claim.status }}</span>
+          </div>
+          <div class="panel__body">
+            @if (hasCovers()) {
+              <ul class="cover-list" data-testid="detail-review-covers">
+                @for (cover of covers(); track cover.coverCode) {
+                  <li class="cover-list__item">
+                    <span class="mono">{{ cover.coverCode }}</span>
+                    <span class="muted">{{ cover.displayName }}</span>
+                    <span class="num">{{ money(cover.claimedAmount) }}</span>
+                    <span class="muted">limit {{ money(cover.subLimit) }}</span>
+                    @if (cover.aboveLimit) {
+                      <span class="badge badge--warning">Above limit</span>
+                    }
+                  </li>
+                }
+              </ul>
+            }
+            <div class="field">
+              <label for="review-rationale">Rationale</label>
+              <textarea
+                id="review-rationale"
+                class="input"
+                rows="2"
+                placeholder="Required to advance or reject"
+                data-testid="detail-review-rationale"
+                [(ngModel)]="reviewRationale"
+                name="reviewRationale"
+              ></textarea>
+            </div>
+            <div class="button-row decision-actions">
+              <button
+                type="button"
+                class="btn btn--primary"
+                data-testid="detail-review-advance"
+                [disabled]="reviewing() || !reviewRationale.trim()"
+                (click)="reviewAdvance()"
+              >
+                Advance to verification
+              </button>
+              <button
+                type="button"
+                class="btn btn--danger"
+                data-testid="detail-review-reject"
+                [disabled]="reviewing()"
+                (click)="showRejectForm = true"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                class="btn btn--secondary"
+                data-testid="detail-review-need-info"
+                [disabled]="reviewing()"
+                (click)="showNeedInfoForm = true"
+              >
+                Ask claimant
+              </button>
+            </div>
+            @if (showRejectForm) {
+              <div class="field" style="margin-top: var(--space-3)">
+                <p class="muted">Rejecting closes the claim as denied with this rationale.</p>
+                <button
+                  type="button"
+                  class="btn btn--danger"
+                  data-testid="detail-review-reject-confirm"
+                  [disabled]="reviewing() || !reviewRationale.trim()"
+                  (click)="reviewReject()"
+                >
+                  Confirm reject
+                </button>
+              </div>
+            }
+            @if (showNeedInfoForm) {
+              <div class="field" style="margin-top: var(--space-3)">
+                <label for="review-requested-items">Requested items</label>
+                <textarea
+                  id="review-requested-items"
+                  class="input"
+                  rows="2"
+                  placeholder="What do you need from the claimant?"
+                  data-testid="detail-review-requested-items"
+                  [(ngModel)]="reviewRequestedItems"
+                  name="reviewRequestedItems"
+                ></textarea>
+                <button
+                  type="button"
+                  class="btn btn--secondary"
+                  data-testid="detail-review-need-info-confirm"
+                  [disabled]="reviewing() || !reviewRequestedItems.trim()"
+                  (click)="reviewNeedInfo()"
+                >
+                  Send back to claimant
+                </button>
+              </div>
+            }
+          </div>
+        </section>
+      }
+
+      <!-- Verification panel: the working stage, then history at decision -->
+      @if ((stage() === 'VERIFICATION' || stage() === 'DECISION') && (hasCovers() || verifications().length > 0)) {
+        <section class="panel" data-testid="detail-verification-panel">
+          <div class="panel__header">
+            <h2>Verification</h2>
+            @if (verifications().length > 0) {
+              <span class="panel__count">{{ verifications().length }}</span>
+            }
+          </div>
+          <div class="panel__body">
+            @if (verifications().length === 0) {
+              <p class="muted">No verification records yet.</p>
+            } @else {
+              <ol class="timeline" data-testid="detail-verification-list">
+                @for (ver of verifications(); track ver.id) {
+                  <li class="timeline__item" data-testid="detail-verification-item">
+                    <p class="timeline__body">
+                      <span class="badge badge--info">{{ ver.type ?? '—' }}</span>
+                      <span class="badge badge--neutral">{{ ver.status }}</span>
+                      @if (ver.outcome) {
+                        <span class="badge badge--success">{{ ver.outcome }}</span>
+                      }
+                    </p>
+                    @if (ver.notes) {
+                      <p class="timeline__rationale">{{ ver.notes }}</p>
+                    }
+                    @if (ver.evidenceRefs) {
+                      <p class="timeline__meta">Evidence: {{ ver.evidenceRefs }}</p>
+                    }
+                    <p class="timeline__meta">
+                      {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
+                      @if (ver.completedAt) {
+                        · completed {{ verificationTimeText(ver.completedAt) }}
+                      }
+                    </p>
+                    @if (canDecide() && ver.status !== 'COMPLETE' && stage() === 'VERIFICATION') {
+                      <div class="field" style="margin-top: var(--space-2)">
+                        <div class="inline-form">
+                          <div class="field">
+                            <label [for]="'ver-outcome-' + ver.id">Outcome</label>
+                            <select
+                              [id]="'ver-outcome-' + ver.id"
+                              class="input"
+                              [attr.data-testid]="'detail-ver-outcome-' + ver.id"
+                              [(ngModel)]="verOutcome[ver.id]"
+                              [name]="'verOutcome' + ver.id"
+                            >
+                              <option value="PASSED">PASSED</option>
+                              <option value="FAILED">FAILED</option>
+                              <option value="WAIVED">WAIVED</option>
+                              <option value="INCONCLUSIVE">INCONCLUSIVE</option>
+                            </select>
+                          </div>
+                          <div class="field">
+                            <label [for]="'ver-evidence-' + ver.id">Evidence refs</label>
+                            <input
+                              [id]="'ver-evidence-' + ver.id"
+                              class="input"
+                              placeholder="Attachment ids / refs"
+                              [attr.data-testid]="'detail-ver-evidence-' + ver.id"
+                              [(ngModel)]="verEvidence[ver.id]"
+                              [name]="'verEvidence' + ver.id"
+                            />
+                          </div>
+                        </div>
+                        <label [for]="'ver-notes-' + ver.id">Notes</label>
+                        <textarea
+                          [id]="'ver-notes-' + ver.id"
+                          class="input"
+                          rows="2"
+                          placeholder="Required to complete"
+                          [attr.data-testid]="'detail-ver-notes-' + ver.id"
+                          [(ngModel)]="verNotes[ver.id]"
+                          [name]="'verNotes' + ver.id"
+                        ></textarea>
+                        <div class="form-actions note-form-actions">
+                          <button
+                            type="button"
+                            class="btn btn--secondary"
+                            [attr.data-testid]="'detail-ver-save-' + ver.id"
+                            [disabled]="savingVerification()"
+                            (click)="saveVerification(ver.id)"
+                          >
+                            Complete verification
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </li>
+                }
+              </ol>
+            }
+            @if (canDecide() && stage() === 'VERIFICATION') {
+              @if (!verificationComplete()) {
+                <p class="muted" data-testid="detail-verification-guard">
+                  Complete the verification before assessment.
+                </p>
+              }
+              <form (ngSubmit)="createVerification()" class="inline-form">
+                <div class="field">
+                  <label for="verification-type">Type</label>
+                  <select
+                    id="verification-type"
+                    class="input"
+                    data-testid="detail-verification-type"
+                    [(ngModel)]="verificationType"
+                    name="verificationType"
+                  >
+                    <option value="DIGITAL">DIGITAL</option>
+                    <option value="PHYSICAL">PHYSICAL</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="verification-notes">Notes</label>
+                  <input
+                    id="verification-notes"
+                    class="input"
+                    placeholder="Opening notes"
+                    data-testid="detail-verification-notes"
+                    [(ngModel)]="verificationNotes"
+                    name="verificationNotes"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  class="btn btn--secondary"
+                  data-testid="detail-verification-create"
+                  [disabled]="savingVerification()"
+                >
+                  Open verification
+                </button>
+              </form>
+            }
+          </div>
+        </section>
+      }
+    }
 
     <!-- Main work area: section cards in two columns -->
     <div class="detail-columns">
@@ -224,14 +505,14 @@
               </svg>
             </div>
             <h2>Internal notes</h2>
-            <span class="panel__count">{{ claim.notes.length }}</span>
+            <span class="panel__count">{{ noteViews().length }}</span>
           </div>
           <div class="panel__body">
-            @if (claim.notes.length === 0) {
+            @if (noteViews().length === 0) {
               <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
             } @else {
               <ol class="timeline" data-testid="detail-note-list">
-                @for (note of claim.notes; track note.id) {
+                @for (note of noteViews(); track note.id) {
                   <li class="timeline__item timeline__item--note" data-testid="detail-note-item">
                     <p class="timeline__body">{{ note.body }}</p>
                     <p class="timeline__meta">{{ note.author ?? 'Internal' }}</p>
@@ -266,6 +547,18 @@
       </div>
 
       <aside class="detail-side">
+        @if (decisionResult(); as message) {
+          <p class="notice notice--info" data-testid="detail-decision-result" role="status">
+            {{ message }}
+          </p>
+        }
+        @if (view()?.proposalsSaved) {
+          <p class="notice notice--warning" data-testid="detail-gate-banner" role="status">
+            Above your authority — proposals saved. Reduce, reject, or refer upwards.
+          </p>
+        }
+        <!-- Legacy single-figure decision (cover-less claims): the exact V1 form -->
+        @if (!hasCovers()) {
         <section class="panel" data-testid="detail-decision-panel">
           <div class="panel__header">
             <div class="panel__head-icon">
@@ -276,11 +569,6 @@
             <h2>Decision</h2>
           </div>
           <div class="panel__body">
-            @if (decisionResult(); as message) {
-              <p class="notice notice--info" data-testid="detail-decision-result" role="status">
-                {{ message }}
-              </p>
-            }
             @if (canDecide()) {
               <form (ngSubmit)="approve()" data-testid="detail-decision-form" class="field">
                 <p class="muted decision-hint">
@@ -338,6 +626,193 @@
             }
           </div>
         </section>
+        }
+
+        <!-- Cover-level decision (claims with covers): assessment, gate, referral -->
+        @if (hasCovers() && (canDecide() || isSupervisor())) {
+        <section class="panel" data-testid="detail-decision-panel">
+          <div class="panel__header">
+            <div class="panel__head-icon">
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 1.5 14 4v4.5c0 3.2-2.3 5.3-6 6-3.7-.7-6-2.8-6-6V4l6-2.5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <h2>Decision</h2>
+          </div>
+          <div class="panel__body">
+            <p class="muted decision-hint" data-testid="detail-authority-hint">
+              {{ authorityHint() }}
+            </p>
+            <table class="cover-grid">
+              <thead>
+                <tr>
+                  <th scope="col">Cover</th>
+                  <th scope="col" class="num">Claimed</th>
+                  <th scope="col" class="num">Assessed</th>
+                  <th scope="col" class="num">Approved</th>
+                  <th scope="col">Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (cover of covers(); track cover.coverCode) {
+                  <tr>
+                    <td>
+                      <span class="mono">{{ cover.coverCode }}</span>
+                      @if (cover.aboveLimit) {
+                        <span class="badge badge--warning">Above limit</span>
+                      }
+                      @if (cover.proposal) {
+                        <span class="badge badge--special">Proposed</span>
+                      }
+                    </td>
+                    <td class="num">{{ money(cover.claimedAmount) }}</td>
+                    <td class="num">
+                      <input
+                        class="input input--sm num"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        [attr.data-testid]="'detail-assess-' + cover.coverCode"
+                        [(ngModel)]="assessInputs[cover.coverCode]"
+                        [name]="'assess' + cover.coverCode"
+                      />
+                    </td>
+                    <td class="num">
+                      <input
+                        class="input input--sm num"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        [attr.data-testid]="'detail-approve-' + cover.coverCode"
+                        [(ngModel)]="approveInputs[cover.coverCode]"
+                        [name]="'approve' + cover.coverCode"
+                      />
+                    </td>
+                    <td>
+                      <select
+                        class="input input--sm"
+                        [attr.data-testid]="'detail-cover-decision-' + cover.coverCode"
+                        [(ngModel)]="coverDecision[cover.coverCode]"
+                        [name]="'coverDecision' + cover.coverCode"
+                      >
+                        <option value="APPROVED">APPROVED</option>
+                        <option value="REJECTED">REJECTED</option>
+                      </select>
+                      <input
+                        class="input input--sm"
+                        placeholder="Remarks (required to reject)"
+                        [attr.data-testid]="'detail-cover-remarks-' + cover.coverCode"
+                        [(ngModel)]="coverRemarks[cover.coverCode]"
+                        [name]="'coverRemarks' + cover.coverCode"
+                      />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+            <p class="totals-line" data-testid="detail-totals">
+              Assessed {{ money(assessedTotal()) }} · Approved {{ money(approvedTotal()) }} ·
+              Net {{ money(netTotal()) }}
+            </p>
+            <div class="field">
+              <label for="assessment-rationale">Assessment rationale</label>
+              <input
+                id="assessment-rationale"
+                class="input"
+                placeholder="Required to record an assessment"
+                data-testid="detail-assessment-rationale"
+                [(ngModel)]="assessmentRationale"
+                name="assessmentRationale"
+              />
+            </div>
+            <div class="button-row decision-actions">
+              <button
+                type="button"
+                class="btn btn--secondary"
+                data-testid="detail-save-assessment"
+                [disabled]="assessing()"
+                (click)="saveAssessment()"
+              >
+                Save assessment
+              </button>
+            </div>
+            <div class="field" style="margin-top: var(--space-3)">
+              <label for="cover-decision-rationale">Decision rationale</label>
+              <textarea
+                id="cover-decision-rationale"
+                class="input"
+                rows="3"
+                placeholder="Required to submit the decision"
+                data-testid="detail-decision-rationale"
+                [(ngModel)]="decisionRationale"
+                name="decisionRationale"
+              ></textarea>
+            </div>
+            <div class="button-row decision-actions">
+              <button
+                type="button"
+                class="btn btn--primary"
+                data-testid="detail-submit-decision"
+                [disabled]="deciding() || !decisionRationale.trim()"
+                (click)="submitCoverDecision()"
+              >
+                Submit decision
+              </button>
+            </div>
+            @if (view()?.proposalsSaved) {
+              <div class="field refer-box" style="margin-top: var(--space-4)">
+                <h3>Refer upwards</h3>
+                <div class="field">
+                  <label for="refer-reason">Reason</label>
+                  <textarea
+                    id="refer-reason"
+                    class="input"
+                    rows="2"
+                    placeholder="Why does this need a higher authority?"
+                    data-testid="detail-refer-reason"
+                    [(ngModel)]="referReason"
+                    name="referReason"
+                  ></textarea>
+                </div>
+                <div class="inline-form">
+                  <div class="field">
+                    <label for="refer-target">Senior adjuster id</label>
+                    <input
+                      id="refer-target"
+                      class="input"
+                      inputmode="numeric"
+                      placeholder="e.g. 7"
+                      data-testid="detail-refer-target"
+                      [(ngModel)]="referTarget"
+                      name="referTarget"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    data-testid="detail-refer-named"
+                    [disabled]="referring()"
+                    (click)="referNamed()"
+                  >
+                    Refer to named senior
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn--secondary"
+                  data-testid="detail-refer-auto"
+                  [disabled]="referring()"
+                  (click)="referAuto()"
+                >
+                  Assign to any qualified senior
+                </button>
+              </div>
+            }
+          </div>
+        </section>
+        } @else if (hasCovers() && claim.status === 'CLOSED') {
+          <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
+        }
 
         <section class="panel">
           <div class="panel__header">
@@ -364,14 +839,14 @@
               </svg>
             </div>
             <h2>Photos</h2>
-            <span class="panel__count">{{ claim.attachments.length }}</span>
+            <span class="panel__count">{{ attachmentViews().length }}</span>
           </div>
           <div class="panel__body">
-            @if (claim.attachments.length === 0) {
+            @if (attachmentViews().length === 0) {
               <p class="muted" data-testid="detail-photos-empty">No photos attached.</p>
             } @else {
               <ul class="photo-list">
-                @for (attachment of claim.attachments; track attachment.id) {
+                @for (attachment of attachmentViews(); track attachment.id) {
                   <li>
                     <button
                       type="button"

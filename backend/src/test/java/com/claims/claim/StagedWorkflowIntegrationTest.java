@@ -1,0 +1,813 @@
+/**
+ * V2-4/V2-5/V2-6 acceptance: the staged workflow over real HTTP against real
+ * Postgres. Review guards, verification discipline, assessment limit-chain,
+ * partial approval with payment = Σ net, above-authority proposals that do NOT move
+ * the claim, named/auto/supervisor-fallback referral, escalated-handler close,
+ * NEED_INFO round-trip, and the claimant outcome wall.
+ */
+package com.claims.claim;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.core.env.Environment;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import com.claims.TestcontainersConfiguration;
+import com.claims.support.ClaimTableResettingTest;
+import com.claims.support.JwtTestConfig;
+
+@Import({TestcontainersConfiguration.class, JwtTestConfig.class})
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
+
+    private static final String BOUNDARY = "----StagedWorkflowBoundary1";
+
+    private static final String SUB_L1_ONE = "10000000-0000-0000-0000-000000000001";
+    private static final String SUB_L3 = "10000000-0000-0000-0000-000000000007";
+    private static final String SUB_SUPERVISOR = "10000000-0000-0000-0000-000000000004";
+    private static final String CLAIMANT = "sub-claimant-staged";
+
+    @Autowired
+    private Environment environment;
+
+    private final HttpClient http = HttpClient.newHttpClient();
+
+    // --- the happy path: review -> verify -> assess -> partial approve -------------
+
+    @Test
+    void happyPathPartialApprovalClosesWithPaymentEqualToSumOfNets() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"HOSPITALIZATION\",\"claimedAmount\":200000},"
+                        + "{\"coverCode\":\"OPD\",\"claimedAmount\":40000}]");
+        String bearer = holderBearer(claimNumber);
+
+        // Stage starts at REVIEW; the staged view carries the authority context.
+        String staged = get("/api/claims/" + claimNumber + "/staged", bearer).body();
+        assertTrue(staged.contains("\"stage\":\"REVIEW\""), staged);
+        assertTrue(staged.contains("\"authorityLimit\":100000"), staged);
+        assertTrue(staged.contains("\"authorityBasis\":\"APPROVED_TOTAL\""), staged);
+
+        // Decision before the DECISION stage is rejected.
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/cover-decision", bearer,
+                "{\"rationale\":\"too early\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":1000}]}").statusCode());
+
+        // ADVANCE REVIEW -> VERIFICATION opens a PENDING verification row.
+        HttpResponse<String> advanced = postJson("/api/claims/" + claimNumber + "/review",
+                bearer,
+                "{\"action\":\"ADVANCE\",\"rationale\":\"Looks consistent; verifying.\"}");
+        assertEquals(200, advanced.statusCode(), advanced.body());
+        assertTrue(advanced.body().contains("\"stage\":\"VERIFICATION\""), advanced.body());
+        assertEquals(1, count("SELECT count(*) FROM verification WHERE claim_id = ?",
+                idOf(claimNumber)));
+
+        // Assessment before a COMPLETE verification is rejected (incomplete blocks).
+        assertEquals(400, putJson("/api/claims/" + claimNumber + "/assessment", bearer,
+                "{\"rationale\":\"x\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":1000},"
+                        + "{\"coverCode\":\"OPD\",\"assessedAmount\":1000}]}").statusCode());
+
+        // Open a verification, then complete it (outcome + notes required).
+        HttpResponse<String> created = postJson(
+                "/api/claims/" + claimNumber + "/verifications", bearer,
+                "{\"type\":\"DIGITAL\",\"notes\":\"Checking hospital records.\"}");
+        assertEquals(200, created.statusCode(), created.body());
+        long verificationId = idOfVerification(created.body());
+        assertEquals(400, putJson(
+                "/api/claims/" + claimNumber + "/verifications/" + verificationId, bearer,
+                "{\"status\":\"COMPLETE\",\"notes\":\"No outcome given.\"}").statusCode(),
+                "COMPLETE without an outcome is rejected");
+        HttpResponse<String> completed = putJson(
+                "/api/claims/" + claimNumber + "/verifications/" + verificationId, bearer,
+                "{\"status\":\"COMPLETE\",\"outcome\":\"PASSED\","
+                        + "\"notes\":\"Dates and amounts match.\","
+                        + "\"evidenceRefs\":\"bill.pdf\"}");
+        assertEquals(200, completed.statusCode(), completed.body());
+
+        // Assessment: OPD assessed 40000 > 30000 sub-limit -> 400, claim stays open.
+        HttpResponse<String> overLimit = putJson(
+                "/api/claims/" + claimNumber + "/assessment", bearer,
+                "{\"rationale\":\"Trying over-limit.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
+                        + "{\"coverCode\":\"OPD\",\"assessedAmount\":40000}]}");
+        assertEquals(400, overLimit.statusCode(), overLimit.body());
+        assertTrue(overLimit.body().contains("sub-limit"), overLimit.body());
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        assertEquals("VERIFICATION", stageOf(claimNumber));
+
+        // Valid assessment moves VERIFICATION -> DECISION.
+        HttpResponse<String> assessed = putJson(
+                "/api/claims/" + claimNumber + "/assessment", bearer,
+                "{\"rationale\":\"Bills verified.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
+                        + "{\"coverCode\":\"OPD\",\"assessedAmount\":25000}]}");
+        assertEquals(200, assessed.statusCode(), assessed.body());
+        assertTrue(assessed.body().contains("\"stage\":\"DECISION\""), assessed.body());
+
+        // Mixed decision within L1 authority (HLTH-PLUS L1 100000; approved 80000):
+        // PARTIALLY_APPROVED with payment = Σ net = (80000-10000) + 0 = 70000.
+        HttpResponse<String> decided = postJson(
+                "/api/claims/" + claimNumber + "/cover-decision", bearer,
+                "{\"rationale\":\"Within authority.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":80000,\"remarks\":\"Bills verified.\"},"
+                        + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
+                        + "\"remarks\":\"Pre-dates the waiting period.\"}]}");
+        assertEquals(200, decided.statusCode(), decided.body());
+        assertTrue(decided.body().contains("\"status\":\"CLOSED\""), decided.body());
+
+        Long claimId = idOf(claimNumber);
+        assertEquals("CLOSED", statusOf(claimNumber));
+        assertEquals("PARTIALLY_APPROVED", decisionOf(claimNumber));
+        assertEquals(0, new java.math.BigDecimal("70000").compareTo(
+                jdbcTemplate.queryForObject("SELECT amount FROM payment WHERE claim_id = ?",
+                        java.math.BigDecimal.class, claimId)),
+                "payment = Σ net payable (80000-10000 deductible, rejected OPD pays 0)");
+        assertEquals(1, count("SELECT count(*) FROM payment WHERE claim_id = ?", claimId));
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'DECISION' "
+                + "AND entity_id = ?", claimId));
+        // Decision email fires on closure (outbox row in-transaction + flushed send).
+        assertEquals(1, count("SELECT count(*) FROM email_outbox WHERE claim_id = ? "
+                + "AND kind = 'DECISION'", claimId));
+
+        // Claimant view: per-cover outcomes + aggregate + payable figure, wall intact.
+        String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
+        assertTrue(claimantView.contains("\"decision\":\"PARTIALLY_APPROVED\""), claimantView);
+        assertTrue(claimantView.contains("\"netPayableTotal\":70000"), claimantView);
+        assertTrue(claimantView.contains("\"coverCode\":\"HOSPITALIZATION\""), claimantView);
+        assertTrue(claimantView.contains("\"decision\":\"APPROVED\""), claimantView);
+        assertTrue(claimantView.contains("\"approvedAmount\":80000"), claimantView);
+        assertTrue(claimantView.contains("\"decision\":\"REJECTED\""), claimantView);
+        for (String internal : new String[] {"assessedAmount", "deductibleAmount",
+                "adjustmentAmount", "reserveAmount", "assignedTo", "performedBy",
+                "proposalsSaved", "proposedTotal", "authorityLimit"}) {
+            assertFalse(claimantView.contains("\"" + internal + "\""),
+                    "claimant view must not contain " + internal + ": " + claimantView);
+        }
+    }
+
+    // --- review guards ------------------------------------------------------------------
+
+    @Test
+    void reviewRejectClosesDeniedAndAdvanceRequiresReviewStage() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+        String bearer = holderBearer(claimNumber);
+
+        HttpResponse<String> rejected = postJson("/api/claims/" + claimNumber + "/review",
+                bearer, "{\"action\":\"REJECT\",\"rationale\":\"Excluded by clauses.\"}");
+        assertEquals(200, rejected.statusCode(), rejected.body());
+        assertEquals("CLOSED", statusOf(claimNumber));
+        assertEquals("DENIED", decisionOf(claimNumber));
+        assertEquals(0, count("SELECT count(*) FROM payment WHERE claim_id = ?",
+                idOf(claimNumber)));
+
+        // A second review on the closed claim is rejected.
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"ADVANCE\",\"rationale\":\"x\"}").statusCode());
+    }
+
+    @Test
+    void invalidReviewActionsAreRejected() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+        String bearer = holderBearer(claimNumber);
+
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"MAYBE\",\"rationale\":\"x\"}").statusCode());
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"ADVANCE\"}").statusCode(),
+                "ADVANCE needs a rationale");
+    }
+
+    // --- NEED_INFO round-trip -----------------------------------------------------------------
+
+    @Test
+    void needInfoFromVerificationAndClaimantResponseReturnsToPriorStage()
+            throws Exception {
+        String claimNumber = driveToVerification();
+        String bearer = holderBearer(claimNumber);
+
+        HttpResponse<String> parked = postJson("/api/claims/" + claimNumber + "/review",
+                bearer,
+                "{\"action\":\"NEED_INFO\",\"requestedItems\":\"Upload the bill.\"}");
+        assertEquals(200, parked.statusCode(), parked.body());
+        assertTrue(parked.body().contains("\"status\":\"NEED_INFO\""), parked.body());
+        assertTrue(parked.body().contains("\"needInfoPriorStage\":\"VERIFICATION\""),
+                parked.body());
+        assertNull(jdbcTemplate.queryForObject(
+                "SELECT assigned_adjuster_id FROM claim WHERE claim_number = ?",
+                Long.class, claimNumber),
+                "NEED_INFO leaves the assignee bucket");
+
+        // The parked claim is out of the adjuster's hands.
+        assertEquals(404,
+                get("/api/claims/" + claimNumber + "/staged", bearer).statusCode());
+
+        // NEED_INFO from DECISION is rejected (drive a twin claim there first).
+        String decided = driveToDecision();
+        assertEquals(400, postJson("/api/claims/" + decided + "/review",
+                holderBearer(decided),
+                "{\"action\":\"NEED_INFO\",\"requestedItems\":\"Too late.\"}").statusCode());
+
+        // Claimant responds: back UNDER_REVIEW at VERIFICATION, reassigned.
+        HttpResponse<String> response = postJson(
+                "/api/claims/" + claimNumber + "/need-info-response", claimantBearer(),
+                "{\"message\":\"Uploaded the bill.\"}");
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        assertEquals("VERIFICATION", stageOf(claimNumber));
+        assertNotNull(jdbcTemplate.queryForObject(
+                "SELECT assigned_adjuster_id FROM claim WHERE claim_number = ?",
+                Long.class, claimNumber),
+                "the response reassigns the claim");
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = "
+                + "'NEED_INFO_RESPONDED' AND entity_id = ?", idOf(claimNumber)));
+
+        // A second response is rejected (no longer NEED_INFO).
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/need-info-response",
+                claimantBearer(), "{\"message\":\"Again.\"}").statusCode());
+
+        // Someone else's NEED_INFO claim is a 404, never a 403.
+        assertEquals(404, postJson("/api/claims/" + claimNumber + "/need-info-response",
+                JwtTestConfig.tokenFor("sub-claimant-other", "claimant"),
+                "{\"message\":\"Mine?\"}").statusCode());
+    }
+
+    // --- above-authority proposals + referral ----------------------------------------------------
+
+    @Test
+    void aboveAuthoritySavesProposalsWithoutMovingTheClaim() throws Exception {
+        String claimNumber = driveToDecision();
+        String bearer = holderBearer(claimNumber);
+
+        // HLTH-PLUS L1 100000; propose 150000 approved -> proposals saved, claim stays.
+        HttpResponse<String> gated = postJson(
+                "/api/claims/" + claimNumber + "/cover-decision", bearer,
+                "{\"rationale\":\"Needs senior sign-off.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
+                        + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
+                        + "\"remarks\":\"Waiting period.\"}]}");
+        assertEquals(200, gated.statusCode(), gated.body());
+        assertTrue(gated.body().contains("\"proposalsSaved\":true"), gated.body());
+        assertTrue(gated.body().contains("\"proposedTotal\":150000"), gated.body());
+        assertTrue(gated.body().contains("\"authorityLimit\":100000"), gated.body());
+
+        Long claimId = idOf(claimNumber);
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        assertEquals("DECISION", stageOf(claimNumber));
+        assertEquals(0, count("SELECT count(*) FROM payment WHERE claim_id = ?", claimId),
+                "no payment on a gated proposal");
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        // Same assignee still holds it (nothing moved by itself).
+        assertEquals(bearerSub(bearer), assigneeSubOf(claimNumber));
+        assertEquals(1, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", claimId));
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = "
+                + "'PROPOSALS_SAVED' AND entity_id = ?", claimId));
+
+        // Referring with no proposals is a 400 — use a fresh claim driven to DECISION.
+        String fresh = driveToDecision();
+        assertEquals(400, postJson("/api/claims/" + fresh + "/refer",
+                holderBearer(fresh), "{\"auto\":true,\"reason\":\"Nothing saved.\"}")
+                .statusCode());
+    }
+
+    @Test
+    void referAutoPicksLowestCoveringRungAndOriginalActorLosesAccess() throws Exception {
+        String claimNumber = driveToDecision();
+        String actorBearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, actorBearer);
+
+        HttpResponse<String> referred = postJson("/api/claims/" + claimNumber + "/refer",
+                actorBearer, "{\"auto\":true,\"reason\":\"Above my authority.\"}");
+        assertEquals(200, referred.statusCode(), referred.body());
+        // HLTH-PLUS 150000 clears L1 (100000), fits L2 (400000): lands on L2.
+        assertTrue(referred.body().contains("\"escalatedTo\":\"L2\""), referred.body());
+        assertEquals("DECISION", stageOf(claimNumber),
+                "referral preserves the stage");
+        assertEquals(1, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", idOf(claimNumber)),
+                "proposals travel untouched");
+
+        // The original actor lost access (404 on staged + decision + refer).
+        assertEquals(404,
+                get("/api/claims/" + claimNumber + "/staged", actorBearer).statusCode());
+        assertEquals(404, postJson("/api/claims/" + claimNumber + "/cover-decision",
+                actorBearer, "{\"rationale\":\"x\",\"covers\":[]}").statusCode());
+
+        // The L2 holder sees the proposals and may modify + close within authority.
+        String holderBearer = holderBearer(claimNumber);
+        String staged = get("/api/claims/" + claimNumber + "/staged", holderBearer).body();
+        assertTrue(staged.contains("\"proposal\":true"), staged);
+        HttpResponse<String> closed = postJson(
+                "/api/claims/" + claimNumber + "/cover-decision", holderBearer,
+                "{\"rationale\":\"Revised within L2 authority.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":150000,\"remarks\":\"Agreed.\"},"
+                        + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
+                        + "\"remarks\":\"Waiting period.\"}]}");
+        assertEquals(200, closed.statusCode(), closed.body());
+        assertTrue(closed.body().contains("\"status\":\"CLOSED\""), closed.body());
+        assertEquals("CLOSED", statusOf(claimNumber));
+        assertEquals("PARTIALLY_APPROVED", decisionOf(claimNumber));
+        assertEquals(0, new java.math.BigDecimal("140000").compareTo(
+                jdbcTemplate.queryForObject("SELECT amount FROM payment WHERE claim_id = ?",
+                        java.math.BigDecimal.class, idOf(claimNumber))),
+                "payment = 150000 - 10000 deductible");
+    }
+
+    @Test
+    void referNamedSeniorRequiresHigherRungWithCoveringLimit() throws Exception {
+        String claimNumber = driveToDecision();
+        String actorBearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, actorBearer);
+
+        // Named L2 (Rahul, sub ...006): 150000 fits L2 400000 -> accepted.
+        Long rahulId = jdbcTemplate.queryForObject(
+                "SELECT id FROM app_user WHERE keycloak_sub = "
+                        + "'10000000-0000-0000-0000-000000000006'",
+                Long.class);
+        HttpResponse<String> named = postJson("/api/claims/" + claimNumber + "/refer",
+                actorBearer,
+                "{\"targetAdjusterId\":" + rahulId + ",\"reason\":\"Named senior.\"}");
+        assertEquals(200, named.statusCode(), named.body());
+        assertTrue(named.body().contains("Rahul Singh"), named.body());
+
+        // A twin claim: naming a same-rung L1 is a 400.
+        String twin = driveToDecision();
+        String twinBearer = holderBearer(twin);
+        proposeAboveL1(twin, twinBearer);
+        Long l1TwoId = jdbcTemplate.queryForObject(
+                "SELECT id FROM app_user WHERE keycloak_sub = "
+                        + "'10000000-0000-0000-0000-000000000002'",
+                Long.class);
+        assertEquals(400, postJson("/api/claims/" + twin + "/refer", twinBearer,
+                "{\"targetAdjusterId\":" + l1TwoId + ",\"reason\":\"Same rung.\"}")
+                .statusCode());
+    }
+
+    @Test
+    void referFallsBackToSupervisorWhenNoRungCoversTheTotal() throws Exception {
+        // No covering rung with a candidate: HLTH-PLUS claim proposing 150000
+        // (above L1 100000) while L2/L3 adjusters are temporarily unprovisioned.
+        // Auto-pick finds no rung with candidates -> ESCALATED_SUPERVISOR.
+        String claimNumber = driveToDecision();
+        String bearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, bearer);
+        deleteSeniorAdjusters();
+        try {
+            HttpResponse<String> referred = postJson("/api/claims/" + claimNumber
+                    + "/refer", bearer,
+                    "{\"auto\":true,\"reason\":\"Nobody above me is provisioned.\"}");
+            assertEquals(200, referred.statusCode(), referred.body());
+            assertTrue(referred.body().contains("\"escalatedTo\":\"SUPERVISOR\""),
+                    referred.body());
+            assertEquals("ESCALATED_SUPERVISOR", statusOf(claimNumber));
+        } finally {
+            restoreSeniorAdjusters();
+        }
+    }
+
+    @Test
+    void supervisorEscalatedCoverDecideGuardsAndL3Referral() throws Exception {
+        // Guards: a non-escalated claim is a 400 on the supervisor endpoint.
+        String claimNumber = driveToDecision();
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/escalation-cover-decision",
+                supervisorBearer(),
+                "{\"rationale\":\"x\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":1000}]}").statusCode());
+
+        // L1 holder proposes above L1; named L3 referral (skip-level L1->L3 allowed).
+        String actorBearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, actorBearer);
+        Long meeraId = jdbcTemplate.queryForObject(
+                "SELECT id FROM app_user WHERE keycloak_sub = '" + SUB_L3 + "'", Long.class);
+        HttpResponse<String> toL3 = postJson("/api/claims/" + claimNumber + "/refer",
+                actorBearer,
+                "{\"targetAdjusterId\":" + meeraId + ",\"reason\":\"To L3.\"}");
+        assertEquals(200, toL3.statusCode(), toL3.body());
+        assertTrue(toL3.body().contains("\"escalatedTo\":\"L3\""), toL3.body());
+        assertEquals("DECISION", stageOf(claimNumber),
+                "referral preserves the stage");
+        assertEquals(1, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", idOf(claimNumber)),
+                "proposals travel untouched");
+    }
+
+    @Test
+    void supervisorCoverDecideOnEscalatedClaimClosesWithModifiedFigures() throws Exception {
+        // ESCALATED_SUPERVISOR via the same provisioning-gap route as the fallback
+        // test: the supervisor then modifies the figure and closes, ungated.
+        String claimNumber = driveToDecision();
+        String bearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, bearer);
+        deleteSeniorAdjusters();
+        try {
+            HttpResponse<String> referred = postJson("/api/claims/" + claimNumber
+                    + "/refer", bearer,
+                    "{\"auto\":true,\"reason\":\"Above every provisioned rung.\"}");
+            assertEquals(200, referred.statusCode(), referred.body());
+            assertTrue(referred.body().contains("\"escalatedTo\":\"SUPERVISOR\""),
+                    referred.body());
+        } finally {
+            restoreSeniorAdjusters();
+        }
+
+        // The supervisor modifies the figure and closes (ungated). The fixture
+        // claim carries HOSPITALIZATION + OPD: approve one, reject the other.
+        HttpResponse<String> closed = postJson(
+                "/api/claims/" + claimNumber + "/escalation-cover-decision",
+                supervisorBearer(),
+                "{\"rationale\":\"Agreed at revised figures.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":120000,\"remarks\":\"Revised.\"},"
+                        + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
+                        + "\"remarks\":\"Waiting period.\"}]}");
+        assertEquals(200, closed.statusCode(), closed.body());
+        assertTrue(closed.body().contains("\"status\":\"CLOSED\""), closed.body());
+        assertEquals("CLOSED", statusOf(claimNumber));
+        assertEquals("PARTIALLY_APPROVED", decisionOf(claimNumber));
+        assertEquals(0, new java.math.BigDecimal("110000").compareTo(
+                jdbcTemplate.queryForObject("SELECT amount FROM payment WHERE claim_id = ?",
+                        java.math.BigDecimal.class, idOf(claimNumber))),
+                "payment = 120000 - 10000 deductible");
+        assertNull(jdbcTemplate.queryForObject(
+                "SELECT authorized_by_id FROM payment WHERE claim_id = ?",
+                Long.class, idOf(claimNumber)),
+                "supervisor payments carry a NULL authorizer");
+
+        // Claimant sees the outcome + payable figure, never the internals.
+        String claimantView = get("/api/claims/" + claimNumber, claimantBearer()).body();
+        assertTrue(claimantView.contains("\"decision\":\"PARTIALLY_APPROVED\""),
+                claimantView);
+        assertTrue(claimantView.contains("\"approvedAmount\":120000"), claimantView);
+        assertTrue(claimantView.contains("\"netPayableTotal\":110000"), claimantView);
+        assertFalse(claimantView.contains("assessedAmount"), claimantView);
+    }
+
+    // --- supervisor reassign preserves stage/history/proposals --------------------------
+
+    @Test
+    void supervisorReassignPreservesStageVerificationAndProposals() throws Exception {
+        String claimNumber = driveToDecision();
+        String bearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, bearer);
+
+        HttpResponse<String> reassigned = postJson(
+                "/api/claims/" + claimNumber + "/reassign", supervisorBearer(),
+                "{\"level\":\"L2\"}");
+        assertEquals(200, reassigned.statusCode(), reassigned.body());
+        assertEquals("DECISION", stageOf(claimNumber),
+                "reassignment preserves the stage");
+        assertEquals(1, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", idOf(claimNumber)),
+                "proposals travel");
+        assertTrue(count("SELECT count(*) FROM verification WHERE claim_id = ?",
+                idOf(claimNumber)) >= 2,
+                "verification history travels");
+    }
+
+    // --- auth matrix -------------------------------------------------------------------------
+
+    @Test
+    void stagedEndpointAuthMatrix() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+
+        // Anonymous -> 401 everywhere.
+        assertEquals(401,
+                get("/api/claims/" + claimNumber + "/staged", null).statusCode());
+        assertEquals(401, postJson("/api/claims/" + claimNumber + "/review", null,
+                "{\"action\":\"ADVANCE\",\"rationale\":\"x\"}").statusCode());
+
+        // Claimant -> 403 on staged/review (their surface is need-info-response).
+        assertEquals(403,
+                get("/api/claims/" + claimNumber + "/staged", claimantBearer())
+                        .statusCode());
+        assertEquals(403, postJson("/api/claims/" + claimNumber + "/review",
+                claimantBearer(), "{\"action\":\"ADVANCE\",\"rationale\":\"x\"}")
+                .statusCode());
+
+        // Supervisor -> 403 on review (their surface is reassign + escalated decide).
+        assertEquals(403, postJson("/api/claims/" + claimNumber + "/review",
+                supervisorBearer(), "{\"action\":\"ADVANCE\",\"rationale\":\"x\"}")
+                .statusCode());
+
+        // Non-assignee adjuster -> 404.
+        assertEquals(404, get("/api/claims/" + claimNumber + "/staged",
+                JwtTestConfig.tokenFor("10000000-0000-0000-0000-000000000002",
+                        "adjuster_l1")).statusCode());
+
+        // Adjuster on the claimant round-trip -> 403.
+        assertEquals(403, postJson("/api/claims/" + claimNumber + "/need-info-response",
+                holderBearer(claimNumber), "{\"message\":\"x\"}").statusCode());
+    }
+
+    // --- helpers ---------------------------------------------------------------------------
+
+    private static final java.util.concurrent.atomic.AtomicInteger LOSS_DAY =
+            new java.util.concurrent.atomic.AtomicInteger(1);
+
+    private String fileCoverFnol(String coversJson) throws Exception {
+        return fileCoverFnolFor("POL-10001", "Ada Lovelace",
+                "ada.lovelace@example.test", coversJson);
+    }
+
+    private String fileCoverFnolFor(String policyNumber, String holderName,
+            String holderEmail, String coversJson) throws Exception {
+        // Unique loss date per filing: the duplicate guard keys on policy + loss
+        // date + cover set within 24h, so identical fixtures in one test file
+        // distinct claims (all safely in the past).
+        String lossDate = "2026-08-" + String.format("%02d",
+                LOSS_DAY.getAndIncrement() % 27 + 1);
+        java.util.Map<String, String> fields = new java.util.HashMap<>();
+        fields.put("policyNumber", policyNumber);
+        fields.put("holderName", holderName);
+        fields.put("holderEmail", holderEmail);
+        fields.put("lossDate", lossDate);
+        fields.put("lossLocation", "London");
+        fields.put("lossDescription", "Hospital stay plus follow-up visits.");
+        fields.put("covers", coversJson);
+        HttpResponse<String> response = post("/api/claims", claimantBearerFor(holderEmail),
+                multipart(fields));
+        assertEquals(201, response.statusCode(), response.body());
+        return response.body().replaceAll(".*\"claimNumber\":\"([^\"]+)\".*", "$1");
+    }
+
+    /** Files, advances, verifies, completes and assesses: returns a claim at DECISION. */
+    private String driveToDecision() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"HOSPITALIZATION\",\"claimedAmount\":200000},"
+                        + "{\"coverCode\":\"OPD\",\"claimedAmount\":40000}]");
+        driveClaimToDecision(claimNumber, holderBearer(claimNumber));
+        return claimNumber;
+    }
+
+    private String driveToVerification() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"HOSPITALIZATION\",\"claimedAmount\":200000},"
+                        + "{\"coverCode\":\"OPD\",\"claimedAmount\":40000}]");
+        String bearer = holderBearer(claimNumber);
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"ADVANCE\",\"rationale\":\"Verifying.\"}").statusCode());
+        HttpResponse<String> created = postJson(
+                "/api/claims/" + claimNumber + "/verifications", bearer,
+                "{\"type\":\"PHYSICAL\",\"notes\":\"Visiting the hospital.\"}");
+        assertEquals(200, created.statusCode(), created.body());
+        return claimNumber;
+    }
+
+    private void driveClaimToDecision(String claimNumber, String bearer) throws Exception {
+        driveClaimToDecision(claimNumber, bearer, null);
+    }
+
+    /**
+     * Assessment figures per cover; null = the default two-cover fixture
+     * (HOSPITALIZATION 180000 + OPD 25000). Single-cover filings pass their own
+     * figure keyed by the filed cover.
+     */
+    private void driveClaimToDecision(String claimNumber, String bearer,
+            java.util.Map<String, String> assessedByCover) throws Exception {
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"ADVANCE\",\"rationale\":\"Verifying.\"}").statusCode());
+        HttpResponse<String> created = postJson(
+                "/api/claims/" + claimNumber + "/verifications", bearer,
+                "{\"type\":\"DIGITAL\",\"notes\":\"Checking records.\"}");
+        assertEquals(200, created.statusCode(), created.body());
+        long verificationId = idOfVerification(created.body());
+        HttpResponse<String> completed = putJson(
+                "/api/claims/" + claimNumber + "/verifications/" + verificationId, bearer,
+                "{\"status\":\"COMPLETE\",\"outcome\":\"PASSED\",\"notes\":\"Match.\"}");
+        assertEquals(200, completed.statusCode(), completed.body());
+        String body;
+        if (assessedByCover == null) {
+            body = "{\"rationale\":\"Bills verified.\",\"covers\":["
+                    + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
+                    + "{\"coverCode\":\"OPD\",\"assessedAmount\":25000}]}";
+        } else {
+            StringBuilder covers = new StringBuilder();
+            for (java.util.Map.Entry<String, String> entry : assessedByCover.entrySet()) {
+                if (covers.length() > 0) {
+                    covers.append(",");
+                }
+                covers.append("{\"coverCode\":\"").append(entry.getKey())
+                        .append("\",\"assessedAmount\":").append(entry.getValue())
+                        .append("}");
+            }
+            body = "{\"rationale\":\"Bills verified.\",\"covers\":["
+                    + covers + "]}";
+        }
+        HttpResponse<String> assessed = putJson(
+                "/api/claims/" + claimNumber + "/assessment", bearer, body);
+        assertEquals(200, assessed.statusCode(), assessed.body());
+    }
+
+    private void proposeAboveL1(String claimNumber, String bearer) throws Exception {
+        HttpResponse<String> gated = postJson(
+                "/api/claims/" + claimNumber + "/cover-decision", bearer,
+                "{\"rationale\":\"Needs senior sign-off.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
+                        + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
+                        + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
+                        + "\"remarks\":\"Waiting period.\"}]}");
+        assertEquals(200, gated.statusCode(), gated.body());
+        assertTrue(gated.body().contains("\"proposalsSaved\":true"), gated.body());
+    }
+
+    /**
+     * Provisioning-gap helper (pair with {@link #restoreSeniorAdjusters}): removes
+     * L2/L3 adjusters so auto-referral finds no covering rung with a candidate.
+     * Restores by re-inserting (fresh ids, same seeded identities — mirroring
+     * ClaimDecisionIntegrationTest's gap test). Adjuster skills for the restored
+     * rows are re-seeded too (same product sets as V13).
+     */
+    private void deleteSeniorAdjusters() {
+        jdbcTemplate.update("DELETE FROM adjuster_skill WHERE adjuster_id IN "
+                + "(SELECT id FROM app_user WHERE level IN ('L2','L3'))");
+        jdbcTemplate.update("DELETE FROM app_user WHERE level IN ('L2','L3')");
+    }
+
+    private void restoreSeniorAdjusters() {
+        jdbcTemplate.update("INSERT INTO app_user (keycloak_sub, display_name, email,"
+                + " level) VALUES "
+                + "('10000000-0000-0000-0000-000000000003','Ines Kowalski',"
+                + "'ines.kowalski@claims.test','L2'),"
+                + "('10000000-0000-0000-0000-000000000006','Rahul Singh',"
+                + "'rahul.singh@claims.test','L2'),"
+                + "('10000000-0000-0000-0000-000000000007','Meera Nair',"
+                + "'meera.nair@claims.test','L3')");
+        jdbcTemplate.update("INSERT INTO adjuster_skill (adjuster_id, product_code) "
+                + "SELECT a.id, s.product_code FROM app_user a JOIN (VALUES "
+                + "('000000000003', 'AUTO'), ('000000000003', 'AUTO-COM'), "
+                + "('000000000003', 'HLTH-CRIT'), ('000000000006', 'HLTH-PLUS'), "
+                + "('000000000006', 'HLTH-CRIT'), ('000000000006', 'AUTO-COM'), "
+                + "('000000000007', 'HLTH-BASIC'), ('000000000007', 'HLTH-PLUS'), "
+                + "('000000000007', 'HLTH-CRIT'), ('000000000007', 'AUTO-STD'), "
+                + "('000000000007', 'AUTO-COM'), ('000000000007', 'PROP-HOME'), "
+                + "('000000000007', 'PROP-FIRE'), ('000000000007', 'HOME'), "
+                + "('000000000007', 'AUTO')) "
+                + "AS s(sub_frag, product_code) "
+                + "ON a.keycloak_sub LIKE '%' || s.sub_frag "
+                + "WHERE a.keycloak_sub IN "
+                + "('10000000-0000-0000-0000-000000000003', "
+                + "'10000000-0000-0000-0000-000000000006', "
+                + "'10000000-0000-0000-0000-000000000007')");
+    }
+
+    private long idOfVerification(String body) {
+        return Long.parseLong(body.replaceAll(".*\"id\":(\\d+).*", "$1"));
+    }
+
+    private Long idOf(String claimNumber) {
+        return jdbcTemplate.queryForObject("SELECT id FROM claim WHERE claim_number = ?",
+                Long.class, claimNumber);
+    }
+
+    private String statusOf(String claimNumber) {
+        return jdbcTemplate.queryForObject("SELECT status FROM claim WHERE claim_number = ?",
+                String.class, claimNumber);
+    }
+
+    private String stageOf(String claimNumber) {
+        return jdbcTemplate.queryForObject("SELECT stage FROM claim WHERE claim_number = ?",
+                String.class, claimNumber);
+    }
+
+    private String decisionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject("SELECT decision FROM claim WHERE claim_number = ?",
+                String.class, claimNumber);
+    }
+
+    private String assigneeSubOf(String claimNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT a.keycloak_sub FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+    }
+
+    private String bearerSub(String bearer) {
+        if (bearer == null) {
+            return null;
+        }
+        String[] parts = bearer.split("\\.");
+        String payload = new String(
+                java.util.Base64.getUrlDecoder().decode(parts[1]),
+                java.nio.charset.StandardCharsets.UTF_8);
+        return payload.replaceAll(".*\"sub\":\"([^\"]+)\".*", "$1");
+    }
+
+    private String holderBearer(String claimNumber) {
+        String sub = assigneeSubOf(claimNumber);
+        String level = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        return JwtTestConfig.tokenFor(sub, "adjuster_" + level.toLowerCase());
+    }
+
+    private String claimantBearer() {
+        return JwtTestConfig.tokenFor(CLAIMANT, "claimant");
+    }
+
+    private String claimantBearerFor(String holderEmail) {
+        if ("fatima.khan@example.test".equals(holderEmail)) {
+            return JwtTestConfig.tokenFor("sub-claimant-crit", "claimant");
+        }
+        return JwtTestConfig.tokenFor(CLAIMANT, "claimant");
+    }
+
+    private String supervisorBearer() {
+        return JwtTestConfig.tokenFor(SUB_SUPERVISOR, "supervisor");
+    }
+
+    private long count(String sql, Object... args) {
+        Long value = jdbcTemplate.queryForObject(sql, Long.class, args);
+        return value == null ? 0 : value;
+    }
+
+    private HttpResponse<String> postJson(String path, String bearer, String body)
+            throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> putJson(String path, String bearer, String body)
+            throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path))
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body));
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> get(String path, String bearer) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path)).GET();
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> post(String path, String bearer, byte[] body)
+            throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path))
+                .header("Content-Type", "multipart/form-data; boundary=" + BOUNDARY)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body));
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static byte[] multipart(java.util.Map<String, String> fields) {
+        try {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            for (java.util.Map.Entry<String, String> field : fields.entrySet()) {
+                out.write(("--" + BOUNDARY + "\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.write(("Content-Disposition: form-data; name=\"" + field.getKey()
+                        + "\"\r\n\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.write((field.getValue() + "\r\n")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+            out.write(("--" + BOUNDARY + "--\r\n")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return out.toByteArray();
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private int port() {
+        return Integer.parseInt(environment.getProperty("local.server.port"));
+    }
+}

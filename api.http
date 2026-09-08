@@ -165,6 +165,141 @@ Content-Type: application/json
   "rationale": "The reported damage is outside the policy coverage."
 }
 
+### Staged workflow — full view (assignee or SUPERVISOR). Stage (REVIEW | VERIFICATION
+# | DECISION), NEED_INFO state, per-cover money + outcomes + proposals, verification
+# history, and the actor's authority limit + basis for this product. 404 otherwise.
+GET {{host}}/api/claims/CLM-000001/staged
+Authorization: Bearer {{token}}
+
+### Staged workflow — review: advance REVIEW -> VERIFICATION (opens a PENDING
+# verification row). Rationale required. Returns the staged view.
+POST {{host}}/api/claims/CLM-000001/review
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "action": "ADVANCE",
+  "rationale": "Documents look consistent; verifying the hospital stay."
+}
+
+### Staged workflow — review: reject at REVIEW (closes DENIED, rationale = remarks).
+POST {{host}}/api/claims/CLM-000001/review
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "action": "REJECT",
+  "rationale": "The reported event is excluded by the policy clauses."
+}
+
+### Staged workflow — review: NEED_INFO (REVIEW or VERIFICATION only, never DECISION).
+# Parks the claim (status NEED_INFO, assignee cleared, prior stage kept) until the
+# claimant responds. Requested items required.
+POST {{host}}/api/claims/CLM-000001/review
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "action": "NEED_INFO",
+  "requestedItems": "Please upload the discharge summary and the final hospital bill."
+}
+
+### Staged workflow — open a verification (DIGITAL | PHYSICAL). Returns the row
+# (status IN_PROGRESS, performedBy = caller).
+POST {{host}}/api/claims/CLM-000001/verifications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "type": "DIGITAL",
+  "notes": "Checking the hospital records against the claimed dates."
+}
+
+### Staged workflow — update a verification. COMPLETE requires outcome + notes;
+# CANCELLED requires notes. Each write appends an audit row.
+PUT {{host}}/api/claims/CLM-000001/verifications/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": "COMPLETE",
+  "outcome": "PASSED",
+  "notes": "Dates and amounts match the hospital records.",
+  "evidenceRefs": "discharge-summary.pdf, final-bill.pdf"
+}
+
+### Staged workflow — assessment (VERIFICATION with a COMPLETE verification ->
+# DECISION). Per-cover assessed amounts: 0 <= assessed <= claimed and within the
+# cover sub-limit; assessed total within the remaining sum insured. Claim stays open
+# on any violation (400 naming the remaining). Rationale required.
+PUT {{host}}/api/claims/CLM-000001/assessment
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "covers": [
+    { "coverCode": "HOSPITALIZATION", "assessedAmount": 180000.00 },
+    { "coverCode": "OPD", "assessedAmount": 25000.00 }
+  ],
+  "rationale": "Bills verified; room-rent cap applied."
+}
+
+### Staged workflow — cover decision (claims WITH covers). Per-cover APPROVED |
+# REJECTED with approved/deductible/adjustment figures; net = max(approved -
+# deductible + adjustment, 0). Pure rejection closes DENIED (never gated); within
+# authority closes APPROVED (all approved) or PARTIALLY_APPROVED (mixed) with one
+# payment = sum of nets; above authority saves proposals (is_proposal) and the claim
+# STAYS open at DECISION for explicit referral — nothing moves by itself.
+POST {{host}}/api/claims/CLM-000001/cover-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rationale": "Within my authority; deductibles per the policy schedule.",
+  "covers": [
+    { "coverCode": "HOSPITALIZATION", "decision": "APPROVED", "approvedAmount": 80000.00, "remarks": "Bills verified." },
+    { "coverCode": "OPD", "decision": "REJECTED", "remarks": "OPD visits pre-date the policy waiting period." }
+  ]
+}
+
+### Staged workflow — refer upwards (DECISION with saved proposals only). Named
+# senior (higher rung whose limit covers the proposed total) or "auto": true (the
+# least-loaded skilled adjuster at the lowest covering rung; supervisor fallback
+# when no rung covers it). Stage preserved, proposals travel, caller loses access.
+POST {{host}}/api/claims/CLM-000001/refer
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "auto": true,
+  "reason": "Proposed total is above my L1 authority; needs senior sign-off."
+}
+
+### Staged workflow — NEED_INFO response (CLAIMANT, own claim in NEED_INFO only).
+# Returns the claim to its prior stage and reassigns it. Message optional.
+POST {{host}}/api/claims/CLM-000001/need-info-response
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "message": "Uploaded the discharge summary and the final bill."
+}
+
+### Staged workflow — supervisor cover-decision on an ESCALATED_SUPERVISOR claim
+# (ungated, rationale required, atomic close + payment = sum of nets). Legacy
+# no-cover claims keep the single-figure escalation-decision endpoint above.
+POST {{host}}/api/claims/CLM-000001/escalation-cover-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rationale": "Senior review agrees with the proposed figures as revised.",
+  "covers": [
+    { "coverCode": "HOSPITALIZATION", "decision": "APPROVED", "approvedAmount": 80000.00 },
+    { "coverCode": "OPD", "decision": "REJECTED", "remarks": "Outside the waiting period." }
+  ]
+}
+
 ### Authority config — list rows (SUPERVISOR only; 403 for adjusters/claimants). Each row:
 # product code + route level (classifies new FNOL claims) + L1/L2 approval limits (the gate).
 GET {{host}}/api/config/authority

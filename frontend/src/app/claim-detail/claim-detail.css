@@ -119,3 +119,118 @@
 .decision-actions {
   margin-top: var(--space-4);
 }
+
+/* Staged workflow: Review → Verification → Decision stepper. */
+.stage-stepper {
+  list-style: none;
+  display: flex;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0 0 var(--space-4);
+}
+
+.stage-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.stage-step__dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-step.is-current {
+  border-color: var(--accent-600);
+  color: var(--text-primary);
+}
+
+.stage-step.is-current .stage-step__dot {
+  background: var(--accent-600);
+  border-color: var(--accent-600);
+  color: #fff;
+}
+
+.stage-step.is-done .stage-step__dot {
+  border-color: var(--accent-600);
+  color: var(--accent-600);
+}
+
+.stage-step.is-locked {
+  opacity: 0.6;
+}
+
+/* Per-cover lists (review + decision grids). */
+.cover-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.cover-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+}
+
+.cover-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-3);
+}
+
+.cover-grid th,
+.cover-grid td {
+  text-align: left;
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+
+.cover-grid th.num,
+.cover-grid td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cover-grid td .input {
+  margin-bottom: var(--space-1);
+}
+
+.totals-line {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--space-3);
+}
+
+.refer-box {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.refer-box h3 {
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+}

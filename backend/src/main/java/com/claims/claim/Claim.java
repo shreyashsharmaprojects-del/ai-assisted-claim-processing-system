@@ -60,7 +60,7 @@ public class Claim {
     @Column(name = "reserve_amount")
     private BigDecimal reserveAmount;
 
-    /** APPROVED | DENIED; null until the claim is decided (slice 4). */
+    /** APPROVED | DENIED | PARTIALLY_APPROVED (V2-5); null until the claim is decided. */
     @Column(name = "decision")
     private String decision;
 
@@ -81,6 +81,18 @@ public class Claim {
 
     @Column(name = "closed_at")
     private Instant closedAt;
+
+    /** V2-4: workflow position — REVIEW | VERIFICATION | DECISION (orthogonal to status). */
+    @Column(name = "stage", nullable = false)
+    private String stage = "REVIEW";
+
+    /** V2-4: claimant-visible requested items while status is NEED_INFO; null otherwise. */
+    @Column(name = "need_info_reason")
+    private String needInfoReason;
+
+    /** V2-4: the stage the claim returns to when the claimant responds; null otherwise. */
+    @Column(name = "need_info_prior_stage")
+    private String needInfoPriorStage;
 
     protected Claim() {
         // for JPA
@@ -179,6 +191,30 @@ public class Claim {
         return closedAt;
     }
 
+    public String getStage() {
+        return stage;
+    }
+
+    public void setStage(String stage) {
+        this.stage = stage;
+    }
+
+    public String getNeedInfoReason() {
+        return needInfoReason;
+    }
+
+    public void setNeedInfoReason(String needInfoReason) {
+        this.needInfoReason = needInfoReason;
+    }
+
+    public String getNeedInfoPriorStage() {
+        return needInfoPriorStage;
+    }
+
+    public void setNeedInfoPriorStage(String needInfoPriorStage) {
+        this.needInfoPriorStage = needInfoPriorStage;
+    }
+
     /**
      * Approves an indemnity figure and closes the claim (slice 4). Call inside the decision
      * transaction; the matching payment row is recorded by the caller.
@@ -199,6 +235,18 @@ public class Claim {
     }
 
     /**
+     * V2-5: closes a multi-cover claim with a mixed outcome (some covers APPROVED,
+     * some REJECTED). {@code indemnityAmount} carries Σ approved (the V1-compatible
+     * headline figure); the payment row carries Σ net payable (recorded by the caller).
+     */
+    public void approvePartially(BigDecimal indemnityAmount, Instant at) {
+        this.decision = "PARTIALLY_APPROVED";
+        this.indemnityAmount = indemnityAmount;
+        this.status = "CLOSED";
+        this.closedAt = at;
+    }
+
+    /**
      * Moves the claim to the supervisor escalation state (no adjuster holds it). Used when a
      * decision amount exceeds the L2 authority limit, or when no L2 adjuster is provisioned
      * to take an escalation.
@@ -214,6 +262,11 @@ public class Claim {
         this.level = level;
     }
 
+    /** V2-4 NEED_INFO: parks the claim outside the assignee bucket (response reassigns). */
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     /**
      * Assigns this claim to an adjuster: records the assignee and moves the status to
      * UNDER_REVIEW. Call inside the creating transaction so the row is never observable
@@ -223,5 +276,11 @@ public class Claim {
         this.assignedAdjusterId = adjusterId;
         this.assignedAt = at;
         this.status = "UNDER_REVIEW";
+    }
+
+    /** V2-4 NEED_INFO: parks the claim outside the assignee bucket (response reassigns). */
+    public void setAssignedAdjusterId(Long adjusterId, Instant at) {
+        this.assignedAdjusterId = adjusterId;
+        this.assignedAt = at;
     }
 }

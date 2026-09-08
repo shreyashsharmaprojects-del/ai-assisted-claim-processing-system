@@ -1,5 +1,6 @@
 package com.claims.claim;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -22,7 +23,8 @@ import com.claims.policy.PolicyCoverRepository;
  * does not exist — is a 404, never a 403 (the response never reveals the number exists).
  *
  * <p>V2-2: filed covers ride the same view (claimant-supplied amounts + above-limit
- * flag only — the wall is unchanged).
+ * flag only — the wall is unchanged). V2-5: per-cover outcomes + the payable figure
+ * ride the same view on closure (never assessed/deductible/adjustment/proposals).
  */
 @RestController
 @RequestMapping("/api/claims")
@@ -65,8 +67,29 @@ public class ClaimantStatusController {
                     cover == null ? null : cover.getSubLimit(),
                     cover != null && row.getClaimedAmount() != null
                             && cover.getSubLimit() != null
-                            && row.getClaimedAmount().compareTo(cover.getSubLimit()) > 0));
+                            && row.getClaimedAmount().compareTo(cover.getSubLimit()) > 0,
+                    row.getDecision(),
+                    "APPROVED".equals(row.getDecision()) ? row.getApprovedAmount() : null,
+                    row.getDecisionRemarks()));
         }
-        return ClaimantClaimView.from(claim, covers, claim.getClaimedTotal());
+        return ClaimantClaimView.from(claim, covers, claim.getClaimedTotal(),
+                "CLOSED".equals(claim.getStatus()) ? netPayableTotal(rows) : null);
+    }
+
+    /**
+     * The payable figure on closure: Σ per-cover net on an APPROVED /
+     * PARTIALLY_APPROVED closure (the V1 headline amount rides the same view for
+     * legacy no-cover claims). Null while open — internal arithmetic never leaks.
+     */
+    private static BigDecimal netPayableTotal(List<ClaimCover> rows) {
+        BigDecimal total = BigDecimal.ZERO;
+        boolean any = false;
+        for (ClaimCover row : rows) {
+            if ("APPROVED".equals(row.getDecision()) && row.getNetPayable() != null) {
+                total = total.add(row.getNetPayable());
+                any = true;
+            }
+        }
+        return any ? total : null;
     }
 }

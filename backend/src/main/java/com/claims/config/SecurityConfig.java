@@ -61,6 +61,29 @@ public class SecurityConfig {
                         // No adjuster may act on either (403, never revealing a claim).
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/escalation-decision")
                                 .hasRole("SUPERVISOR")
+                        // V2-4/V2-5/V2-6: the staged workflow — adjuster review,
+                        // verifications, assessment, cover decision and explicit
+                        // referral (assignee-only inside the service; 404 otherwise).
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/staged")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/review",
+                                "/api/claims/*/verifications", "/api/claims/*/cover-decision",
+                                "/api/claims/*/refer")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3")
+                        .requestMatchers(HttpMethod.PUT, "/api/claims/*/verifications/*",
+                                "/api/claims/*/assessment")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3")
+                        // V2-4: the claimant NEED_INFO response (own claim only; 404
+                        // otherwise). Adjusters and supervisors are 403 here — the
+                        // claimant round-trip is theirs alone.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/need-info-response")
+                                .hasRole("CLAIMANT")
+                        // V2-6: the supervisor's cover-decision on escalated claims
+                        // (ungated, rationale required).
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/claims/*/escalation-cover-decision")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/escalations")
                                 .hasRole("SUPERVISOR")
                         // Production dashboard: aggregate ops numbers, supervisor-only.

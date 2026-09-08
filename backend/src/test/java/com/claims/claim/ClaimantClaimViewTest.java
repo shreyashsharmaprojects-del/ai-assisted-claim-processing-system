@@ -22,7 +22,10 @@ import org.junit.jupiter.api.Test;
  * test pins the exact shape so growing it is a conscious act. V2-2 deliberately adds
  * the filed covers + claimed total (claimant-supplied figures plus the above-limit flag
  * derived from the already-public sub-limit — wall-safe, never assessed/approved/
- * reserve/notes/assignee).
+ * reserve/notes/assignee). V2-5 deliberately adds per-cover outcomes (decision +
+ * approved amount + remarks) on the cover lines, the PARTIALLY_APPROVED aggregate
+ * decision, and netPayableTotal — the payable figure on closure. Assessed,
+ * deductible, adjustment, verifier and proposals stay off the wire.
  */
 class ClaimantClaimViewTest {
 
@@ -32,7 +35,7 @@ class ClaimantClaimViewTest {
                 .map(RecordComponent::getName)
                 .toList();
         assertEquals(List.of("claimNumber", "status", "steps", "decision", "indemnityAmount",
-                "decisionRemarks", "covers", "claimedTotal"), components,
+                "decisionRemarks", "covers", "claimedTotal", "netPayableTotal"), components,
                 "adding an internal field to the claimant view is a deliberate act");
     }
 
