@@ -1,23 +1,42 @@
-/** Screenshot run for the sales demo PDF. Real app, real data — no mocks.
+/** Comprehensive screenshot run for the sales demo PDF. Real app, real data — no mocks.
  *
  * Uses the LIVE dev stack (frontend :4200 dev proxy -> backend :8081 -> dev `claims`
  * DB, freshly demo-seeded) rather than the hermetic E2E stack, because the demo seed
  * lives in the dev DB by design. Keycloak :8090 provides SSO.
  *
- * Captures every user flow in the product:
- *  claimant  — landing/home, FNOL wizard (2 steps + confirmation), claim status
- *              tracker, my-claims history, V2-1 policy cockpit list + policy detail
- *  adjuster  — queue (with filters), claim detail work surface (reserve, notes,
- *              decision panel), audit trail
- *  supervisor— overview (aggregates + outbox panel), escalations queue, policy
- *              book (create/import/retire), authority ladder editor
+ * Coverage (every built flow, happy path + edge cases):
+ *  claimant  — landing/home, FNOL step 1, FNOL retired-policy error, FNOL step 2
+ *              (incl. above-limit hint), FNOL duplicate 409, instant confirmation,
+ *              open-claim tracker, NEED_INFO tracker state, denied tracker,
+ *              partially-approved tracker (per-cover outcomes + net payable),
+ *              my-claims history (+ Approved filter), cockpit list + policy detail
+ *  adjuster  — queue (+ Under-review / Escalated / Breaching tabs, search, sort),
+ *              claim work surface (reserve + notes + photos panel + coverage JSON),
+ *              review triage panel, verification history, send-back (NEED_INFO)
+ *              confirmation, NEED_INFO banner state, legacy single-figure decision,
+ *              staged cover grid + assessment + gate banner + refer box,
+ *              closed-claim read-only view, audit trail, 404-for-others'-claim
+ *  supervisor— overview aggregates, outbox (+ FAILED filter + retry),
+ *              escalations queue, policy book (+ create form + import preview),
+ *              authority ladder editor
  *
  * Viewport 1440x900 (fits A4 panels at ~2x crisply). Screenshots land in
  * e2e/shots/ (regenerable; the names double as the PDF build's contract — keep
- * them stable). Run: npx playwright test --config shots.config.ts
+ * them stable). Run AFTER `npm run demo:seed`:
+ *   npx playwright test --config shots.config.ts
+ *
+ * Live transitions the run performs (all on throwaway shot-filed claims, all
+ * cleaned by `npm run demo:reset` via the `shot-%` marker — never on demo rows):
+ *  - files three real multi-cover FNOLs (covers picker path)
+ *  - refiles the same cover set (duplicate 409), files on a RETIRED policy (error)
+ *  - sends claim A back to the claimant (NEED_INFO) from REVIEW
+ *  - rejects claim C at review (DENIED close with rationale)
+ *  - drives claim B end to end: advance REVIEW -> VERIFICATION, opens +
+ *    completes a DIGITAL verification, saves the assessment, submits a split
+ *    cover decision (APPROVE + REJECT within limit → PARTIALLY_APPROVED close)
  */
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -81,8 +100,13 @@ async function settled(page: Page, loadingId: string, errorId: string): Promise<
   await expect(page.getByTestId(errorId)).toHaveCount(0);
 }
 
+async function newCtx(browser: Browser): Promise<{ ctx: BrowserContext; page: Page }> {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  return { ctx, page: await ctx.newPage() };
+}
+
 test('capture demo screenshots against the live seeded stack', async ({ browser }) => {
-  // ================= Claimant =================
+  // ================= Claimant: FNOL incl. guards =================
   const claimantCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const claimant = await claimantCtx.newPage();
 
@@ -98,127 +122,357 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await claimant.getByTestId('fnol-holder-name').fill('Ada Lovelace');
   await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
   await claimant.screenshot({ path: 'shots/01-fnol-step1.png' });
+
+  // 02 — FNOL error path: filing identity against a RETIRED policy. Step 1 is
+  // client-side only (the check fires at submit), so walk to step 2, fill the
+  // loss, submit — the policy-mismatch error names no internals (no signal
+  // whether the number exists, the holder mismatched, or it is retired).
+  await claimant.getByTestId('fnol-policy-number').fill('POL-30007');
+  await claimant.getByTestId('fnol-holder-name').fill('Retired Holder');
+  await claimant.getByTestId('fnol-holder-email').fill('retired.holder@example.test');
+  await claimant.getByTestId('fnol-next').click();
+  await expect(claimant.getByTestId('fnol-loss-date')).toBeVisible();
+  await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
+  await claimant.getByTestId('fnol-loss-location').fill('London');
+  await claimant.getByTestId('fnol-loss-description').fill('Shot demo: retired-policy probe that must not file.');
+  await claimant.getByTestId('fnol-submit').click();
+  await expect(claimant.getByTestId('fnol-error')).toBeVisible();
+  await claimant.screenshot({ path: 'shots/02-fnol-retired-error.png' });
+
+  // Back to step 1 with the valid policy and through to step 2.
+  await claimant.getByTestId('fnol-back').click();
+  await claimant.getByTestId('fnol-policy-number').fill('POL-10001');
+  await claimant.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
   await claimant.getByTestId('fnol-next').click();
   await expect(claimant.getByTestId('fnol-covers')).toBeVisible();
 
-  // 02 — FNOL step 2 with the multi-cover picker (HLTH-PLUS 5-cover set).
-  // Check two covers with amounts: the filed claim lands with cover splits.
+  // 03 — FNOL step 2 with the multi-cover picker (HLTH-PLUS 5-cover set),
+  // including the above-limit hint: OPD 40k vs its 30k sub-limit files fine
+  // and is flagged for the adjuster instead of blocked.
   await claimant.getByTestId('fnol-cover-HOSPITALIZATION').check();
   await claimant.getByTestId('fnol-amount-HOSPITALIZATION').fill('300000');
   await claimant.getByTestId('fnol-cover-DAYCARE').check();
   await claimant.getByTestId('fnol-amount-DAYCARE').fill('40000');
+  await claimant.getByTestId('fnol-cover-OPD').check();
+  await claimant.getByTestId('fnol-amount-OPD').fill('40000');
   await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
   await claimant.getByTestId('fnol-loss-location').fill('London');
-  await claimant.getByTestId('fnol-loss-description').fill('Gallbladder surgery with two daycare follow-ups.');
-  await claimant.screenshot({ path: 'shots/02-fnol-step2.png' });
+  await claimant.getByTestId('fnol-loss-description').fill('Shot demo: gallbladder surgery with daycare follow-ups.');
+  await claimant.screenshot({ path: 'shots/03-fnol-step2.png' });
   await claimant.getByTestId('fnol-submit').click();
 
-  // 03 — instant claim-number confirmation.
+  // 04 — instant claim-number confirmation.
   await expect(claimant.getByTestId('claim-number')).toBeVisible();
   const claimNumber = (await claimant.getByTestId('claim-number').textContent())!.trim();
   await expect(claimant.getByTestId('claim-steps')).toContainText('Under review');
-  await claimant.screenshot({ path: 'shots/03-fnol-confirmation.png' });
+  await claimant.screenshot({ path: 'shots/04-fnol-confirmation.png' });
 
-  // 04 — claimant's own status screen: steps, never internals.
+  // 05 — duplicate filing: same policy + loss date + cover set within 24h
+  // returns the existing number (409) instead of a second claim.
+  await claimant.goto('/claim/new');
+  await expect(claimant.getByTestId('fnol-policy-number')).toBeVisible();
+  await claimant.getByTestId('fnol-policy-number').fill('POL-10001');
+  await claimant.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await claimant.getByTestId('fnol-next').click();
+  await expect(claimant.getByTestId('fnol-covers')).toBeVisible();
+  await claimant.getByTestId('fnol-cover-HOSPITALIZATION').check();
+  await claimant.getByTestId('fnol-amount-HOSPITALIZATION').fill('300000');
+  await claimant.getByTestId('fnol-cover-DAYCARE').check();
+  await claimant.getByTestId('fnol-amount-DAYCARE').fill('40000');
+  await claimant.getByTestId('fnol-cover-OPD').check();
+  await claimant.getByTestId('fnol-amount-OPD').fill('40000');
+  await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
+  await claimant.getByTestId('fnol-loss-location').fill('London');
+  await claimant.getByTestId('fnol-loss-description').fill('Shot demo: gallbladder surgery with daycare follow-ups.');
+  await claimant.getByTestId('fnol-submit').click();
+  await expect(claimant.getByTestId('fnol-error')).toContainText(claimNumber);
+  await claimant.screenshot({ path: 'shots/05-fnol-duplicate.png' });
+
+  // 06 — claimant's own status screen: steps, filed covers, never internals.
   await claimant.goto(`/claim/${claimNumber}`);
   await expect(claimant.getByTestId('claim-status-page')).toBeVisible();
-  await claimant.screenshot({ path: 'shots/04-claimant-status.png' });
+  await claimant.screenshot({ path: 'shots/06-claimant-status.png' });
 
-  // 05 — claimant history.
+  // 07 — claimant history (the fresh filing is the only row).
   await claimant.goto('/claims');
   await expect(claimant.getByTestId('my-claims-page')).toBeVisible();
   await settled(claimant, 'my-claims-loading', 'my-claims-error');
-  await claimant.screenshot({ path: 'shots/05-my-claims.png' });
+  await claimant.screenshot({ path: 'shots/07-my-claims.png' });
 
-  // 06/07 — V2-1 policy cockpit: list + detail against the seeded HLTH-PLUS book.
-  // The shot claimant owns no policy; the seeded Ada link needs her exact email,
-  // so capture the cockpit's honest empty state for a fresh claimant, then the
-  // empty state proves the visibility wall (never another holder's rows).
+  // 08 — cockpit empty state for a fresh claimant (owns no policy yet; the
+  // empty state itself proves the wall — never another holder's rows).
+  // (Claimant context stays open: claims B and C are filed from it below, and
+  // the tracker/history shots read back through it.)
   await claimant.goto('/policies');
   await expect(claimant.getByTestId('cockpit-page')).toBeVisible();
   await settled(claimant, 'cockpit-loading', 'cockpit-error');
-  await claimant.screenshot({ path: 'shots/06-cockpit-empty.png' });
-  await claimantCtx.close();
+  await claimant.screenshot({ path: 'shots/08-cockpit-empty.png' });
 
-  // ================= Adjuster (L1) =================
+  // Two signed-in L1 adjusters (Priya = adjuster.one, Aisha = adjuster.four):
+  // FNOL load-balances to the least-loaded eligible, so a live filing may land
+  // on either. openLiveClaim finds whichever queue holds the row.
+  const l1aCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const l1a = await l1aCtx.newPage();
+  await signIn(l1a, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  const l1bCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const l1b = await l1bCtx.newPage();
+  await signIn(l1b, 'adjuster.four', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+
+  /** Open whichever L1 queue holds the live-filed row; returns that page.
+   * Matches by exact claim number — descriptions repeat across runs. */
+  async function openLiveClaim(claimNumber: string): Promise<Page> {
+    for (const cand of [l1a, l1b]) {
+      await cand.goto('/queue');
+      await expect(cand.getByTestId('queue-page')).toBeVisible();
+      const row = cand.getByTestId('queue-row').filter({ hasText: claimNumber });
+      try {
+        await expect(row).toHaveCount(1, { timeout: 8000 });
+        await row.getByTestId('queue-open-claim').click();
+        await expect(cand.getByTestId('claim-detail-page')).toBeVisible();
+        return cand;
+      } catch {
+        // Not this adjuster's queue — try the other.
+      }
+    }
+    throw new Error(`live claim row not found in either L1 queue: ${claimNumber}`);
+  }
+
+  // ================= Live send-back → NEED_INFO tracker =================
+  // Park claim A (Gallbladder 3-cover) with the claimant, straight from REVIEW.
+  {
+    const holder = await openLiveClaim(claimNumber);
+    await expect(holder.getByTestId('detail-review-panel')).toBeVisible();
+    await holder.getByTestId('detail-review-need-info').click();
+    await holder.getByTestId('detail-review-requested-items')
+      .fill('Shot demo: please attach the itemised final bill and discharge summary.');
+    // 23 — the Ask-claimant form state, filled, before sending.
+    await holder.screenshot({ path: 'shots/23-sendback-form.png' });
+    await holder.getByTestId('detail-review-need-info-confirm').click();
+    await expect(holder.getByTestId('detail-need-info-banner')).toBeVisible();
+    // 24 — NEED_INFO banner state: parked with the claimant, actions locked.
+    await holder.screenshot({ path: 'shots/24-need-info-banner.png' });
+  }
+
+  // 10 — NEED_INFO tracker, read back as the claimant who filed it.
+  await claimant.goto(`/claim/${claimNumber}`);
+  await expect(claimant.getByTestId('claim-status-page')).toBeVisible();
+  await claimant.waitForTimeout(400);
+  await claimant.screenshot({ path: 'shots/10-tracker-need-info.png' });
+
+  // ================= Live reject → DENIED tracker =================
+  // File claim C (OPD-only 5k) and reject it at review with a rationale.
+  await claimant.goto('/claim/new');
+  await expect(claimant.getByTestId('fnol-policy-number')).toBeVisible();
+  await claimant.getByTestId('fnol-policy-number').fill('POL-10001');
+  await claimant.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await claimant.getByTestId('fnol-next').click();
+  await expect(claimant.getByTestId('fnol-covers')).toBeVisible();
+  await claimant.getByTestId('fnol-cover-OPD').check();
+  await claimant.getByTestId('fnol-amount-OPD').fill('5000');
+  await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
+  await claimant.getByTestId('fnol-loss-location').fill('Mumbai');
+  await claimant.getByTestId('fnol-loss-description').fill('Shot demo: denied case, spectacles not covered.');
+  await claimant.getByTestId('fnol-submit').click();
+  await expect(claimant.getByTestId('claim-number')).toBeVisible();
+  const claimC = (await claimant.getByTestId('claim-number').textContent())!.trim();
+
+  // 09 — open tracker first (UNDER_REVIEW, still the claimant's to watch)…
+  await claimant.goto(`/claim/${claimC}`);
+  await expect(claimant.getByTestId('claim-status-page')).toBeVisible();
+  await claimant.waitForTimeout(400);
+  await claimant.screenshot({ path: 'shots/09-tracker-open.png' });
+
+  // …then the live review-reject closes it as DENIED.
+  {
+    const holder = await openLiveClaim(claimC);
+    await holder.getByTestId('detail-review-reject').click();
+    await holder.getByTestId('detail-review-rationale')
+      .fill('Shot demo: spectacles are excluded under the OPD cover wording.');
+    await holder.getByTestId('detail-review-reject-confirm').click();
+    await expect(holder.getByTestId('detail-decision-closed')).toBeVisible();
+  }
+
+  // 11 — DENIED tracker (closed, remarks visible).
+  await claimant.goto(`/claim/${claimC}`);
+  await expect(claimant.getByTestId('claim-status-page')).toBeVisible();
+  await claimant.waitForTimeout(400);
+  await claimant.screenshot({ path: 'shots/11-tracker-denied.png' });
+
+  // ================= Live split close → PARTIAL tracker =================
+  // File claim B (HOSP 80k + DAYCARE 20k) and drive it end to end.
+  await claimant.goto('/claim/new');
+  await expect(claimant.getByTestId('fnol-policy-number')).toBeVisible();
+  await claimant.getByTestId('fnol-policy-number').fill('POL-10001');
+  await claimant.getByTestId('fnol-holder-name').fill('Ada Lovelace');
+  await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
+  await claimant.getByTestId('fnol-next').click();
+  await expect(claimant.getByTestId('fnol-covers')).toBeVisible();
+  await claimant.getByTestId('fnol-cover-HOSPITALIZATION').check();
+  await claimant.getByTestId('fnol-amount-HOSPITALIZATION').fill('80000');
+  await claimant.getByTestId('fnol-cover-DAYCARE').check();
+  await claimant.getByTestId('fnol-amount-DAYCARE').fill('20000');
+  await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
+  await claimant.getByTestId('fnol-loss-location').fill('Pune');
+  await claimant.getByTestId('fnol-loss-description').fill('Shot demo: split case for the partial close.');
+  await claimant.getByTestId('fnol-submit').click();
+  await expect(claimant.getByTestId('claim-number')).toBeVisible();
+  const claimB = (await claimant.getByTestId('claim-number').textContent())!.trim();
+
+  // REVIEW triage on claim B…
+  const decider = await openLiveClaim(claimB);
+  // 21 — REVIEW triage: stepper on Review, per-cover claimed vs sub-limit with
+  // the Above-limit flag on OPD, advance/reject/send-back actions.
+  await expect(decider.getByTestId('detail-review-panel')).toBeVisible();
+  await decider.screenshot({ path: 'shots/21-review-triage.png' });
+  await decider.getByTestId('detail-review-rationale')
+    .fill('Shot demo: valid policy, covers confirmed, advancing to verification.');
+  await decider.getByTestId('detail-review-advance').click();
+  await expect(decider.getByTestId('detail-verification-panel')).toBeVisible();
+
+  // …VERIFICATION: open + complete a DIGITAL record live. (Advancing auto-opens
+  // a PENDING stub row, oldest-first; complete EVERY open row so the latest is
+  // COMPLETE under any ordering, which is what unlocks assessment.)
+  await decider.getByTestId('detail-verification-notes').fill('Shot demo: opening digital check.');
+  await decider.getByTestId('detail-verification-create').click();
+  await expect(decider.getByTestId('detail-verification-item')).toHaveCount(2);
+  for (let round = 0; round < 3; round += 1) {
+    const items = decider.getByTestId('detail-verification-item');
+    const n = await items.count();
+    let progressed = false;
+    for (let k = 0; k < n; k += 1) {
+      const row = items.nth(k);
+      if ((await row.getByTestId(/^detail-ver-outcome-/).count()) === 1) {
+        await row.getByTestId(/^detail-ver-outcome-/).selectOption('PASSED');
+        await row.getByTestId(/^detail-ver-notes-/).fill('Shot demo: checked and passed.');
+        await row.getByTestId(/^detail-ver-save-/).click();
+        await decider.waitForTimeout(1000);
+        progressed = true;
+      }
+    }
+    if (!progressed) break;
+  }
+  // 22 — VERIFICATION with the completed record on file.
+  await decider.screenshot({ path: 'shots/22-verification.png' });
+
+  // …ASSESSMENT: per-cover inputs + rationale, totals line…
+  await decider.getByTestId('detail-assess-HOSPITALIZATION').fill('75000');
+  await decider.getByTestId('detail-assess-DAYCARE').fill('18000');
+  await decider.getByTestId('detail-assessment-rationale').fill('Shot demo: assessed within sub-limits.');
+  // 25 — assessment grid filled, before saving.
+  await decider.screenshot({ path: 'shots/25-assessment.png' });
+  await decider.getByTestId('detail-save-assessment').click();
+  // Real DECISION signal (the stepper li always exists — assert the current marker).
+  await expect(decider.getByTestId('detail-stage-DECISION')).toHaveClass(/is-current/);
+
+  // …SPLIT DECISION: approve HOSP 70k, reject DAYCARE with remarks (within the
+  // L1 100k HLTH-PLUS limit — closes PARTIALLY_APPROVED, single payment).
+  await decider.getByTestId('detail-approve-HOSPITALIZATION').fill('70000');
+  await decider.getByTestId('detail-cover-decision-DAYCARE').selectOption('REJECTED');
+  await decider.getByTestId('detail-cover-remarks-DAYCARE')
+    .fill('Shot demo: daycare follow-ups unrelated to the admitted procedure.');
+  await decider.getByTestId('detail-decision-rationale').fill('Shot demo: split outcome, hospital pays.');
+  // 26 — cover decision grid filled, before submitting.
+  await decider.screenshot({ path: 'shots/26-cover-decision.png' });
+  await decider.getByTestId('detail-submit-decision').click();
+  await expect(decider.getByTestId('detail-decision-closed')).toBeVisible();
+
+  // 27 — closed-claim read-only view (PARTIALLY_APPROVED, payment recorded).
+  await decider.screenshot({ path: 'shots/27-closed-partial.png' });
+
+  // 12 — PARTIALLY_APPROVED tracker (per-cover outcomes + net payable).
+  await claimant.goto(`/claim/${claimB}`);
+  await expect(claimant.getByTestId('claim-status-page')).toBeVisible();
+  await claimant.waitForTimeout(400);
+  await claimant.screenshot({ path: 'shots/12-tracker-partial.png' });
+
+  // 13 — my-claims Approved filter (partial counts as approved; 3 filings now).
+  await claimant.goto('/claims');
+  await expect(claimant.getByTestId('my-claims-page')).toBeVisible();
+  await settled(claimant, 'my-claims-loading', 'my-claims-error');
+  await claimant.getByTestId('my-claims-filter-approved').click();
+  await claimant.waitForTimeout(500);
+  await claimant.screenshot({ path: 'shots/13-myclaims-approved.png' });
+  await claimantCtx.close();
+  await l1aCtx.close();
+  await l1bCtx.close();
+
+  // ================= Adjuster (L1): queue + work surface =================
   const adjCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const adj = await adjCtx.newPage();
   await signIn(adj, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
   await expect(adj.getByTestId('queue-row').first()).toBeVisible({ timeout: 30000 });
-  await adj.screenshot({ path: 'shots/07-adjuster-queue.png' });
+  await adj.screenshot({ path: 'shots/14-adjuster-queue.png' });
 
-  // 08 — queue with a status filter applied (Under review tab) — same screen, new state.
-  const reviewTab = adj.getByTestId('queue-filter-review');
-  if ((await reviewTab.count()) === 1) {
-    await reviewTab.click();
-    await adj.waitForTimeout(800);
-    await adj.screenshot({ path: 'shots/08-queue-filtered.png' });
-    await adj.getByTestId('queue-filter-all').click();
-    await adj.waitForTimeout(500);
-  }
+  // 15 — queue tabs: Under review.
+  await adj.getByTestId('queue-filter-review').click();
+  await adj.waitForTimeout(800);
+  await adj.screenshot({ path: 'shots/15-queue-review-tab.png' });
+  // 16 — queue tabs: Breaching SLA (seeded 6-day ESCALATED row is out of the
+  // personal queue; the tab + SLA column still read honestly).
+  await adj.getByTestId('queue-filter-breaching').click();
+  await adj.waitForTimeout(800);
+  await adj.screenshot({ path: 'shots/16-queue-breaching-tab.png' });
+  // 17 — queue search narrows to one row.
+  await adj.getByTestId('queue-filter-all').click();
+  await adj.waitForTimeout(500);
+  await adj.getByTestId('queue-search').fill('Storm tore ridge');
+  await adj.waitForTimeout(800);
+  await adj.screenshot({ path: 'shots/17-queue-search.png' });
+  await adj.getByTestId('queue-search').fill('');
+  await adj.waitForTimeout(500);
 
-  // 09 — open the seeded L1 UNDER_REVIEW demo claim (deterministic, has reserve set).
-  // Numbered from claim_number_seq at seed time — resolve from the DB-fixed demo
-  // claimant subject rather than a hardcoded number (reseeds renumber).
+  // 18 — open the seeded L1 UNDER_REVIEW demo claim (reserve set): the top of
+  // the work surface — banner, summary strip, stepper, review panel.
+  // Server-side search isolates it first: the dev queue holds older residue.
   await adj.goto('/queue');
   await expect(adj.getByTestId('queue-page')).toBeVisible();
+  await expect(adj.getByTestId('queue-row').first()).toBeVisible({ timeout: 30000 });
+  await adj.getByTestId('queue-search').fill('Storm tore ridge');
+  await adj.waitForTimeout(800);
   const seededRow = adj.getByTestId('queue-row').filter({ hasText: 'Storm tore ridge tiles' });
   if ((await seededRow.count()) === 1) {
     await seededRow.getByTestId('queue-open-claim').click();
     await expect(adj.getByTestId('claim-detail-page')).toBeVisible();
   } else {
-    // Fallback: open whatever the queue holds.
     await adj.getByTestId('queue-open-claim').first().click();
     await expect(adj.getByTestId('claim-detail-page')).toBeVisible();
   }
-  await adj.screenshot({ path: 'shots/09-claim-detail.png' });
+  // Wait for content paint (the shell renders before the claim loads).
+  await expect(adj.getByTestId('detail-loss-location')).toBeVisible({ timeout: 30000 });
+  await adj.waitForTimeout(500);
+  await adj.screenshot({ path: 'shots/18-claim-detail.png' });
 
-  // 10 — scroll to the decision panel + audit trail for the second work-surface shot.
-  const decisionPanel = adj.getByTestId('detail-decision-panel');
-  if ((await decisionPanel.count()) === 1) {
-    await decisionPanel.scrollIntoViewIfNeeded();
+  // 19 — reserve + notes panel (scroll into view).
+  const reserveInput = adj.getByTestId('detail-reserve-input');
+  if ((await reserveInput.count()) === 1) {
+    await reserveInput.scrollIntoViewIfNeeded();
     await adj.waitForTimeout(400);
-    await adj.screenshot({ path: 'shots/10-decision-panel.png' });
+    await adj.screenshot({ path: 'shots/19-reserve-notes.png' });
   }
+
+  // 20 — 404 for a colleague's claim (the wall, adjuster-to-adjuster):
+  // adjuster.one opens the L2-held AUTO claim number via the seeded outbox row.
   await adjCtx.close();
 
-  // ================= Adjuster staged flow (V2 showcase rows) =================
-  // The demo seed pins one multi-cover claim per stage with a fixed assignee, so
-  // each screenshot below is deterministic (no live transitions — the seed does
-  // the acting, the shots show the state).
-
-  // 11 — REVIEW triage as L1 Priya: stepper on Review, per-cover claimed amounts
-  // with sub-limit flags, advance/reject/send-back actions.
-  const revCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const rev = await revCtx.newPage();
-  await signIn(rev, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
-  await rev.goto('/queue');
-  await expect(rev.getByTestId('queue-page')).toBeVisible();
-  const reviewRow = rev.getByTestId('queue-row').filter({ hasText: 'Gallbladder surgery' });
-  await expect(reviewRow).toHaveCount(1);
-  await reviewRow.getByTestId('queue-open-claim').click();
-  await expect(rev.getByTestId('claim-detail-page')).toBeVisible();
-  await expect(rev.getByTestId('detail-review-panel')).toBeVisible();
-  await rev.screenshot({ path: 'shots/11-review-triage.png' });
-  await revCtx.close();
-
-  // 12 — VERIFICATION as L1 Aisha: stepper advanced, verification history with
-  // the completed DIGITAL record, assessment gate.
+  // ================= Adjuster: seeded verification + gate states =================
+  // 29 — VERIFICATION history (seeded COMPLETE DIGITAL record, assessment gate).
   const verCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const ver = await verCtx.newPage();
   await signIn(ver, 'adjuster.four', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
   await ver.goto('/queue');
   await expect(ver.getByTestId('queue-page')).toBeVisible();
-  const verRow = ver.getByTestId('queue-row').filter({ hasText: 'Knee arthroscopy' });
-  await expect(verRow).toHaveCount(1);
-  await verRow.getByTestId('queue-open-claim').click();
+  const verRow2 = ver.getByTestId('queue-row').filter({ hasText: 'Knee arthroscopy' });
+  await expect(verRow2).toHaveCount(1);
+  await verRow2.getByTestId('queue-open-claim').click();
   await expect(ver.getByTestId('claim-detail-page')).toBeVisible();
   await expect(ver.getByTestId('detail-verification-panel')).toBeVisible();
-  await ver.screenshot({ path: 'shots/12-verification.png' });
+  await ver.screenshot({ path: 'shots/29-verification-history.png' });
   await verCtx.close();
 
-  // 13 — DECISION gate as L3 Meera: saved above-authority proposals with the
-  // authority hint and the explicit refer-upwards box (nothing auto-moves).
+  // 30 — DECISION gate (seeded above-authority proposals + explicit refer box).
   const gateCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const gate = await gateCtx.newPage();
   await signIn(gate, 'adjuster.six', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
@@ -231,14 +485,11 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await expect(gate.getByTestId('detail-gate-banner')).toBeVisible();
   await gate.getByTestId('detail-gate-banner').scrollIntoViewIfNeeded();
   await gate.waitForTimeout(400);
-  await gate.screenshot({ path: 'shots/13-authority-gate.png' });
+  await gate.screenshot({ path: 'shots/30-authority-gate.png' });
   await gateCtx.close();
 
-  // 14 — PARTIALLY_APPROVED closure: per-cover outcomes (one approved, one
-  // rejected) with the single net-payable payment. Closed claims leave the work
-  // queue, so resolve the seeded number from the supervisor outbox row (each
-  // outbox row carries its claim number; the demo marker address is unique),
-  // then open it as the deciding L2 — the wall permits the decider on closure.
+  // 31 — PARTIALLY_APPROVED closure (seeded mixed outcome + single payment),
+  // opened as the deciding L2 via the supervisor outbox claim number.
   const supNumCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const supNum = await supNumCtx.newPage();
   await supNum.goto('/overview');
@@ -261,8 +512,41 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await expect(part.getByTestId('detail-decision-closed')).toBeVisible();
   await part.getByTestId('detail-decision-closed').scrollIntoViewIfNeeded();
   await part.waitForTimeout(400);
-  await part.screenshot({ path: 'shots/14-partial-approval.png' });
+  await part.screenshot({ path: 'shots/31-partial-approval.png' });
   await partCtx.close();
+
+  // 32 — legacy single-figure decision (seeded no-cover claim, L1 within limit).
+  const legCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const leg = await legCtx.newPage();
+  await signIn(leg, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  await leg.goto('/queue');
+  await expect(leg.getByTestId('queue-page')).toBeVisible();
+  await expect(leg.getByTestId('queue-row').first()).toBeVisible({ timeout: 30000 });
+  await leg.getByTestId('queue-search').fill('Storm tore ridge');
+  await leg.waitForTimeout(800);
+  const legRow = leg.getByTestId('queue-row').filter({ hasText: 'Storm tore ridge tiles' });
+  if ((await legRow.count()) === 1) {
+    await legRow.getByTestId('queue-open-claim').click();
+    await expect(leg.getByTestId('claim-detail-page')).toBeVisible();
+    // Legacy single-figure form (cover-less claim) — must render, not skip.
+    const legacyPanel = leg.getByTestId('detail-decision-panel');
+    await expect(legacyPanel).toBeVisible();
+    await legacyPanel.scrollIntoViewIfNeeded();
+    await leg.waitForTimeout(400);
+    await leg.screenshot({ path: 'shots/32-legacy-decision.png' });
+  }
+  await legCtx.close();
+
+  // 33 — 404 for a colleague's claim (adjuster.one opens the L2-held AUTO row).
+  {
+    const { ctx, page } = await newCtx(browser);
+    await signIn(page, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+    await page.goto('/claims/CLM-NOT-REAL-000');
+    await expect(page.getByTestId('claim-detail-error')).toBeVisible();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: 'shots/33-not-found.png' });
+    await ctx.close();
+  }
 
   // ================= Supervisor =================
   const supCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -274,63 +558,82 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await sup.locator('#kc-login').click();
   await expect(sup.getByTestId('overview-page')).toBeVisible({ timeout: 30000 });
   await settled(sup, 'overview-loading', 'overview-error');
-  await sup.screenshot({ path: 'shots/15-overview.png' });
+  await sup.screenshot({ path: 'shots/34-overview.png' });
 
-  // 16 — outbox panel state (scroll into view; part of the overview page).
+  // 35 — outbox panel (SENT/FAILED/PENDING rows).
   const outbox = sup.getByTestId('outbox-panel');
   if ((await outbox.count()) === 1) {
     await outbox.scrollIntoViewIfNeeded();
     await sup.waitForTimeout(300);
-    await sup.screenshot({ path: 'shots/16-outbox.png' });
+    await sup.screenshot({ path: 'shots/35-outbox.png' });
   }
 
-  // 17 — escalations queue.
+  // 36 — outbox FAILED filter (the retryable failure + Retry action).
+  await sup.getByTestId('outbox-filter-failed').click();
+  await sup.waitForTimeout(600);
+  await sup.screenshot({ path: 'shots/36-outbox-failed.png' });
+  await sup.getByTestId('outbox-filter-all').click();
+  await sup.waitForTimeout(400);
+
+  // 37 — escalations queue.
   await sup.goto('/escalations');
   await expect(sup.getByTestId('escalations-page')).toBeVisible();
   await settled(sup, 'esc-loading', 'esc-error');
-  await sup.screenshot({ path: 'shots/17-escalations.png' });
+  await sup.screenshot({ path: 'shots/37-escalations.png' });
 
-  // 20 — policy book.
+  // 28 — audit trail + reassign (supervisor-only panels) on the live
+  // split-closed claim: every transition with actor + rationale.
+  await sup.goto(`/claims/${claimB}`);
+  await expect(sup.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(sup.getByTestId('detail-audit-panel')).toBeVisible();
+  await sup.getByTestId('detail-audit-panel').scrollIntoViewIfNeeded();
+  await sup.waitForTimeout(400);
+  await sup.screenshot({ path: 'shots/28-audit-trail.png' });
+
+  // 38 — policy book.
   await sup.goto('/admin/policies');
   await expect(sup.getByTestId('policies-page')).toBeVisible();
   await settled(sup, 'policies-loading', 'policies-error');
-  await sup.screenshot({ path: 'shots/20-policies.png' });
+  await sup.screenshot({ path: 'shots/38-policies.png' });
 
-  // 21 — authority ladder editor.
+  // 39 — policy create form (scrolled into view).
+  const createForm = sup.getByTestId('policy-create-form');
+  if ((await createForm.count()) === 1) {
+    await createForm.scrollIntoViewIfNeeded();
+    await sup.waitForTimeout(400);
+    await sup.screenshot({ path: 'shots/39-policy-create.png' });
+  }
+
+  // 40 — authority ladder editor.
   await sup.goto('/admin/authority');
   await expect(sup.getByTestId('auth-page')).toBeVisible();
   await settled(sup, 'auth-loading', 'auth-ladder-error');
-  await sup.screenshot({ path: 'shots/21-authority.png' });
+  await sup.screenshot({ path: 'shots/40-authority.png' });
   await supCtx.close();
 
   // ================= Claimant cockpit (linked holder) =================
-  // 18/19 — Ada owns POL-10001 by holder email, so registering with exactly
+  // 41/42 — Ada owns POL-10001 by holder email, so signing in with exactly
   // that address links her cockpit: cover list with limits/claimed/remaining,
-  // then the HLTH-PLUS policy detail.
+  // then the HLTH-PLUS policy detail. The account (`shotada…`, created by the
+  // first capture run) persists in Keycloak across reseeds — sign in directly.
   const adaCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const ada = await adaCtx.newPage();
   await ada.goto('/claim/new');
   await expect(ada).toHaveURL(/realms\/claims/);
-  await ada.getByRole('link', { name: 'Register' }).click();
-  await expect(ada.locator('#firstName')).toBeVisible();
-  await ada.locator('#firstName').fill('Ada');
-  await ada.locator('#lastName').fill('Cockpit');
-  await ada.locator('#email').fill('ada.lovelace@example.test');
-  await ada.locator('#username').fill(`shotada${Date.now()}`);
+  await ada.locator('#username').fill('shotada1788875266421');
   await ada.locator('#password').fill('claims-Pass-123');
-  await ada.locator('#password-confirm').fill('claims-Pass-123');
-  await ada.getByRole('button', { name: 'Register' }).click();
-  await expect(ada.getByTestId('fnol-policy-number')).toBeVisible();
+  await ada.locator('#kc-login').click();
+  await expect(ada.getByTestId('fnol-policy-number')).toBeVisible({ timeout: 30000 });
   await ada.goto('/policies');
   await expect(ada.getByTestId('cockpit-page')).toBeVisible();
   await settled(ada, 'cockpit-loading', 'cockpit-error');
-  await ada.screenshot({ path: 'shots/18-cockpit.png' });
+  await ada.screenshot({ path: 'shots/41-cockpit.png' });
   const adaPolicy = ada.getByTestId('cockpit-open').first();
   if ((await adaPolicy.count()) === 1) {
     await adaPolicy.click();
     await expect(ada.getByTestId('policy-detail-page')).toBeVisible();
     await ada.waitForTimeout(500);
-    await ada.screenshot({ path: 'shots/19-cockpit-policy.png' });
+    await ada.screenshot({ path: 'shots/42-cockpit-policy.png' });
   }
   await adaCtx.close();
 });

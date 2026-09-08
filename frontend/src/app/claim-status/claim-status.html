@@ -54,11 +54,19 @@
                 @if (cover.aboveLimit) {
                   <span class="cover-flag">Above sub-limit — flagged for review</span>
                 }
+                @if (cover.decision === 'APPROVED' && cover.approvedAmount != null) {
+                  <span class="cover-outcome"> — approved {{ money(cover.approvedAmount) }}</span>
+                } @else if (cover.decision === 'REJECTED') {
+                  <span class="cover-outcome"> — not approved{{ cover.decisionRemarks ? ': ' + cover.decisionRemarks : '' }}</span>
+                }
               </li>
             }
           </ul>
           @if (claim.claimedTotal != null) {
             <p class="cover-total">Total claimed: <strong data-testid="status-total">{{ money(claim.claimedTotal) }}</strong></p>
+          }
+          @if (claim.netPayableTotal != null) {
+            <p class="cover-total">Net payable: <strong data-testid="status-net">{{ money(claim.netPayableTotal) }}</strong></p>
           }
         </div>
       </section>
@@ -86,14 +94,21 @@
       </div>
     </section>
 
-    @if (claim.decision === 'APPROVED') {
+    @if (claim.decision === 'APPROVED' || claim.decision === 'PARTIALLY_APPROVED') {
       <section class="panel panel--approved" data-testid="claim-decision-approved">
         <div class="panel__body">
           <p class="kv__label">Outcome</p>
-          <p class="decision-summary">
-            Your claim has been approved. We will pay
-            <strong data-testid="claim-decision-amount">{{ approvedAmountText() }}</strong>.
-          </p>
+          @if (claim.decision === 'PARTIALLY_APPROVED') {
+            <p class="decision-summary" data-testid="claim-decision-partial">
+              Your claim has been partially approved. We will pay
+              <strong data-testid="claim-decision-amount">{{ approvedAmountText() }}</strong>.
+            </p>
+          } @else {
+            <p class="decision-summary">
+              Your claim has been approved. We will pay
+              <strong data-testid="claim-decision-amount">{{ approvedAmountText() }}</strong>.
+            </p>
+          }
         </div>
       </section>
     } @else if (claim.decision === 'DENIED') {

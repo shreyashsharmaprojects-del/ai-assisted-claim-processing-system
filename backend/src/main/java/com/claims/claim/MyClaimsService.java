@@ -49,6 +49,7 @@ public class MyClaimsService {
             rs.getObject("created_at", java.time.OffsetDateTime.class),
             rs.getString("decision"),
             "APPROVED".equals(rs.getString("decision"))
+                    || "PARTIALLY_APPROVED".equals(rs.getString("decision"))
                     ? rs.getBigDecimal("indemnity_amount")
                     : null,
             "DENIED".equals(rs.getString("decision"))

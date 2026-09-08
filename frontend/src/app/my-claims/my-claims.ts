@@ -14,7 +14,7 @@ export interface MyClaimRow {
   productCode: string;
   lossDate: string;
   createdAt: string;
-  decision?: 'APPROVED' | 'DENIED' | null;
+  decision?: 'APPROVED' | 'PARTIALLY_APPROVED' | 'DENIED' | null;
   indemnityAmount?: number | null;
   decisionRemarks?: string | null;
 }

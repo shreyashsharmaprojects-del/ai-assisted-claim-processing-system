@@ -13,6 +13,9 @@ interface FiledCover {
   aboveLimit: boolean;
   displayName?: string | null;
   subLimit?: number | null;
+  decision?: string | null;
+  approvedAmount?: number | null;
+  decisionRemarks?: string | null;
 }
 
 interface ClaimantClaimView {
@@ -21,11 +24,12 @@ interface ClaimantClaimView {
   steps: string[];
   lossDate?: string | null;
   /** Present only once the claim is decided (omitted from the wire when null). */
-  decision?: 'APPROVED' | 'DENIED' | null;
+  decision?: 'APPROVED' | 'PARTIALLY_APPROVED' | 'DENIED' | null;
   indemnityAmount?: number | null;
   decisionRemarks?: string | null;
   covers?: FiledCover[] | null;
   claimedTotal?: number | null;
+  netPayableTotal?: number | null;
 }
 
 /** The claimant's own claim status screen: only claimant-visible data. */
@@ -53,7 +57,17 @@ export class ClaimStatus {
 
   /** The approved amount, rendered in pounds with two decimals. */
   protected approvedAmountText(): string {
-    return formatMoney(this.view()?.indemnityAmount);
+    return formatMoney(this.netPayable() ?? this.view()?.indemnityAmount);
+  }
+
+  /** Net payable on an approved-like closure (null while open / legacy). */
+  protected netPayable(): number | null | undefined {
+    return this.view()?.netPayableTotal;
+  }
+
+  /** True on a partially-approved closure (mixed per-cover outcomes). */
+  protected isPartial(): boolean {
+    return this.view()?.decision === 'PARTIALLY_APPROVED';
   }
 
   /** Claimed amount per cover / filed total, in rupees with two decimals. */

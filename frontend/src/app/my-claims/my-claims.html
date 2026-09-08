@@ -120,7 +120,7 @@
                   <td data-testid="my-claims-product"><span class="chip">{{ claim.productCode }}</span></td>
                   <td data-testid="my-claims-loss-date">{{ lossDateText(claim) }}</td>
                   <td class="num" data-testid="my-claims-decision">
-                    @if (claim.decision === 'APPROVED') {
+                    @if (claim.decision === 'APPROVED' || claim.decision === 'PARTIALLY_APPROVED') {
                       <span>{{ amountText(claim) }}</span>
                     } @else if (claim.decision === 'DENIED') {
                       <span class="muted">Not approved</span>
