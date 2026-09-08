@@ -11,6 +11,9 @@ END $$;
 
 BEGIN;
 
+DELETE FROM email_outbox WHERE claim_id IN (SELECT id FROM claim WHERE claimant_sub LIKE 'demo-%');
+DELETE FROM verification WHERE claim_id IN (SELECT id FROM claim WHERE claimant_sub LIKE 'demo-%');
+DELETE FROM claim_cover WHERE claim_id IN (SELECT id FROM claim WHERE claimant_sub LIKE 'demo-%');
 DELETE FROM payment WHERE claim_id IN (SELECT id FROM claim WHERE claimant_sub LIKE 'demo-%');
 DELETE FROM internal_note WHERE claim_id IN (SELECT id FROM claim WHERE claimant_sub LIKE 'demo-%');
 DELETE FROM fnol_submission WHERE claimant_sub LIKE 'demo-%';

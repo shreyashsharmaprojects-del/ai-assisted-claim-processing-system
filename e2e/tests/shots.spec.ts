@@ -45,6 +45,11 @@ function requiredEnv(name: string): string {
 const stamp = Date.now();
 const claimantUser = `shotclaim${stamp}`;
 const claimantEmail = `${claimantUser}@example.test`;
+// Per-run loss date (past, unique per day-bucket): the duplicate-FNOL guard
+// rejects same policy + date + cover set within 24h, and the dev DB persists.
+const shotLossDate = new Date(Date.UTC(2020, 0, 1) + (Math.floor(stamp / 1000) % 2000) * 86400000)
+  .toISOString()
+  .slice(0, 10);
 
 async function registerClaimant(page: Page): Promise<void> {
   await page.goto('/claim/new');
@@ -94,12 +99,17 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await claimant.getByTestId('fnol-holder-email').fill('ada.lovelace@example.test');
   await claimant.screenshot({ path: 'shots/01-fnol-step1.png' });
   await claimant.getByTestId('fnol-next').click();
-  await expect(claimant.getByTestId('fnol-loss-date')).toBeVisible();
+  await expect(claimant.getByTestId('fnol-covers')).toBeVisible();
 
-  // 02 — FNOL step 2 (loss details).
-  await claimant.getByTestId('fnol-loss-date').fill('2026-09-01');
+  // 02 — FNOL step 2 with the multi-cover picker (HLTH-PLUS 5-cover set).
+  // Check two covers with amounts: the filed claim lands with cover splits.
+  await claimant.getByTestId('fnol-cover-HOSPITALIZATION').check();
+  await claimant.getByTestId('fnol-amount-HOSPITALIZATION').fill('300000');
+  await claimant.getByTestId('fnol-cover-DAYCARE').check();
+  await claimant.getByTestId('fnol-amount-DAYCARE').fill('40000');
+  await claimant.getByTestId('fnol-loss-date').fill(shotLossDate);
   await claimant.getByTestId('fnol-loss-location').fill('London');
-  await claimant.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
+  await claimant.getByTestId('fnol-loss-description').fill('Gallbladder surgery with two daycare follow-ups.');
   await claimant.screenshot({ path: 'shots/02-fnol-step2.png' });
   await claimant.getByTestId('fnol-submit').click();
 
@@ -172,6 +182,88 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   }
   await adjCtx.close();
 
+  // ================= Adjuster staged flow (V2 showcase rows) =================
+  // The demo seed pins one multi-cover claim per stage with a fixed assignee, so
+  // each screenshot below is deterministic (no live transitions — the seed does
+  // the acting, the shots show the state).
+
+  // 11 — REVIEW triage as L1 Priya: stepper on Review, per-cover claimed amounts
+  // with sub-limit flags, advance/reject/send-back actions.
+  const revCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const rev = await revCtx.newPage();
+  await signIn(rev, 'adjuster.one', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  await rev.goto('/queue');
+  await expect(rev.getByTestId('queue-page')).toBeVisible();
+  const reviewRow = rev.getByTestId('queue-row').filter({ hasText: 'Gallbladder surgery' });
+  await expect(reviewRow).toHaveCount(1);
+  await reviewRow.getByTestId('queue-open-claim').click();
+  await expect(rev.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(rev.getByTestId('detail-review-panel')).toBeVisible();
+  await rev.screenshot({ path: 'shots/11-review-triage.png' });
+  await revCtx.close();
+
+  // 12 — VERIFICATION as L1 Aisha: stepper advanced, verification history with
+  // the completed DIGITAL record, assessment gate.
+  const verCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ver = await verCtx.newPage();
+  await signIn(ver, 'adjuster.four', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  await ver.goto('/queue');
+  await expect(ver.getByTestId('queue-page')).toBeVisible();
+  const verRow = ver.getByTestId('queue-row').filter({ hasText: 'Knee arthroscopy' });
+  await expect(verRow).toHaveCount(1);
+  await verRow.getByTestId('queue-open-claim').click();
+  await expect(ver.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(ver.getByTestId('detail-verification-panel')).toBeVisible();
+  await ver.screenshot({ path: 'shots/12-verification.png' });
+  await verCtx.close();
+
+  // 13 — DECISION gate as L3 Meera: saved above-authority proposals with the
+  // authority hint and the explicit refer-upwards box (nothing auto-moves).
+  const gateCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const gate = await gateCtx.newPage();
+  await signIn(gate, 'adjuster.six', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  await gate.goto('/queue');
+  await expect(gate.getByTestId('queue-page')).toBeVisible();
+  const gateRow = gate.getByTestId('queue-row').filter({ hasText: 'Liver transplant' });
+  await expect(gateRow).toHaveCount(1);
+  await gateRow.getByTestId('queue-open-claim').click();
+  await expect(gate.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(gate.getByTestId('detail-gate-banner')).toBeVisible();
+  await gate.getByTestId('detail-gate-banner').scrollIntoViewIfNeeded();
+  await gate.waitForTimeout(400);
+  await gate.screenshot({ path: 'shots/13-authority-gate.png' });
+  await gateCtx.close();
+
+  // 14 — PARTIALLY_APPROVED closure: per-cover outcomes (one approved, one
+  // rejected) with the single net-payable payment. Closed claims leave the work
+  // queue, so resolve the seeded number from the supervisor outbox row (each
+  // outbox row carries its claim number; the demo marker address is unique),
+  // then open it as the deciding L2 — the wall permits the decider on closure.
+  const supNumCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const supNum = await supNumCtx.newPage();
+  await supNum.goto('/overview');
+  await expect(supNum).toHaveURL(/realms\/claims/);
+  await supNum.locator('#username').fill('supervisor');
+  await supNum.locator('#password').fill(requiredEnv('SUPERVISOR_PASSWORD'));
+  await supNum.locator('#kc-login').click();
+  await expect(supNum.getByTestId('overview-page')).toBeVisible({ timeout: 30000 });
+  await settled(supNum, 'overview-loading', 'overview-error');
+  const closedRow = supNum.getByTestId('outbox-row').filter({ hasText: 'demo.kabir@example.test' });
+  await expect(closedRow).toHaveCount(1);
+  const partNumber = ((await closedRow.getByTestId('outbox-claim').textContent()) ?? '').trim();
+  await supNumCtx.close();
+
+  const partCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const part = await partCtx.newPage();
+  await signIn(part, 'adjuster.five', requiredEnv('ADJUSTER_PASSWORD'), 'queue-page');
+  await part.goto(`/claims/${partNumber}`);
+  await expect(part.getByTestId('claim-detail-page')).toBeVisible();
+  await expect(part.getByTestId('detail-decision-closed')).toBeVisible();
+  await part.getByTestId('detail-decision-closed').scrollIntoViewIfNeeded();
+  await part.waitForTimeout(400);
+  await part.screenshot({ path: 'shots/14-partial-approval.png' });
+  await partCtx.close();
+
   // ================= Supervisor =================
   const supCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const sup = await supCtx.newPage();
@@ -182,32 +274,63 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await sup.locator('#kc-login').click();
   await expect(sup.getByTestId('overview-page')).toBeVisible({ timeout: 30000 });
   await settled(sup, 'overview-loading', 'overview-error');
-  await sup.screenshot({ path: 'shots/11-overview.png' });
+  await sup.screenshot({ path: 'shots/15-overview.png' });
 
-  // 12 — outbox panel state (scroll into view; part of the overview page).
+  // 16 — outbox panel state (scroll into view; part of the overview page).
   const outbox = sup.getByTestId('outbox-panel');
   if ((await outbox.count()) === 1) {
     await outbox.scrollIntoViewIfNeeded();
     await sup.waitForTimeout(300);
-    await sup.screenshot({ path: 'shots/12-outbox.png' });
+    await sup.screenshot({ path: 'shots/16-outbox.png' });
   }
 
-  // 13 — escalations queue.
+  // 17 — escalations queue.
   await sup.goto('/escalations');
   await expect(sup.getByTestId('escalations-page')).toBeVisible();
   await settled(sup, 'esc-loading', 'esc-error');
-  await sup.screenshot({ path: 'shots/13-escalations.png' });
+  await sup.screenshot({ path: 'shots/17-escalations.png' });
 
-  // 14 — policy book.
+  // 20 — policy book.
   await sup.goto('/admin/policies');
   await expect(sup.getByTestId('policies-page')).toBeVisible();
   await settled(sup, 'policies-loading', 'policies-error');
-  await sup.screenshot({ path: 'shots/14-policies.png' });
+  await sup.screenshot({ path: 'shots/20-policies.png' });
 
-  // 15 — authority ladder editor.
+  // 21 — authority ladder editor.
   await sup.goto('/admin/authority');
   await expect(sup.getByTestId('auth-page')).toBeVisible();
   await settled(sup, 'auth-loading', 'auth-ladder-error');
-  await sup.screenshot({ path: 'shots/15-authority.png' });
+  await sup.screenshot({ path: 'shots/21-authority.png' });
   await supCtx.close();
+
+  // ================= Claimant cockpit (linked holder) =================
+  // 18/19 — Ada owns POL-10001 by holder email, so registering with exactly
+  // that address links her cockpit: cover list with limits/claimed/remaining,
+  // then the HLTH-PLUS policy detail.
+  const adaCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ada = await adaCtx.newPage();
+  await ada.goto('/claim/new');
+  await expect(ada).toHaveURL(/realms\/claims/);
+  await ada.getByRole('link', { name: 'Register' }).click();
+  await expect(ada.locator('#firstName')).toBeVisible();
+  await ada.locator('#firstName').fill('Ada');
+  await ada.locator('#lastName').fill('Cockpit');
+  await ada.locator('#email').fill('ada.lovelace@example.test');
+  await ada.locator('#username').fill(`shotada${Date.now()}`);
+  await ada.locator('#password').fill('claims-Pass-123');
+  await ada.locator('#password-confirm').fill('claims-Pass-123');
+  await ada.getByRole('button', { name: 'Register' }).click();
+  await expect(ada.getByTestId('fnol-policy-number')).toBeVisible();
+  await ada.goto('/policies');
+  await expect(ada.getByTestId('cockpit-page')).toBeVisible();
+  await settled(ada, 'cockpit-loading', 'cockpit-error');
+  await ada.screenshot({ path: 'shots/18-cockpit.png' });
+  const adaPolicy = ada.getByTestId('cockpit-open').first();
+  if ((await adaPolicy.count()) === 1) {
+    await adaPolicy.click();
+    await expect(ada.getByTestId('policy-detail-page')).toBeVisible();
+    await ada.waitForTimeout(500);
+    await ada.screenshot({ path: 'shots/19-cockpit-policy.png' });
+  }
+  await adaCtx.close();
 });

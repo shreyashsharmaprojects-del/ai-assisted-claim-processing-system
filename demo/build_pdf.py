@@ -66,19 +66,19 @@ PAGES = [
      ["Policy number, holder name and email are entered here.",
       "The system checks the policy exists and is active before letting you continue."]),
 
-    ("02-fnol-step2.png", "3 · File a claim — step 2: what happened",
-     "The loss itself, in plain language.",
-     ["Loss date, location and a free-text description of the incident.",
-      "Submitting creates the claim instantly — no adjuster touch needed yet."]),
+    ("02-fnol-step2.png", "3 · File a claim — step 2: what happened + covers",
+     "The loss itself, plus one amount per opted cover.",
+     ["Health-family policies offer a cover picker: tick Hospitalization, Daycare… and enter each claimed amount.",
+      "Sub-limits never block filing — an above-limit figure files fine and is flagged for the adjuster instead."]),
 
     ("03-fnol-confirmation.png", "4 · Instant claim number",
      "Proof the claim exists, the second it is filed.",
-     ["A CLM- reference number is issued immediately.",
+     ["A CLM- reference number is issued immediately, with the filed covers echoed back.",
       "The status steps show the claim starting at Under review."]),
 
     ("04-claimant-status.png", "5 · Track your claim",
      "What the claimant sees when they come back later.",
-     ["Step-by-step progress (submitted, under review, decided) in plain words.",
+     ["Step-by-step progress (submitted, under review, decided) in plain words — with per-cover outcomes on multi-cover claims.",
       "Claimants only ever see their own claim — anyone else's number shows a 404 page."]),
 
     ("05-my-claims.png", "6 · My claims history",
@@ -88,7 +88,7 @@ PAGES = [
 
     ("06-cockpit-empty.png", "7 · Policy cockpit — empty state",
      "A brand-new claimant owns no policy yet, and the screen says so honestly.",
-     ["When this claimant holds a policy, this page lists each cover with its limit, claimed and remaining benefit.",
+     ["When this claimant holds a policy, this page lists each cover with its limit, claimed and remaining benefit (see pages 19–20).",
       "The empty state itself proves the visibility wall: nobody ever sees another holder's policies."]),
 
     ("07-adjuster-queue.png", "8 · Adjuster work queue",
@@ -106,32 +106,62 @@ PAGES = [
      ["Policy, claimant, loss details and the reserve (expected payout) they set.",
       "Opening a claim assigned to someone else shows 404, not an error about permissions."]),
 
-    ("10-decision-panel.png", "11 · Decision panel + audit trail",
-     "Where the adjuster approves, partially approves or rejects.",
-     ["Decisions above the adjuster's authority limit are blocked and must be escalated.",
+    ("10-decision-panel.png", "11 · Legacy single-figure decision + audit trail",
+     "The fast path for simple no-cover claims: one amount, one rationale.",
+     ["Within-limit approvals close the claim and queue the payment + notification; above-limit is blocked and escalates.",
       "Every action lands in an append-only audit trail that nobody can edit or delete."]),
 
-    ("11-overview.png", "12 · Supervisor overview",
+    ("11-review-triage.png", "12 · Staged flow, step 1 — Review triage",
+     "Multi-cover claims open at Review: validity first, money later.",
+     ["Each filed cover shows claimed vs its sub-limit, with an Above-limit flag where the claimant asked for more than the cover allows.",
+      "The adjuster advances to verification, rejects outright, or sends the claim back to the claimant for missing items."]),
+
+    ("12-verification.png", "13 · Staged flow, step 2 — Verification",
+     "Digital and physical checks are recorded on the claim, not in email.",
+     ["Each verification carries type, outcome, notes and evidence refs; the full history stays visible.",
+      "Assessment stays locked until the latest verification is COMPLETE — the stepper shows Verification as current."]),
+
+    ("13-authority-gate.png", "14 · Staged flow, step 3 — the authority gate",
+     "The visible stop sign: proposals above your limit stay on the claim, open.",
+     ["The gate banner always reads the maths aloud: proposed total against your personal limit — nothing auto-moves.",
+      "Refer upwards is explicit: a named senior, or auto-pick a qualified one; rejection stays ungated."]),
+
+    ("14-partial-approval.png", "15 · Mixed outcome — partially approved",
+     "Real claims split: one cover pays, another is rejected with reasons.",
+     ["Per-cover outcomes with deductibles and net payables, closed as PARTIALLY_APPROVED.",
+      "One payment for the net total — the single-payment invariant holds even on splits."]),
+
+    ("15-overview.png", "16 · Supervisor overview",
      "The whole book of business at a glance.",
      ["Aggregates: open claims, exposures, approvals, rejections, aging.",
       "Numbers always reconcile with the queue rows beneath them."]),
 
-    ("12-outbox.png", "13 · Notification outbox",
+    ("16-outbox.png", "17 · Notification outbox",
      "Proof that claimants were told what happened.",
-     ["Every status change queues a notification; SENT rows confirm delivery.",
+     ["Every status change queues a notification; SENT rows confirm delivery, FAILED rows retry.",
       "The outbox pattern means no email is ever lost if mail sending fails."]),
 
-    ("13-escalations.png", "14 · Escalations queue",
+    ("17-escalations.png", "18 · Escalations queue",
      "Claims that need a more senior hand.",
      ["Over-authority decisions and SLA breaches land here for L2/L3 and supervisors.",
       "Escalation preserves the full history — nothing is re-entered."]),
 
-    ("14-policies.png", "15 · Policy book (admin)",
+    ("18-cockpit.png", "19 · Policy cockpit — linked holder",
+     "Ada owns POL-10001, so her cockpit lists her covers with live benefit math.",
+     ["Each cover shows its sub-limit, what is claimed so far, and what remains — derived, never stored.",
+      "One exhausted cover never hides the others; remaining benefit is per-cover, always visible."]),
+
+    ("19-cockpit-policy.png", "20 · Policy detail — the fine print, readable",
+     "The policy behind the covers: rating, clauses, validity.",
+     ["Sum insured, room-rent caps, waiting periods and covered/excluded wording in plain view.",
+      "A File-claim shortcut starts an FNOL pre-linked to this policy."]),
+
+    ("20-policies.png", "21 · Policy book (admin)",
      "The policies claims are filed against.",
      ["Create, import from CSV (with per-row error reporting) and retire policies.",
       "Retired or expired policies can never take a new claim."]),
 
-    ("15-authority.png", "16 · Authority ladder (admin)",
+    ("21-authority.png", "22 · Authority ladder (admin)",
      "Who may approve how much — configured, not hard-coded.",
      ["L1 / L2 / L3 / supervisor limits in INR, editable by supervisors.",
       "SLA targets per stage live here too; breaches route to escalations."]),
@@ -154,7 +184,7 @@ def build():
     c.setFont(F, 13)
     c.drawCentredString(W / 2, H / 2 + 8, "Insurance claim processing — visual walkthrough")
     c.setFont(F, 10)
-    c.drawCentredString(W / 2, H / 2 - 20, "16 screenshots from the real running product, in the order a user meets them")
+    c.drawCentredString(W / 2, H / 2 - 20, "22 screenshots from the real running product, in the order a user meets them")
     c.setFont(F, 9)
     c.drawCentredString(W / 2, H / 2 - 44, "Claimant files and tracks  →  adjuster assesses and decides  →  supervisor oversees")
     c.showPage()
