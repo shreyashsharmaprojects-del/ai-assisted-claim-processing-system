@@ -112,6 +112,37 @@ public class ClaimWorkService {
                 displayNameOf(authorId));
     }
 
+    /**
+     * V16: attaches a document to an open claim — the adjuster's per-step upload
+     * (each workflow stage carries its own attach form) and the claimant's
+     * NEED_INFO response upload share this path. The label is the dropdown choice
+     * or the claimant/adjuster free-text name; blank labels are stored NULL and
+     * the row lists by upload order. Closed claims take no new documents.
+     */
+    @Transactional
+    public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
+            boolean supervisor, org.springframework.web.multipart.MultipartFile file,
+            String label) {
+        Claim claim = requireVisible(claimNumber, actorSub, supervisor);
+        if ("CLOSED".equals(claim.getStatus()) || claim.getDecision() != null) {
+            throw new InvalidRequestException("This claim has already been decided.");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new InvalidRequestException("A file is required.");
+        }
+        List<StoredPhoto> stored = photoStorage.store(List.of(file), claim.getId());
+        StoredPhoto photo = stored.get(0);
+        String trimmed = label == null || label.isBlank() ? null : label.trim();
+        if (trimmed != null && trimmed.length() > 120) {
+            throw new InvalidRequestException(
+                    "The document name may be at most 120 characters.");
+        }
+        Attachment row = attachments.save(new Attachment(claim.getId(),
+                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed));
+        return new InternalClaimView.AttachmentView(row.getId(), row.getOriginalName(),
+                row.getLabel());
+    }
+
     /** The photo binary for an attachment of a visible claim. */
     public AttachmentDownload download(String claimNumber, String actorSub,
             boolean supervisor, Long attachmentId) {
@@ -161,7 +192,8 @@ public class ClaimWorkService {
                                 + claim.getPolicyId()));
         List<InternalClaimView.AttachmentView> attachmentViews = attachments
                 .findByClaimIdOrderById(claim.getId()).stream()
-                .map(a -> new InternalClaimView.AttachmentView(a.getId(), a.getOriginalName()))
+                .map(a -> new InternalClaimView.AttachmentView(a.getId(),
+                        a.getOriginalName(), a.getLabel()))
                 .toList();
         List<InternalClaimView.NoteView> noteViews = notes
                 .findByClaimIdOrderByCreatedAtAscIdAsc(claim.getId()).stream()

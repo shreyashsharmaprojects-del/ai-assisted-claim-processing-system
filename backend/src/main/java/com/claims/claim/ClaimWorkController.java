@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * The internal claim surface (slice 3): full view with policy/coverage/reserve/notes/
@@ -53,6 +56,20 @@ public class ClaimWorkController {
             @RequestBody NoteRequest request) {
         return claimWorkService.addNote(claimNumber, jwt.getSubject(),
                 Authorities.isSupervisor(authentication), request.body());
+    }
+
+    /**
+     * V16: document upload on an open claim (multipart file + optional label).
+     * The adjuster attaches from any workflow stage; each stage form posts here.
+     */
+    @PostMapping(value = "/{claimNumber}/attachments",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public InternalClaimView.AttachmentView attach(@AuthenticationPrincipal Jwt jwt,
+            Authentication authentication, @PathVariable String claimNumber,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "label", required = false) String label) {
+        return claimWorkService.attach(claimNumber, jwt.getSubject(),
+                Authorities.isSupervisor(authentication), file, label);
     }
 
     @GetMapping("/{claimNumber}/attachments/{attachmentId}")

@@ -11,6 +11,7 @@ import { Toasts, serverMessage } from '../toasts';
 interface AttachmentView {
   id: number;
   originalName: string;
+  label: string | null;
 }
 
 interface NoteView {
@@ -110,11 +111,32 @@ interface ReferView {
 
 type Stage = 'REVIEW' | 'VERIFICATION' | 'DECISION';
 
+/** Friendly titles + what-to-do hints for each verification type. */
+const VER_META: Record<string, { title: string; hint: string }> = {
+  PHYSICAL: {
+    title: 'Physical verification',
+    hint: 'Inspect the damage, visit the site, confirm the loss happened as described.',
+  },
+  DOCUMENT: {
+    title: 'Document verification',
+    hint: 'Check the bills, reports and papers against the claimed amounts.',
+  },
+  CLAUSE: {
+    title: 'Clause verification',
+    hint: 'Confirm the policy wording covers this loss — waiting periods, exclusions, limits.',
+  },
+  DIGITAL: {
+    title: 'Digital verification',
+    hint: 'Follow-up systems check — fraud flags, duplicates, data cross-checks.',
+  },
+};
+
 /**
- * The adjuster's claim workspace: the staged V2 flow (Review → Verification →
- * Decision) with NEED_INFO send-back, verification records, per-cover assessment
- * and decisions, the visible authority gate, and explicit referral upwards.
- * Legacy single-figure (cover-less) claims keep the exact V1 decision form.
+ * The adjuster's claim workspace. One next step per stage — Review (validity),
+ * Verification (the default checklist, then assessment), Decision (per-cover
+ * outcomes) — with the supporting tools (documents, refer, reserve, notes) in a
+ * slim side rail that never competes with the action. Legacy single-figure
+ * (cover-less) claims keep the exact V1 decision form.
  */
 @Component({
   imports: [FormsModule, RouterLink],
@@ -161,6 +183,7 @@ export class ClaimDetail {
   protected readonly savingVerification = signal(false);
   protected readonly assessing = signal(false);
   protected readonly referring = signal(false);
+  protected readonly uploading = signal(false);
 
   protected reserveInput: number | null = null;
   protected noteInput = '';
@@ -174,8 +197,8 @@ export class ClaimDetail {
   protected showRejectForm = false;
   protected showNeedInfoForm = false;
 
-  // Verification inputs.
-  protected verificationType: 'DIGITAL' | 'PHYSICAL' = 'DIGITAL';
+  // Verification inputs (per-row completion + the extra follow-up form).
+  protected extraVerType: 'DIGITAL' | 'PHYSICAL' = 'DIGITAL';
   protected verificationNotes = '';
   protected verOutcome: Record<number, string> = {};
   protected verNotes: Record<number, string> = {};
@@ -191,6 +214,24 @@ export class ClaimDetail {
   // Referral inputs.
   protected referTarget = '';
   protected referReason = '';
+
+  // Document upload inputs (one persistent form in the side rail).
+  protected readonly DOC_LABELS = [
+    'Hospital bill',
+    'Discharge summary',
+    'Prescriptions',
+    'Diagnostic report',
+    'Police report (FIR)',
+    'Repair estimate',
+    'Repair invoice',
+    'Damage photos',
+    'ID proof',
+    'Policy copy',
+    'Claim form',
+    'Other…',
+  ];
+  protected docChoice = 'Hospital bill';
+  protected docCustom = '';
 
   constructor() {
     void this.load();
@@ -234,6 +275,11 @@ export class ClaimDetail {
     return (this.view()?.covers ?? []).length > 0;
   }
 
+  /** Legacy single-figure claim: the V1 decision form, no stages to work. */
+  protected isLegacy(): boolean {
+    return !this.hasCovers();
+  }
+
   protected covers(): StagedCover[] {
     return this.view()?.covers ?? [];
   }
@@ -242,14 +288,54 @@ export class ClaimDetail {
     return this.view()?.verifications ?? [];
   }
 
-  protected latestVerification(): VerificationView | null {
-    const history = this.verifications();
-    return history.length === 0 ? null : history[history.length - 1];
+  protected openVerifications(): VerificationView[] {
+    return this.verifications().filter((v) => v.status !== 'CANCELLED');
   }
 
-  /** The decision stage is reachable only with a COMPLETE latest verification. */
-  protected verificationComplete(): boolean {
-    return this.latestVerification()?.status === 'COMPLETE';
+  /** Checklist progress: completed rows over open rows (cancelled rows retire). */
+  protected checklistDone(): number {
+    return this.openVerifications().filter((v) => v.status === 'COMPLETE').length;
+  }
+
+  protected checklistTotal(): number {
+    return this.openVerifications().length;
+  }
+
+  /** Assessment unlocks only when every open verification row is COMPLETE. */
+  protected allVerComplete(): boolean {
+    const total = this.checklistTotal();
+    return total > 0 && this.checklistDone() === total;
+  }
+
+  /** Friendly names of the still-open checklist rows (for the guard + button). */
+  protected pendingVerNames(): string {
+    return this.openVerifications()
+      .filter((v) => v.status !== 'COMPLETE')
+      .map((v) => this.verTitle(v.type).toLowerCase())
+      .join(', ');
+  }
+
+  /** True once this claim has stored assessed figures (the assessment step is done). */
+  protected assessedDone(): boolean {
+    return this.covers().some((c) => c.assessedAmount != null);
+  }
+
+  protected verTitle(type: string | null): string {
+    return (type != null && VER_META[type]?.title) || 'Verification';
+  }
+
+  protected verHint(type: string | null): string {
+    return (type != null && VER_META[type]?.hint) || '';
+  }
+
+  protected verStatusBadge(status: string): string {
+    if (status === 'COMPLETE') {
+      return 'badge badge--success';
+    }
+    if (status === 'CANCELLED') {
+      return 'badge badge--neutral';
+    }
+    return 'badge badge--info';
   }
 
   protected stageIndex(): number {
@@ -259,6 +345,23 @@ export class ClaimDetail {
   protected stageReached(step: Stage): boolean {
     const order: Stage[] = ['REVIEW', 'VERIFICATION', 'DECISION'];
     return order.indexOf(step) <= order.indexOf(this.stage());
+  }
+
+  /** One line under the stepper: what this stage asks of the adjuster. */
+  protected stageTask(): string {
+    if (this.isLegacy()) {
+      return 'Decide this claim: approve within your authority or deny with a reason.';
+    }
+    switch (this.stage()) {
+      case 'REVIEW':
+        return 'Check the claim is valid, then advance it — or reject it, or ask the claimant for more.';
+      case 'VERIFICATION':
+        return this.allVerComplete()
+          ? 'All checks complete — record the assessment to move to decision.'
+          : `Work the checklist below (${this.checklistDone()} of ${this.checklistTotal()} complete).`;
+      case 'DECISION':
+        return 'Set each cover outcome, then submit — or refer upwards if it is above your authority.';
+    }
   }
 
   // --- money helpers ----------------------------------------------------------
@@ -357,9 +460,22 @@ export class ClaimDetail {
     return this.view()?.notes ?? [];
   }
 
-  /** Attachments for the photos panel; the staged wire omits them until merged. */
+  /** Documents for the side-rail panel; the staged wire omits them until merged. */
   protected attachmentViews(): AttachmentView[] {
     return this.view()?.attachments ?? [];
+  }
+
+  /** Display name: the human label when set, else the stored filename. */
+  protected docName(attachment: AttachmentView): string {
+    return attachment.label?.trim() ? attachment.label : attachment.originalName;
+  }
+
+  /** The label the upload form will store (dropdown choice or the custom name). */
+  protected docLabelForUpload(): string | null {
+    if (this.docChoice === 'Other…') {
+      return this.docCustom.trim() || null;
+    }
+    return this.docChoice;
   }
 
   // --- load -------------------------------------------------------------------
@@ -453,6 +569,25 @@ export class ClaimDetail {
     this.applyView(view);
   }
 
+  /** Refreshes just the document list after an upload (the staged wire omits it). */
+  private async mergeAttachments(headers: HttpHeaders): Promise<void> {
+    const current = this.view();
+    if (!current) {
+      return;
+    }
+    try {
+      const full = await firstValueFrom(
+        this.http.get<StagedView>(`/api/claims/${this.claimNumber}/full`, {
+          headers,
+        }),
+      );
+      current.attachments = full.attachments ?? [];
+    } catch {
+      current.attachments ??= [];
+    }
+    this.view.set({ ...current });
+  }
+
   private async loadAudit(headers: HttpHeaders): Promise<void> {
     this.auditError.set(null);
     try {
@@ -539,7 +674,7 @@ export class ClaimDetail {
       await firstValueFrom(
         this.http.post(
           `/api/claims/${this.claimNumber}/verifications`,
-          { type: this.verificationType, notes: this.verificationNotes.trim() || null },
+          { type: this.extraVerType, notes: this.verificationNotes.trim() || null },
           { headers },
         ),
       );
@@ -811,6 +946,48 @@ export class ClaimDetail {
       this.error.set(serverMessage(err, 'Could not refer the claim.'));
     } finally {
       this.referring.set(false);
+    }
+  }
+
+  // --- documents ------------------------------------------------------------------
+
+  /**
+   * Attaches a document to the open claim (multipart file + the chosen label).
+   * The file input is passed straight from the template — ngModel cannot hold
+   * a File, so the element is the source of truth.
+   */
+  async uploadDoc(fileInput: HTMLInputElement) {
+    this.error.set(null);
+    const file = fileInput.files?.[0];
+    if (!file) {
+      this.error.set('Choose a file to attach.');
+      return;
+    }
+    this.uploading.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.uploading.set(false);
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const label = this.docLabelForUpload();
+      if (label) {
+        form.append('label', label);
+      }
+      await firstValueFrom(
+        this.http.post(`/api/claims/${this.claimNumber}/attachments`, form, {
+          headers,
+        }),
+      );
+      fileInput.value = '';
+      this.toasts.success('Document attached.');
+      await this.mergeAttachments(headers);
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not attach the document.'));
+    } finally {
+      this.uploading.set(false);
     }
   }
 

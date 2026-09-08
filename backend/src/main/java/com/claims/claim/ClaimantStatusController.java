@@ -10,10 +10,15 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.claims.api.ClaimNotFoundException;
+import com.claims.api.InvalidRequestException;
 import com.claims.policy.PolicyCover;
 import com.claims.policy.PolicyCoverRepository;
 
@@ -33,12 +38,17 @@ public class ClaimantStatusController {
     private final ClaimRepository claims;
     private final ClaimCoverRepository claimCovers;
     private final PolicyCoverRepository policyCovers;
+    private final AttachmentRepository attachments;
+    private final PhotoStorage photoStorage;
 
     public ClaimantStatusController(ClaimRepository claims,
-            ClaimCoverRepository claimCovers, PolicyCoverRepository policyCovers) {
+            ClaimCoverRepository claimCovers, PolicyCoverRepository policyCovers,
+            AttachmentRepository attachments, PhotoStorage photoStorage) {
         this.claims = claims;
         this.claimCovers = claimCovers;
         this.policyCovers = policyCovers;
+        this.attachments = attachments;
+        this.photoStorage = photoStorage;
     }
 
     @GetMapping("/{claimNumber}")
@@ -74,6 +84,48 @@ public class ClaimantStatusController {
         }
         return ClaimantClaimView.from(claim, covers, claim.getClaimedTotal(),
                 "CLOSED".equals(claim.getStatus()) ? netPayableTotal(rows) : null);
+    }
+
+    /**
+     * V16: document upload answering a NEED_INFO request. Own claim only
+     * (404 otherwise), NEED_INFO only (400 at any other state). The file lands
+     * as a labelled attachment the adjuster sees on the documents panel; the
+     * claimant stays on NEED_INFO until they send the text response — upload
+     * and response are separate steps so either order works.
+     */
+    @PostMapping(value = "/{claimNumber}/documents",
+            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public DocumentView uploadDocument(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable String claimNumber,
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(value = "label", required = false) String label) {
+        Claim claim = claims.findByClaimNumber(claimNumber)
+                .orElseThrow(ClaimNotFoundException::new);
+        if (!claim.getClaimantSub().equals(jwt.getSubject())) {
+            throw new ClaimNotFoundException();
+        }
+        if (!"NEED_INFO".equals(claim.getStatus())) {
+            throw new InvalidRequestException(
+                    "Documents can only be uploaded while a claim waits on information from you.");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new InvalidRequestException("A file is required.");
+        }
+        List<StoredPhoto> stored = photoStorage.store(List.of(file), claim.getId());
+        StoredPhoto photo = stored.get(0);
+        String trimmed = label == null || label.isBlank() ? null : label.trim();
+        if (trimmed != null && trimmed.length() > 120) {
+            throw new InvalidRequestException(
+                    "The document name may be at most 120 characters.");
+        }
+        Attachment row = attachments.save(new Attachment(claim.getId(),
+                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed));
+        return new DocumentView(row.getId(), row.getLabel() == null
+                ? row.getOriginalName() : row.getLabel());
+    }
+
+    /** The claimant-safe upload receipt: id + display name, nothing internal. */
+    public record DocumentView(Long id, String name) {
     }
 
     /**

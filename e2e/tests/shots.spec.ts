@@ -332,13 +332,11 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await decider.getByTestId('detail-review-advance').click();
   await expect(decider.getByTestId('detail-verification-panel')).toBeVisible();
 
-  // …VERIFICATION: open + complete a DIGITAL record live. (Advancing auto-opens
-  // a PENDING stub row, oldest-first; complete EVERY open row so the latest is
-  // COMPLETE under any ordering, which is what unlocks assessment.)
-  await decider.getByTestId('detail-verification-notes').fill('Shot demo: opening digital check.');
-  await decider.getByTestId('detail-verification-create').click();
-  await expect(decider.getByTestId('detail-verification-item')).toHaveCount(2);
-  for (let round = 0; round < 3; round += 1) {
+  // …VERIFICATION: the default checklist (physical, document, clause) is
+  // already open — complete every row (the extra follow-up form stays
+  // collapsed; completing all rows unlocks assessment).
+  await expect(decider.getByTestId('detail-verification-item')).toHaveCount(3);
+  for (let round = 0; round < 4; round += 1) {
     const items = decider.getByTestId('detail-verification-item');
     const n = await items.count();
     let progressed = false;

@@ -25,7 +25,9 @@ import org.junit.jupiter.api.Test;
  * reserve/notes/assignee). V2-5 deliberately adds per-cover outcomes (decision +
  * approved amount + remarks) on the cover lines, the PARTIALLY_APPROVED aggregate
  * decision, and netPayableTotal — the payable figure on closure. Assessed,
- * deductible, adjustment, verifier and proposals stay off the wire.
+ * deductible, adjustment, verifier and proposals stay off the wire. V16 deliberately
+ * adds needInfoReason — the adjuster's requested items, visible only while the claim
+ * waits on the claimant (null everywhere else).
  */
 class ClaimantClaimViewTest {
 
@@ -35,7 +37,8 @@ class ClaimantClaimViewTest {
                 .map(RecordComponent::getName)
                 .toList();
         assertEquals(List.of("claimNumber", "status", "steps", "decision", "indemnityAmount",
-                "decisionRemarks", "covers", "claimedTotal", "netPayableTotal"), components,
+                "decisionRemarks", "covers", "claimedTotal", "netPayableTotal",
+                "needInfoReason"), components,
                 "adding an internal field to the claimant view is a deliberate act");
     }
 

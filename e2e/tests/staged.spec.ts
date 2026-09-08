@@ -140,30 +140,23 @@ test('staged claim flows review to verification to decision, gates, and refers u
     'HOSPITALIZATION',
   );
 
-  // Review → advance to verification.
+  // The review advance opens the default checklist (physical, document,
+  // clause). Complete every row: the stage exits only when all are COMPLETE.
   await adjusterPage.getByTestId('detail-review-rationale').fill('Documents look complete.');
   await adjusterPage.getByTestId('detail-review-advance').click();
   await expect(adjusterPage.getByTestId('detail-verification-panel')).toBeVisible();
+  await expect(adjusterPage.getByTestId('detail-verification-item')).toHaveCount(3);
 
-  // Open a DIGITAL verification and complete it with outcome + notes.
-  await adjusterPage.getByTestId('detail-verification-type').selectOption('DIGITAL');
-  await adjusterPage.getByTestId('detail-verification-notes').fill('Checking discharge summary.');
-  await adjusterPage.getByTestId('detail-verification-create').click();
-  // ADVANCE already opened a typeless PENDING row: wait for the new DIGITAL row
-  // before targeting last() — otherwise the assertions below would complete the
-  // PENDING row while the POST is still in flight.
-  await expect(adjusterPage.getByTestId('detail-verification-item')).toHaveCount(2);
-  const item = adjusterPage.getByTestId('detail-verification-item').last();
-  await expect(item).toBeVisible();
-  // The per-record complete form carries the row id in its testids; read it back.
-  const outcomeSelect = item.getByTestId(/detail-ver-outcome-\d+/);
-  await outcomeSelect.selectOption('PASSED');
-  const saveButton = item.getByTestId(/detail-ver-save-\d+/);
-  const saveTestId = (await saveButton.getAttribute('data-testid'))!;
-  const rowId = saveTestId.replace('detail-ver-save-', '');
-  await adjusterPage.getByTestId(`detail-ver-notes-${rowId}`).fill('Bills verified; admissible.');
-  await adjusterPage.getByTestId(`detail-ver-evidence-${rowId}`).fill('attachment-1');
-  await saveButton.click();
+  for (const item of await adjusterPage.getByTestId('detail-verification-item').all()) {
+    await expect(item).toBeVisible();
+    const saveButton = item.getByTestId(/detail-ver-save-\d+/);
+    const saveTestId = (await saveButton.getAttribute('data-testid'))!;
+    const rowId = saveTestId.replace('detail-ver-save-', '');
+    await item.getByTestId(`detail-ver-outcome-${rowId}`).selectOption('PASSED');
+    await adjusterPage.getByTestId(`detail-ver-notes-${rowId}`).fill('Bills verified; admissible.');
+    await adjusterPage.getByTestId(`detail-ver-evidence-${rowId}`).fill('attachment-1');
+    await saveButton.click();
+  }
   await expect(adjusterPage.getByTestId('detail-verification-guard')).toHaveCount(0);
 
   // Assessment: assess the claimed figures in full (within sub-limits and

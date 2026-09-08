@@ -36,9 +36,10 @@ import tools.jackson.databind.ObjectMapper;
 /**
  * V2-4/V2-5/V2-6 backend: the staged adjuster workflow on top of the V1 claim.
  * Stages (REVIEW | VERIFICATION | DECISION) are orthogonal to the V1 routing status;
- * NEED_INFO parks the claim with its prior stage for the claimant round-trip; cover
- * assessment binds the financial chain; cover decisions close within authority or save
- * proposals that travel on explicit referral — nothing ever moves by itself.
+ * NEED_INFO parks the claim with its prior stage for the claimant round-trip (from any
+ * stage); cover assessment binds the financial chain once the whole verification
+ * checklist is COMPLETE; cover decisions close within authority or save proposals that
+ * travel on explicit referral — nothing ever moves by itself.
  *
  * <p>Legacy no-cover claims keep the V1 decision behaviour through
  * {@link ClaimDecisionService} (see {@link #decide}); everything here 404s through
@@ -50,6 +51,17 @@ public class StagedWorkflowService {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static final BigDecimal MAX_MONEY = new BigDecimal("999999999999.99");
+
+    /** Verification types: the default checklist plus ad-hoc follow-ups. */
+    private static final List<String> VERIFICATION_TYPES =
+            List.of("DIGITAL", "PHYSICAL", "DOCUMENT", "CLAUSE");
+
+    private static void requireVerificationType(String type) {
+        if (type == null || !VERIFICATION_TYPES.contains(type)) {
+            throw new InvalidRequestException(
+                    "Verification type must be DIGITAL, PHYSICAL, DOCUMENT or CLAUSE.");
+        }
+    }
 
     private final ClaimRepository claims;
     private final PolicyRepository policies;
@@ -128,11 +140,19 @@ public class StagedWorkflowService {
             requireRationale(rationale, "A rationale is required.");
             claim.setStage("VERIFICATION");
             claims.save(claim);
-            Verification row = verifications.save(
-                    new Verification(claim.getId(), null, "PENDING", actorSub, now));
+            // The default verification checklist: physical inspection, document
+            // check, clause check. Follow-up DIGITAL/PHYSICAL rows stay allowed;
+            // completing a default row never rewrites history (see updateVerification).
+            List<Long> opened = new ArrayList<>();
+            for (String defaultType : List.of("PHYSICAL", "DOCUMENT", "CLAUSE")) {
+                Verification row = verifications.save(
+                        new Verification(claim.getId(), defaultType, "PENDING", actorSub,
+                                now));
+                opened.add(row.getId());
+            }
             audit("REVIEW_ADVANCED", actorSub, claim,
                     Map.of("status", "UNDER_REVIEW", "stage", "REVIEW"),
-                    after(claim, "stage", "VERIFICATION", "verificationId", row.getId()),
+                    after(claim, "stage", "VERIFICATION", "verificationIds", opened),
                     rationale);
             return viewOf(claim, actorSub);
         }
@@ -156,11 +176,10 @@ public class StagedWorkflowService {
                     policy.getHolderName(), legacyView);
             return viewOf(claim, actorSub);
         }
-        // NEED_INFO: REVIEW or VERIFICATION only, never DECISION, never twice.
-        if (!"UNDER_REVIEW".equals(claim.getStatus())
-                || (!"REVIEW".equals(stageOf(claim)) && !"VERIFICATION".equals(stageOf(claim)))) {
+        // NEED_INFO: any stage (REVIEW | VERIFICATION | DECISION), never twice.
+        if (!"UNDER_REVIEW".equals(claim.getStatus())) {
             throw new InvalidRequestException(
-                    "Information can only be requested while a claim is under review or verification.");
+                    "Information can only be requested while a claim is under review.");
         }
         String reason = requested != null ? requested : rationale;
         if (notes != null && reason == null) {
@@ -190,9 +209,7 @@ public class StagedWorkflowService {
         Claim claim = requireAssigneeForUpdate(claimNumber, actorSub, supervisor);
         requireOpenUnderReview(claim);
         String type = input == null ? null : textOf(input.type());
-        if (!"DIGITAL".equals(type) && !"PHYSICAL".equals(type)) {
-            throw new InvalidRequestException("Verification type must be DIGITAL or PHYSICAL.");
-        }
+        requireVerificationType(type);
         Instant now = Instant.now();
         Verification row = verifications.save(
                 new Verification(claim.getId(), type, "IN_PROGRESS", actorSub, now));
@@ -241,10 +258,7 @@ public class StagedWorkflowService {
         before.put("verificationId", row.getId());
         before.put("status", row.getStatus());
         if (type != null) {
-            if (!"DIGITAL".equals(type) && !"PHYSICAL".equals(type)) {
-                throw new InvalidRequestException(
-                        "Verification type must be DIGITAL or PHYSICAL.");
-            }
+            requireVerificationType(type);
             row.setType(type);
         }
         if (outcome != null) {
@@ -298,10 +312,23 @@ public class StagedWorkflowService {
                     "Assessment is only available at the verification stage.");
         }
         List<Verification> history = verifications.findByClaimIdOrderByIdAsc(claim.getId());
-        if (history.isEmpty() || !"COMPLETE".equals(
-                history.get(history.size() - 1).getStatus())) {
+        // The whole checklist must be COMPLETE: every default row (never
+        // CANCELLED-out of existence) plus every follow-up row the adjuster
+        // opened. Cancelling a row retires it from the checklist.
+        List<Verification> open = history.stream()
+                .filter(row -> !"CANCELLED".equals(row.getStatus()))
+                .toList();
+        List<String> incomplete = open.stream()
+                .filter(row -> !"COMPLETE".equals(row.getStatus()))
+                .map(row -> row.getType() == null ? "verification " + row.getId()
+                        : row.getType().toLowerCase(java.util.Locale.ROOT) + " verification")
+                .toList();
+        if (open.isEmpty() || !incomplete.isEmpty()) {
+            String missing = incomplete.isEmpty() ? "verification"
+                    : String.join(", ", incomplete);
             throw new InvalidRequestException(
-                    "Assessment needs a completed verification first.");
+                    "Assessment needs every verification completed first — pending: "
+                            + missing + ".");
         }
         List<ClaimCover> rows = claimCovers.findByClaimIdOrderByIdAsc(claim.getId());
         if (rows.isEmpty()) {
@@ -591,26 +618,143 @@ public class StagedWorkflowService {
             throw new ClaimNotFoundException();
         }
         requireOpenUnderReview(claim);
-        if (!"DECISION".equals(stageOf(claim))) {
-            throw new InvalidRequestException(
-                    "A claim can only be referred at the decision stage.");
-        }
         String reason = textOf(input == null ? null : input.reason());
         requireRationale(reason, "A reason is required to refer a claim.");
+        AppUser actor = appUsers.findByKeycloakSub(actorSub)
+                .orElseThrow(IllegalStateException::new);
+        Policy policy = policyOf(claim);
+        AuthorityConfig config = configOf(policy, claim.getClaimNumber());
+        Long targetId = input == null ? null : input.targetAdjusterId();
+        boolean auto = input != null && Boolean.TRUE.equals(input.auto());
+
+        if ("DECISION".equals(stageOf(claim))) {
+            return referWithProposals(claim, actor, policy, config, targetId, auto, reason,
+                    actorSub);
+        }
+        return referDirect(claim, actor, targetId, auto, reason, actorSub);
+    }
+
+    /**
+     * Pre-decision referral (REVIEW or VERIFICATION): no money has been assessed or
+     * proposed, so there is nothing for a covering limit to clear against — the
+     * claim moves to the named (or auto-picked) higher authority with its stage,
+     * verifications and covers untouched.
+     */
+    private ReferResult referDirect(Claim claim, AppUser actor, Long targetId, boolean auto,
+            String reason, String actorSub) {
+        AppUser target = resolveDirectTarget(claim, actor, targetId, auto);
+        Instant now = Instant.now();
+        String previousLevel = claim.getLevel();
+        Long previousAssignee = claim.getAssignedAdjusterId();
+        if (target == null) {
+            claim.escalateToSupervisor();
+            claims.save(claim);
+            metrics.escalation("SUPERVISOR");
+            audit("CLAIM_REFERRED", actorSub, claim,
+                    Map.of("status", "UNDER_REVIEW", "level", previousLevel,
+                            "stage", stageOf(claim),
+                            "assignedAdjusterId", previousAssignee == null ? 0
+                                    : previousAssignee),
+                    after(claim, "escalatedTo", "SUPERVISOR"),
+                    reason);
+            return new ReferResult(claim.getClaimNumber(), claim.getStatus(),
+                    claim.getLevel(), null, "SUPERVISOR");
+        }
+        claim.setLevel(target.getLevel());
+        assignTo(claim, target, now);
+        claims.save(claim);
+        metrics.escalation(target.getLevel());
+        Map<String, Object> after = after(claim, "escalatedTo", target.getLevel());
+        after.put("assignedAdjusterId", target.getId());
+        after.put("assignedTo", target.getDisplayName());
+        audit("CLAIM_REFERRED", actorSub, claim,
+                Map.of("status", "UNDER_REVIEW", "level", previousLevel,
+                        "stage", stageOf(claim),
+                        "assignedAdjusterId",
+                        previousAssignee == null ? 0 : previousAssignee),
+                after, reason);
+        return new ReferResult(claim.getClaimNumber(), claim.getStatus(), claim.getLevel(),
+                target.getDisplayName(), target.getLevel());
+    }
+
+    /**
+     * Resolves the pre-decision referral target: the named adjuster (must be a
+     * higher rung), or the auto-pick — the least-loaded active adjuster one rung
+     * up (skill-aware where the product has skill rows), falling back rung by
+     * rung to L3. Null when no higher rung has a candidate (supervisor fallback).
+     */
+    private AppUser resolveDirectTarget(Claim claim, AppUser actor, Long targetId,
+            boolean auto) {
+        if (targetId != null) {
+            AppUser target = appUsers.findById(targetId).orElse(null);
+            if (target == null) {
+                throw new InvalidRequestException("The named adjuster does not exist.");
+            }
+            if (rankOf(target.getLevel()) <= rankOf(actor.getLevel())) {
+                throw new InvalidRequestException(
+                        "Referral must go to a higher authority than your own.");
+            }
+            return target;
+        }
+        if (!auto) {
+            throw new InvalidRequestException(
+                    "Name a senior adjuster or choose automatic assignment.");
+        }
+        Policy policy = policyOf(claim);
+        boolean productHasSkills =
+                !skills.findByKeyProductCode(policy.getProductCode()).isEmpty();
+        for (String rung : rungsAbove(actor.getLevel())) {
+            List<AppUser> candidates = new ArrayList<>();
+            for (AppUser adjuster : appUsers.findByLevelOrderById(rung)) {
+                if (!isActive(adjuster.getId())) {
+                    continue;
+                }
+                if (productHasSkills
+                        && !skilledFor(adjuster.getId(), policy.getProductCode())) {
+                    continue;
+                }
+                candidates.add(adjuster);
+            }
+            if (candidates.isEmpty()) {
+                continue;
+            }
+            List<Long> ids = candidates.stream().map(AppUser::getId).toList();
+            Long pick = LoadBalancer.leastLoaded(ids, openClaimCounts(ids));
+            for (AppUser adjuster : candidates) {
+                if (adjuster.getId().equals(pick)) {
+                    return adjuster;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<String> rungsAbove(String level) {
+        if ("L2".equals(level)) {
+            return List.of("L3");
+        }
+        if ("L3".equals(level)) {
+            return List.of();
+        }
+        return List.of("L2", "L3");
+    }
+
+    /**
+     * Decision-stage referral: the saved proposals travel (unchanged); the target
+     * rung's limit must cover the proposed total (named), or the auto-pick finds
+     * the lowest covering rung with a skilled candidate (supervisor fallback).
+     */
+    private ReferResult referWithProposals(Claim claim, AppUser actor, Policy policy,
+            AuthorityConfig config, Long targetId, boolean auto, String reason,
+            String actorSub) {
+
         List<ClaimCover> proposals = claimCovers.findByClaimIdOrderByIdAsc(claim.getId())
                 .stream().filter(ClaimCover::isProposal).toList();
         if (proposals.isEmpty()) {
             throw new InvalidRequestException(
                     "There are no saved proposals to refer on this claim.");
         }
-        AppUser actor = appUsers.findByKeycloakSub(actorSub)
-                .orElseThrow(IllegalStateException::new);
-        Policy policy = policyOf(claim);
-        AuthorityConfig config = configOf(policy, claim.getClaimNumber());
         BigDecimal basisTotal = proposalsBasisTotal(proposals, config.getAuthorityBasis());
-        Long targetId = input == null ? null : input.targetAdjusterId();
-        boolean auto = input != null && Boolean.TRUE.equals(input.auto());
-
         AppUser target = null;
         if (targetId != null) {
             target = appUsers.findById(targetId).orElse(null);

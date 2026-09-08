@@ -28,15 +28,28 @@ public class Attachment {
     @Column(name = "original_name", nullable = false)
     private String originalName;
 
+    /**
+     * V16: human document label (dropdown choice or free-text custom name). Null on
+     * pre-V16 rows; the download name stays the stored original filename.
+     */
+    @Column(name = "label")
+    private String label;
+
     protected Attachment() {
         // for JPA
     }
 
     public Attachment(Long claimId, String storagePath, String contentType, String originalName) {
+        this(claimId, storagePath, contentType, originalName, null);
+    }
+
+    public Attachment(Long claimId, String storagePath, String contentType, String originalName,
+            String label) {
         this.claimId = claimId;
         this.storagePath = storagePath;
         this.contentType = contentType;
         this.originalName = originalName;
+        this.label = label;
     }
 
     public Long getId() {
@@ -57,5 +70,13 @@ public class Attachment {
 
     public String getOriginalName() {
         return originalName;
+    }
+
+    public String getLabel() {
+        return label;
+    }
+
+    public void setLabel(String label) {
+        this.label = label;
     }
 }

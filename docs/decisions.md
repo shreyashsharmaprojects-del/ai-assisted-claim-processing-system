@@ -1414,3 +1414,56 @@ rows; per-run unique policy numbers keep the journey idempotent with zero cleanu
 coupling. The BOGUS row keeps its static number (always rejected, never persisted).
 **Build it when:** never — generated-per-run is the pattern for any journey that
 writes unique-keyed rows.
+
+---
+
+### 2026-09-08 — Adjuster-workflow tightening: one next step per stage (V16)
+
+**Considered:** Keeping all action forms (assessment + decision + extra checks +
+send-back) visible together on the verification stage, and collapsible send-back
+everywhere.
+**Why not now:** The verification screen showed assessment and decision inputs side
+by side while the checklist was still open, and assessment was one click away from
+failing server-side with no visible reason. Now each stage shows exactly one exit:
+Review advances/rejects/sends back; Verification completes the default
+PHYSICAL+DOCUMENT+CLAUSE checklist (follow-ups stay addable), then the assessment
+box unlocks only when every open row is COMPLETE; Decision holds the per-cover
+grid plus the authority hint. Send-back ("Ask claimant") is a visible button at
+all three stages — the earlier `<details>`-collapsed variant hid the control from
+both users and Playwright's visibility wait, which is how the probe caught it.
+Refer-upwards and the document panel sit in a slim rail beside the step at every
+stage, so a claim can always move adjuster→senior→supervisor→claimant and back
+without leaving the workspace. Legacy no-cover claims keep the byte-identical V1
+decision form (stage stepper hidden, no cover machinery).
+**Build it when:** never as a combined form — one exit per stage is the pattern.
+
+### 2026-09-08 — V16 backend: default verification checklist + all-complete gate
+
+**Considered:** Keeping the single typeless PENDING stub on ADVANCE and gating
+assessment on "latest verification COMPLETE".
+**Why not now:** The typeless stub forced every flow (UI + E2E + tests) to open and
+name its own first check, and "latest COMPLETE" let an older open row slip through
+unexamined. ADVANCE now opens PHYSICAL + DOCUMENT + CLAUSE; CANCELLED rows retire
+from the checklist; anything else open blocks assessment with the pending names in
+the 400. Pre-V16 DIGITAL/PHYSICAL rows and the NULL-type stub keep their values
+(the type CHECK only widened; DOCUMENT/CLAUSE added; NEED_INFO prior-stage gained
+DECISION; attachment gained a nullable label).
+**Build it when:** never — the checklist is the verification model.
+
+### 2026-09-08 — NEED_INFO from any stage; claimant answers with label + upload
+
+**Considered:** NEED_INFO from REVIEW/VERIFICATION only, claimant response as a
+bare text message.
+**Why not now:** A decision-stage doubt (e.g. confirm the bill total before
+signing) had no legal parking state, and the claimant's reply arrived with no way
+to attach the very document requested. The adjuster can now park from REVIEW,
+VERIFICATION or DECISION (prior stage preserved for the return trip); the
+claimant's status page shows an action panel with the request text, a labelled
+document upload (`POST …/documents`, NEED_INFO-only, own-claim-only, 404
+otherwise), then the text reply that returns the claim. The request text rides
+`needInfoReason` on the claimant view (null — hence wire-omitted — at every other
+state); adjuster uploads ride `POST …/attachments` on open claims from any stage.
+Referral likewise works pre-decision (no proposals to cover-check: named senior or
+auto-pick one rung up, supervisor fallback) as well as at DECISION (unchanged
+limit-cover rule).
+**Build it when:** never — park/answer/return is the round-trip.

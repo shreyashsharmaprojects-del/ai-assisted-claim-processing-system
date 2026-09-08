@@ -41,8 +41,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/mine").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*").hasRole("CLAIMANT")
+                        // V16: the claimant's NEED_INFO document upload (own claim,
+                        // NEED_INFO only inside the service; 404 otherwise).
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/documents")
+                                .hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
                                 "/api/claims/*/attachments/*")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        // V16: the adjuster's per-stage document upload.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/attachments")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
                                         "SUPERVISOR")
                         .requestMatchers(HttpMethod.PUT, "/api/claims/*/reserve")

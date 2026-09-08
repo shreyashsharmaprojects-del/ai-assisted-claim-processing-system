@@ -29,11 +29,17 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * remarks on {@code covers}, the aggregate {@code decision} (which may now be
  * {@code PARTIALLY_APPROVED}), and {@code netPayableTotal} — the payable figure — on
  * closure. All three are null while the claim is open.
+ *
+ * <p>V16 grows the NEED_INFO round-trip: {@code needInfoReason} carries the
+ * adjuster's requested items while the claim waits on the claimant (null at every
+ * other state, still omitted from the wire when null). It is the claimant's own
+ * request text — no internal fields travel with it.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClaimantClaimView(String claimNumber, String status, List<String> steps,
         String decision, BigDecimal indemnityAmount, String decisionRemarks,
-        List<ClaimantCoverView> covers, BigDecimal claimedTotal, BigDecimal netPayableTotal) {
+        List<ClaimantCoverView> covers, BigDecimal claimedTotal, BigDecimal netPayableTotal,
+        String needInfoReason) {
 
     /** Legacy shape: no filed covers (pre-V2-2 rows and the no-covers filing path). */
     public static ClaimantClaimView from(Claim claim) {
@@ -50,12 +56,17 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
         String decision = claim.getDecision();
         boolean approvedLike = "APPROVED".equals(decision)
                 || "PARTIALLY_APPROVED".equals(decision);
+        // The request text only while the claim waits on the claimant; null (and
+        // hence omitted from the wire) at every other state.
+        String needInfoReason = "NEED_INFO".equals(claim.getStatus())
+                ? claim.getNeedInfoReason() : null;
         return new ClaimantClaimView(claim.getClaimNumber(), claim.getStatus(),
                 stepsFor(claim.getStatus()), decision,
                 approvedLike ? claim.getIndemnityAmount() : null,
                 "DENIED".equals(decision) ? claim.getDecisionRemarks() : null,
                 covers, claimedTotal,
-                approvedLike ? netPayableTotal : null);
+                approvedLike ? netPayableTotal : null,
+                needInfoReason);
     }
 
     /**

@@ -66,22 +66,30 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":1000}]}").statusCode());
 
-        // ADVANCE REVIEW -> VERIFICATION opens a PENDING verification row.
+        // ADVANCE REVIEW -> VERIFICATION opens the default checklist rows.
         HttpResponse<String> advanced = postJson("/api/claims/" + claimNumber + "/review",
                 bearer,
                 "{\"action\":\"ADVANCE\",\"rationale\":\"Looks consistent; verifying.\"}");
         assertEquals(200, advanced.statusCode(), advanced.body());
         assertTrue(advanced.body().contains("\"stage\":\"VERIFICATION\""), advanced.body());
-        assertEquals(1, count("SELECT count(*) FROM verification WHERE claim_id = ?",
+        assertEquals(3, count("SELECT count(*) FROM verification WHERE claim_id = ?",
                 idOf(claimNumber)));
+        assertEquals(1, count("SELECT count(*) FROM verification WHERE claim_id = ? "
+                + "AND type = 'PHYSICAL'", idOf(claimNumber)));
+        assertEquals(1, count("SELECT count(*) FROM verification WHERE claim_id = ? "
+                + "AND type = 'DOCUMENT'", idOf(claimNumber)));
+        assertEquals(1, count("SELECT count(*) FROM verification WHERE claim_id = ? "
+                + "AND type = 'CLAUSE'", idOf(claimNumber)));
 
-        // Assessment before a COMPLETE verification is rejected (incomplete blocks).
+        // Assessment before the whole checklist is COMPLETE is rejected.
         assertEquals(400, putJson("/api/claims/" + claimNumber + "/assessment", bearer,
                 "{\"rationale\":\"x\",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":1000},"
                         + "{\"coverCode\":\"OPD\",\"assessedAmount\":1000}]}").statusCode());
 
-        // Open a verification, then complete it (outcome + notes required).
+        // Complete the whole default checklist (outcome + notes required each).
+        // The follow-up DIGITAL row below must be COMPLETE too — every open row
+        // gates assessment.
         HttpResponse<String> created = postJson(
                 "/api/claims/" + claimNumber + "/verifications", bearer,
                 "{\"type\":\"DIGITAL\",\"notes\":\"Checking hospital records.\"}");
@@ -97,6 +105,7 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                         + "\"notes\":\"Dates and amounts match.\","
                         + "\"evidenceRefs\":\"bill.pdf\"}");
         assertEquals(200, completed.statusCode(), completed.body());
+        completeAllVerifications(claimNumber, bearer);
 
         // Assessment: OPD assessed 40000 > 30000 sub-limit -> 400, claim stays open.
         HttpResponse<String> overLimit = putJson(
@@ -218,17 +227,26 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         assertEquals(404,
                 get("/api/claims/" + claimNumber + "/staged", bearer).statusCode());
 
-        // NEED_INFO from DECISION is rejected (drive a twin claim there first).
+        // NEED_INFO from DECISION is allowed too (was REVIEW/VERIFICATION only).
         String decided = driveToDecision();
-        assertEquals(400, postJson("/api/claims/" + decided + "/review",
-                holderBearer(decided),
-                "{\"action\":\"NEED_INFO\",\"requestedItems\":\"Too late.\"}").statusCode());
+        HttpResponse<String> parkedFromDecision = postJson(
+                "/api/claims/" + decided + "/review", holderBearer(decided),
+                "{\"action\":\"NEED_INFO\",\"requestedItems\":\"Confirm the bill total.\"}");
+        assertEquals(200, parkedFromDecision.statusCode(), parkedFromDecision.body());
+        assertTrue(parkedFromDecision.body().contains("\"status\":\"NEED_INFO\""),
+                parkedFromDecision.body());
+        assertTrue(parkedFromDecision.body().contains("\"needInfoPriorStage\":\"DECISION\""),
+                parkedFromDecision.body());
 
         // Claimant responds: back UNDER_REVIEW at VERIFICATION, reassigned.
         HttpResponse<String> response = postJson(
                 "/api/claims/" + claimNumber + "/need-info-response", claimantBearer(),
                 "{\"message\":\"Uploaded the bill.\"}");
         assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"needInfoReason\":null")
+                || !response.body().contains("needInfoReason"),
+                "the answered request text clears off the claimant view: "
+                        + response.body());
         assertEquals("UNDER_REVIEW", statusOf(claimNumber));
         assertEquals("VERIFICATION", stageOf(claimNumber));
         assertNotNull(jdbcTemplate.queryForObject(
@@ -480,8 +498,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                 + "AND is_proposal = TRUE", idOf(claimNumber)),
                 "proposals travel");
         assertTrue(count("SELECT count(*) FROM verification WHERE claim_id = ?",
-                idOf(claimNumber)) >= 2,
-                "verification history travels");
+                idOf(claimNumber)) >= 4,
+                "verification history travels (3 defaults + 1 follow-up)");
     }
 
     // --- auth matrix -------------------------------------------------------------------------
@@ -596,6 +614,7 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                 "/api/claims/" + claimNumber + "/verifications/" + verificationId, bearer,
                 "{\"status\":\"COMPLETE\",\"outcome\":\"PASSED\",\"notes\":\"Match.\"}");
         assertEquals(200, completed.statusCode(), completed.body());
+        completeAllVerifications(claimNumber, bearer);
         String body;
         if (assessedByCover == null) {
             body = "{\"rationale\":\"Bills verified.\",\"covers\":["
@@ -673,6 +692,111 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
 
     private long idOfVerification(String body) {
         return Long.parseLong(body.replaceAll(".*\"id\":(\\d+).*", "$1"));
+    }
+
+    /**
+     * Completes every non-COMPLETE verification row on the claim (the default
+     * PHYSICAL/DOCUMENT/CLAUSE checklist plus any follow-ups). Assessment gates
+     * on the whole checklist, so every driver that assesses must finish it.
+     */
+    private void completeAllVerifications(String claimNumber, String bearer)
+            throws Exception {
+        String staged = get("/api/claims/" + claimNumber + "/staged", bearer).body();
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile(
+                        "\"id\":(\\d+),\"type\":([^,]+),\"status\":\"([A-Z_]+)\"")
+                        .matcher(staged);
+        while (matcher.find()) {
+            if (!"COMPLETE".equals(matcher.group(3))) {
+                HttpResponse<String> completed = putJson("/api/claims/" + claimNumber
+                        + "/verifications/" + matcher.group(1), bearer,
+                        "{\"status\":\"COMPLETE\",\"outcome\":\"PASSED\","
+                                + "\"notes\":\"Checked.\"}");
+                assertEquals(200, completed.statusCode(), completed.body());
+            }
+        }
+    }
+
+    /** Pre-decision referral at REVIEW: moves to a higher rung, stage untouched. */
+    @Test
+    void referFromReviewMovesToHigherRungWithStageUntouched() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+        String actorBearer = holderBearer(claimNumber);
+
+        HttpResponse<String> referred = postJson("/api/claims/" + claimNumber + "/refer",
+                actorBearer, "{\"auto\":true,\"reason\":\"Needs a senior eye.\"}");
+        assertEquals(200, referred.statusCode(), referred.body());
+        assertTrue(referred.body().contains("\"escalatedTo\":\"L2\""), referred.body());
+        assertEquals("REVIEW", stageOf(claimNumber),
+                "pre-decision referral preserves the stage");
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        // The original actor lost access; a higher rung holds it now.
+        assertEquals(404,
+                get("/api/claims/" + claimNumber + "/staged", actorBearer).statusCode());
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = "
+                + "'CLAIM_REFERRED' AND entity_id = ?", idOf(claimNumber)));
+    }
+
+    /** Pre-decision referral at VERIFICATION: verifications travel with the claim. */
+    @Test
+    void referFromVerificationPreservesVerificationHistory() throws Exception {
+        String claimNumber = driveToVerification();
+        String actorBearer = holderBearer(claimNumber);
+        long rowsBefore = count("SELECT count(*) FROM verification WHERE claim_id = ?",
+                idOf(claimNumber));
+
+        HttpResponse<String> referred = postJson("/api/claims/" + claimNumber + "/refer",
+                actorBearer, "{\"auto\":true,\"reason\":\"Complex bills.\"}");
+        assertEquals(200, referred.statusCode(), referred.body());
+        assertEquals("VERIFICATION", stageOf(claimNumber),
+                "referral preserves the stage");
+        assertEquals(rowsBefore, count(
+                "SELECT count(*) FROM verification WHERE claim_id = ?",
+                idOf(claimNumber)),
+                "verification history travels");
+    }
+
+    /** Pre-decision referral without a target is a 400 (nothing to resolve). */
+    @Test
+    void referFromReviewWithoutTargetIsRejected() throws Exception {
+        String claimNumber = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/refer",
+                holderBearer(claimNumber), "{\"reason\":\"Nowhere.\"}").statusCode());
+    }
+
+    /** V16 claimant document upload: NEED_INFO only, own claim only. */
+    @Test
+    void claimantDocumentUploadNeedsNeedInfoAndOwnClaim() throws Exception {
+        String claimNumber = driveToVerification();
+        String bearer = holderBearer(claimNumber);
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/review", bearer,
+                "{\"action\":\"NEED_INFO\",\"requestedItems\":\"Upload the bill.\"}")
+                .statusCode());
+
+        // Foreign claimant is a 404, never a 403.
+        assertEquals(404, postMultipart(
+                "/api/claims/" + claimNumber + "/documents",
+                JwtTestConfig.tokenFor("sub-claimant-other", "claimant"),
+                "bill.pdf", "Bill", "image/png", new byte[] {(byte) 0x89, 0x50})
+                .statusCode());
+
+        // Upload while NEED_INFO: labelled row lands, visible to the assignee.
+        java.net.http.HttpResponse<String> uploaded = postMultipart(
+                "/api/claims/" + claimNumber + "/documents", claimantBearer(),
+                "bill.pdf", "Hospital bill", "image/png",
+                new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47});
+        assertEquals(200, uploaded.statusCode(), uploaded.body());
+        assertTrue(uploaded.body().contains("Hospital bill"), uploaded.body());
+
+        // After the claimant responds the claim is back UNDER_REVIEW: uploads stop.
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/need-info-response",
+                claimantBearer(), "{\"message\":\"Uploaded.\"}").statusCode());
+        assertEquals(400, postMultipart(
+                "/api/claims/" + claimNumber + "/documents", claimantBearer(),
+                "late.pdf", "Late", "image/png", new byte[] {(byte) 0x89, 0x50})
+                .statusCode());
     }
 
     private Long idOf(String claimNumber) {
@@ -781,6 +905,32 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                 URI.create("http://localhost:" + port() + path))
                 .header("Content-Type", "multipart/form-data; boundary=" + BOUNDARY)
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Multipart file upload with a label part (V16 document endpoints). */
+    private HttpResponse<String> postMultipart(String path, String bearer,
+            String filename, String label, String contentType, byte[] bytes)
+            throws Exception {
+        String partBoundary = "----StagedDocBoundary9";
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        String fileHead = "--" + partBoundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\""
+                + filename + "\"\r\n"
+                + "Content-Type: " + contentType + "\r\n\r\n";
+        out.write(fileHead.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        out.write(bytes);
+        out.write(("\r\n--" + partBoundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"label\"\r\n\r\n"
+                + label + "\r\n--" + partBoundary + "--\r\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path))
+                .header("Content-Type", "multipart/form-data; boundary=" + partBoundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()));
         if (bearer != null) {
             builder.header("Authorization", "Bearer " + bearer);
         }
