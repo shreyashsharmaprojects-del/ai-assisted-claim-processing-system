@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { formatMoney } from '../format';
@@ -47,6 +47,7 @@ const MAX_PHOTO_MB = 10;
 })
 export class Fnol {
   private readonly http = inject(HttpClient);
+  private readonly route = inject(ActivatedRoute);
 
   protected step: 1 | 2 = 1;
   protected policyNumber = '';
@@ -61,6 +62,60 @@ export class Fnol {
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly result = signal<ClaimantClaimView | null>(null);
+  /**
+   * Set when the form arrived pre-linked from a policy (My policies → File a
+   * claim): the identity fields are verified server-side and shown read-only,
+   * so the claimant answers only what happened — never retypes their policy.
+   */
+  protected readonly lockedPolicy = signal(false);
+
+  constructor() {
+    const preselected = (this.route.snapshot.queryParamMap.get('policy') ?? '').trim();
+    if (preselected !== '') {
+      this.lockedPolicy.set(true);
+      this.policyNumber = preselected;
+      // Identity comes from the caller's own cockpit row (/mine): holder
+      // details are filled without the claimant typing them; the holder-match
+      // gate still runs server-side at cover load + submit (same 404 shape).
+      // Deferred past construction: the auth interceptor needs the Keycloak
+      // session settled (a constructor-fetch races sign-in and 401s away the
+      // lock even though the session exists).
+      setTimeout(() => void this.adoptOwnPolicy(preselected), 0);
+    }
+  }
+
+  /** Fill the step-1 identity from the caller's own cockpit row (same wall). */
+  private async adoptOwnPolicy(policyNumber: string): Promise<void> {
+    try {
+      const mine = await firstValueFrom(
+        this.http.get<
+          Array<{ policyNumber: string; holderName: string; holderEmail: string }>
+        >('/api/policies/mine'),
+      );
+      const own = (mine ?? []).find(
+        (row) => row.policyNumber?.toUpperCase() === policyNumber.toUpperCase(),
+      );
+      if (!own || !own.holderEmail) {
+        // Not mine (or gone): drop the lock and fall back to manual entry
+        // rather than stranding the claimant on a broken pre-fill.
+        this.lockedPolicy.set(false);
+        return;
+      }
+      this.policyNumber = own.policyNumber;
+      this.holderName = own.holderName ?? '';
+      this.holderEmail = own.holderEmail;
+      if (this.step1Valid()) {
+        // Locked: identity verified against the caller's own row — stay on
+        // the confirmation card and let Continue carry them to step 2.
+        // (Do NOT auto-advance here: a lock that jumps straight to step 2
+        // leaves the claimant wondering which policy they are filing under.)
+      } else {
+        this.lockedPolicy.set(false);
+      }
+    } catch {
+      this.lockedPolicy.set(false);
+    }
+  }
 
   // --- cover picker (V2-2) ----------------------------------------------------
   // Loaded from GET /api/claims/filing-covers with the typed step-1 holder
@@ -181,6 +236,18 @@ export class Fnol {
       this.step = 2;
       void this.loadCovers();
     }
+  }
+
+  /** Locked pre-fill proved wrong (or the claimant prefers manual): manual step 1. */
+  protected unlockPolicy(): void {
+    this.step = 1;
+    this.lockedPolicy.set(false);
+    this.policyNumber = '';
+    this.holderName = '';
+    this.holderEmail = '';
+    this.availableCovers.set([]);
+    this.coverChecked = {};
+    this.coverAmounts = {};
   }
 
   protected prevStep(): void {

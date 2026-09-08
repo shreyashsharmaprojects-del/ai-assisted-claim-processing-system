@@ -48,7 +48,8 @@ public class CockpitService {
     /** Own policies for the caller's account email, policy-number order. */
     public List<CockpitPolicyView> myPolicies(String holderEmail) {
         List<CockpitPolicyView> rows = jdbcTemplate.query(
-                "SELECT p.policy_number, p.product_code, p.holder_name, p.status, p.sum_insured, "
+                "SELECT p.policy_number, p.product_code, p.holder_name, p.holder_email, "
+                        + "p.status, p.sum_insured, "
                         + "p.valid_from, p.valid_to, "
                         + "(SELECT count(*) FROM policy_cover pc WHERE pc.policy_id = p.id) AS cover_count "
                         + "FROM policy p WHERE lower(p.holder_email) = lower(?) "
@@ -71,8 +72,8 @@ public class CockpitService {
             views.add(new CockpitPolicyView(row.policyNumber(), row.productCode(),
                     families.getOrDefault(row.productCode(), "NON_HEALTH"),
                     displayNames.getOrDefault(row.productCode(), row.productCode()),
-                    row.holderName(), row.status(), row.sumInsured(), remaining,
-                    row.validFrom(), row.validTo(), row.coverCount()));
+                    row.holderName(), row.holderEmail(), row.status(), row.sumInsured(),
+                    remaining, row.validFrom(), row.validTo(), row.coverCount()));
         }
         return views;
     }
@@ -173,6 +174,7 @@ public class CockpitService {
                 null,
                 null,
                 rs.getString("holder_name"),
+                rs.getString("holder_email"),
                 rs.getString("status"),
                 rs.getBigDecimal("sum_insured"),
                 null,

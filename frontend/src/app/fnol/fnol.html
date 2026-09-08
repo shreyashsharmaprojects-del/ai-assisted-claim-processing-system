@@ -88,6 +88,32 @@
     }
 
     @if (step === 1) {
+      @if (lockedPolicy()) {
+        <section class="form-card" data-testid="fnol-locked-policy" aria-label="Filing for your policy">
+          <div class="group">
+            <h2 class="group__title" id="fnol-step1-title">
+              <span class="step-index" aria-hidden="true">1</span>
+              Your policy
+            </h2>
+            <p class="group__desc">
+              Filing for <strong class="mono">{{ policyNumber.trim() }}</strong>
+              ({{ holderName }}) — verified from your account, nothing to retype.
+            </p>
+            <div class="form-actions">
+              <button type="button" class="btn btn--secondary btn--sm" data-testid="fnol-unlock" (click)="unlockPolicy()">
+                Use a different policy
+              </button>
+            </div>
+          </div>
+          <div class="footer-actions">
+            <div class="footer-actions__right">
+              <button type="button" class="btn btn--primary" data-testid="fnol-next" (click)="nextStep()">
+                Continue
+              </button>
+            </div>
+          </div>
+        </section>
+      } @else {
       <form id="fnol-form-step1" class="form-card" (ngSubmit)="nextStep()">
         <section class="group" aria-labelledby="fnol-step1-title">
           <h2 class="group__title" id="fnol-step1-title">
@@ -161,6 +187,7 @@
           </button>
         </div>
       </div>
+      }
     } @else {
       <form id="fnol-form" class="form-card" (ngSubmit)="submit()" novalidate>
         <section class="group" aria-labelledby="fnol-step2-title">

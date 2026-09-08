@@ -1,5 +1,5 @@
 import { Component, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
@@ -33,6 +33,7 @@ interface PolicyDetailResponse {
 export class PolicyDetail {
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly detail = signal<PolicyDetailResponse | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -87,7 +88,19 @@ export class PolicyDetail {
   }
 
   protected fileClaimLink(): string {
-    return '/claim/new';
+    // Kept for deep-links/tests; the button uses fileClaim() (queryParams).
+    const number = this.detail()?.policy.policyNumber ?? '';
+    return number === '' ? '/claim/new' : `/claim/new?policy=${encodeURIComponent(number)}`;
+  }
+
+  /** Navigate with the policy as a query param (routerLink would encode the ?). */
+  protected async fileClaim(): Promise<void> {
+    const number = this.detail()?.policy.policyNumber ?? '';
+    if (number === '') {
+      await this.router.navigate(['/claim/new']);
+    } else {
+      await this.router.navigate(['/claim/new'], { queryParams: { policy: number } });
+    }
   }
 
   protected validText(policy: CockpitPolicy): string {

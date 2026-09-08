@@ -31,6 +31,7 @@ export interface CockpitPolicy {
   productFamily: string;
   productDisplayName: string;
   holderName: string;
+  holderEmail: string;
   status: string;
   sumInsured: number | null;
   remainingBenefit: number | null;

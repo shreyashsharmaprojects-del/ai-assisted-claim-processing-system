@@ -124,8 +124,12 @@ class CockpitIntegrationTest extends ClaimTableResettingTest {
         assertTrue(response.body().contains("POL-10001"), response.body());
         assertTrue(response.body().contains("HLTH-PLUS"), response.body());
         assertTrue(response.body().contains("remainingBenefit"), response.body());
-        assertTrue(!response.body().contains("ada.lovelace@example.test"),
-                "holder email never reaches the cockpit view: " + response.body());
+        // The holder email IS the caller's own link key: /mine echoes it back
+        // so FNOL filing from a policy never re-asks for typed identity. It is
+        // only ever served to the account it belongs to (see the stranger test
+        // below) — never cross-customer.
+        assertTrue(response.body().contains("ada.lovelace@example.test"),
+                "own holder email pre-fills the filing form: " + response.body());
         assertTrue(!response.body().contains("claimantSub"),
                 "no internal fields leak: " + response.body());
     }
@@ -147,8 +151,11 @@ class CockpitIntegrationTest extends ClaimTableResettingTest {
         assertTrue(response.body().contains("room_rent_cap_per_day"), response.body());
         assertTrue(response.body().contains("Cosmetic surgery"), response.body());
         assertTrue(response.body().contains("remainingSubLimit"), response.body());
-        assertTrue(!response.body().contains("ada.lovelace@example.test"),
-                "holder email never reaches the detail view: " + response.body());
+        // Detail nests the /mine row (which carries the caller's own holder
+        // email for the filing pre-fill), so the address appears exactly there
+        // — and only for the owning account (404 otherwise, next test).
+        assertTrue(response.body().contains("ada.lovelace@example.test"),
+                "own holder email rides the detail's nested policy row: " + response.body());
     }
 
     @Test

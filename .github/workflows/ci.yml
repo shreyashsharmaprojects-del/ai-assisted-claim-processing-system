@@ -45,6 +45,7 @@ jobs:
       KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD || 'admin' }}
       ADJUSTER_PASSWORD: ${{ secrets.ADJUSTER_PASSWORD || 'adjuster-Pass-123' }}
       SUPERVISOR_PASSWORD: ${{ secrets.SUPERVISOR_PASSWORD || 'supervisor-Pass-123' }}
+      CLAIMANT_PASSWORD: ${{ secrets.CLAIMANT_PASSWORD || 'claims-Pass-123' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
