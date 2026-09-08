@@ -18,7 +18,8 @@ import com.claims.api.PageResult;
 /**
  * R1 policy admin (supervisor-only via SecurityConfig): create, CSV import with per-row
  * results, retire, and the paginated admin list (all rows incl. RETIRED, newest first).
- * The public {@code GET /api/policies} reference list is untouched in {@link PolicyController}.
+ * The legacy {@code GET /api/policies} full-book list is supervisor-only too
+ * (see {@link PolicyController}) — never a claimant/adjuster surface.
  */
 @RestController
 @RequestMapping("/api/policies")

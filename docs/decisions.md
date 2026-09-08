@@ -170,10 +170,14 @@ environmental E2E crisis where stale dev servers on :4200/:8081 poisoned every r
   (open/unassigned/under-review/escalated/closed, 7-day aging pressure, monthly approved
   total), single indexed queries (V8 adds the composite queue indexes). Aggregates only —
   no per-claim data, so no wall surface.
-- **`GET /api/policies` now requires a session.** Holder names are personal data; the
-  anonymous list is gone. Home shows a sign-in panel for visitors; FNOL/claim filing
-  signs in through the guard first. Journey 0 (skeleton) asserts the sign-in prompt, not
-  the rows.
+- **`GET /api/policies` is supervisor-only.** Holder names are personal data, so the
+  legacy whole-book list serves supervisors only — claimants read their own rows
+  via the cockpit (`/mine`), adjusters have no policy surface, anonymous callers
+  get 401 and claimants/adjusters get 403. Home fetches no customer data at all:
+  anonymous visitors see the claimant path, signed-in claimants see their own
+  workspace links, staff see the work queue with no filing/tracking CTAs (the
+  guards enforce the same split). Journey 0 (skeleton) asserts the claimant path
+  and the absence of any policy table.
 - **Readiness + tracing.** `GET /api/ready` (migrations current + SELECT 1) is the
   traffic gate; `X-Request-Id` on every response (MDC `rid` in logs); unexpected errors
   carry `(Reference: xxxx)` so users can quote a ticket id instead of a stack trace.
@@ -397,7 +401,7 @@ E2E journeys after the pass; frontend build green; `npm audit` 0 vulnerabilities
 - **Dev credentials → environment variables** (the slice-2/3 deferred item): Postgres
   (`DB_USERNAME`/`DB_PASSWORD`) and Keycloak bootstrap admin (`KEYCLOAK_ADMIN_USERNAME`/
   `KEYCLOAK_ADMIN_PASSWORD`) read from env in `docker-compose.yml` + `application.properties`;
-  realm-user passwords render from `ADJUSTER_PASSWORD`/`SUPERVISOR_PASSWORD` into a
+  realm-user passwords render from `ADJUSTER_PASSWORD`/`SUPERVISOR_PASSWORD`/`CLAIMANT_PASSWORD` into a
   **gitignored** `keycloak/realm-export.json` via `keycloak/render-realm.mjs` (committed
   `realm-export.template.json`). Added `.env.example`, `.env` to `.gitignore`, `npm run setup`,
   CI + E2E now inject env. The realm-sync test reads the template.

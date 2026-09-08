@@ -104,16 +104,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
                                         "SUPERVISOR")
-                        // Policy reference carries holder names: authenticated staff and
-                        // claimants may read the legacy list (V1 contract); the cockpit
-                        // detail route sits below. Order matters: /mine + /admin first —
+                        // Legacy V1 list carries every customer's number + holder
+                        // name: supervisor-only (the cockpit serves claimants
+                        // their own rows). Order matters: /mine + /admin first —
                         // Spring matches in declaration order, and /admin would
                         // otherwise fall into the /* detail rule.
                         .requestMatchers(HttpMethod.GET, "/api/policies/mine")
                                 .hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/policies/admin")
                                 .hasRole("SUPERVISOR")
-                        .requestMatchers(HttpMethod.GET, "/api/policies").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/policies").hasRole("SUPERVISOR")
                         // V2-1 cockpit: own policy detail for claimants; internal roles
                         // keep coverage context via the same route.
                         .requestMatchers(HttpMethod.GET, "/api/policies/*")

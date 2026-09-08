@@ -385,6 +385,12 @@ class FnolApiIntegrationTest extends ClaimTableResettingTest {
     @Test
     void policiesWithoutTokenIs401AndHealthStaysPublic() throws Exception {
         assertEquals(401, getStatus("/api/policies"), "holder names are personal data — no anonymous list");
+        assertEquals(403, getResponse("/api/policies",
+                JwtTestConfig.tokenFor("sub-claimant-list", "claimant")).statusCode(),
+                "claimants must never list other customers' policies");
+        assertEquals(403, getResponse("/api/policies",
+                JwtTestConfig.tokenFor("sub-adjuster-list", "adjuster_l1")).statusCode(),
+                "adjusters must never list customer policies");
         assertEquals(200, getStatus("/api/health"));
         assertEquals(200, getStatus("/api/ready"));
     }

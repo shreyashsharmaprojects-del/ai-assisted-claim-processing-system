@@ -1,7 +1,8 @@
 .home-actions {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-6);
+  margin-top: var(--space-4);
+  flex-wrap: wrap;
 }
 
 /* How-it-works strip: three plain steps in one row, no invented metrics. */

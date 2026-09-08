@@ -4,7 +4,8 @@
 # message as "(Reference: xxxx)" — grep the backend log for rid=xxxx.
 @host = http://localhost:8081
 
-### Walking-skeleton page data: seeded policies (any signed-in role; 401 anonymous)
+### Legacy full-book policy list (SUPERVISOR only: every customer's number + holder
+### name — claimants read their own rows via /mine, adjusters have no policy surface)
 GET {{host}}/api/policies
 Authorization: Bearer {{token}}
 

@@ -4,9 +4,13 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Pure mapping logic from persisted policy rows to public summaries — no database, no
- * framework. Kept as a plain static utility so the sorting and field-shaping rules can be
- * unit-tested without booting Spring.
+ * Pure mapping logic from persisted policy rows to the SUPERVISOR-ONLY legacy book
+ * shape — no database, no framework. Kept as a plain static utility so the sorting
+ * and field-shaping rules can be unit-tested without booting Spring.
+ *
+ * <p>This shape still carries every customer's policy number + holder name, so it
+ * must never be served to claimants or adjusters — see SecurityConfig (supervisor
+ * only) and CockpitService (claimants read only their own rows).
  */
 public final class PolicyViewMapper {
 

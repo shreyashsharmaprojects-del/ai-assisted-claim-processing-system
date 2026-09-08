@@ -31,12 +31,12 @@ class PolicyApiIntegrationTest {
     private Environment environment;
 
     @Test
-    void seededPolicyIsServedThroughTheRealStack() throws Exception {
+    void legacyBookListIsSupervisorOnly() throws Exception {
         int port = Integer.parseInt(environment.getProperty("local.server.port"));
         HttpResponse<String> response = http.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies"))
                         .header("Authorization", "Bearer "
-                                + com.claims.support.JwtTestConfig.tokenFor("sub-policy-1", "claimant"))
+                                + com.claims.support.JwtTestConfig.tokenFor("sub-policy-1", "supervisor"))
                         .GET().build(),
                 HttpResponse.BodyHandlers.ofString());
 
@@ -45,18 +45,27 @@ class PolicyApiIntegrationTest {
         assertTrue(body.contains("POL-10001"), "response should contain the seeded policy number: " + body);
         assertTrue(body.contains("Ada Lovelace"), "response should contain the seeded holder name: " + body);
         assertFalse(body.contains("ada.lovelace@example.test"),
-                "holder email must never reach the public policy view: " + body);
-        assertFalse(body.contains("sum_insured"), "coverage must never reach the public policy view: " + body);
+                "holder email must never reach the legacy policy view: " + body);
+        assertFalse(body.contains("sum_insured"), "coverage must never reach the legacy policy view: " + body);
     }
 
     @Test
-    void policiesAreAuthenticatedBecauseHolderNamesArePersonalData() throws Exception {
+    void legacyBookListRejectsClaimantsAdjustersAndAnonymous() throws Exception {
         int port = Integer.parseInt(environment.getProperty("local.server.port"));
-        HttpResponse<Void> response = http.send(
+        HttpResponse<Void> anonymous = http.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies")).GET().build(),
                 HttpResponse.BodyHandlers.discarding());
+        assertEquals(401, anonymous.statusCode(), "anonymous callers must not list policyholder names");
 
-        assertEquals(401, response.statusCode(), "anonymous callers must not list policyholder names");
+        for (String role : new String[] {"claimant", "adjuster_l1", "adjuster_l2", "adjuster_l3"}) {
+            HttpResponse<Void> denied = http.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/policies"))
+                            .header("Authorization", "Bearer "
+                                    + com.claims.support.JwtTestConfig.tokenFor("sub-" + role, role))
+                            .GET().build(),
+                    HttpResponse.BodyHandlers.discarding());
+            assertEquals(403, denied.statusCode(), "role " + role + " must not list other customers' policies");
+        }
     }
 
     @Test

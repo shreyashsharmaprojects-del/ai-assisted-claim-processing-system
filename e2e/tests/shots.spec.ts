@@ -612,15 +612,14 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   await supCtx.close();
 
   // ================= Claimant cockpit (linked holder) =================
-  // 41/42 — Ada owns POL-10001 by holder email, so signing in with exactly
-  // that address links her cockpit: cover list with limits/claimed/remaining,
-  // then the HLTH-PLUS policy detail. The account (`shotada…`, created by the
-  // first capture run) persists in Keycloak across reseeds — sign in directly.
+  // 41/42 — Ada owns POL-10001 by holder email, so signing in as the
+  // pre-provisioned `ada.lovelace` claimant links her cockpit: cover list with
+  // limits/claimed/remaining, then the HLTH-PLUS policy detail.
   const adaCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const ada = await adaCtx.newPage();
   await ada.goto('/claim/new');
   await expect(ada).toHaveURL(/realms\/claims/);
-  await ada.locator('#username').fill('shotada1788875266421');
+  await ada.locator('#username').fill('ada.lovelace');
   await ada.locator('#password').fill('claims-Pass-123');
   await ada.locator('#kc-login').click();
   await expect(ada.getByTestId('fnol-policy-number')).toBeVisible({ timeout: 30000 });

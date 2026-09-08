@@ -7,10 +7,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Policy reference data for the FNOL form. Authenticated-only: the list carries
- * policyholder names (personal data), so anonymous callers get a 401 and pick a policy
- * from their own documents instead. Any signed-in role may read it — claimants need it
- * to file, adjusters to verify coverage context.
+ * Legacy V1 reference list (GET /api/policies). SUPERVISOR-ONLY since the
+ * privacy hardening: the rows carry every customer's policy number + holder
+ * name, so claimants and adjusters are 403 here (SecurityConfig). Claimants
+ * read their own rows via the cockpit ({@code /mine}); the supervisor book
+ * UI reads {@code /admin}; the FNOL cover picker reads filing-covers.
  */
 @RestController
 @RequestMapping("/api/policies")

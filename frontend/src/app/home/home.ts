@@ -1,56 +1,63 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { serverMessage } from '../toasts';
+import { isAuthenticated, onSessionChange, sessionState } from '../auth/auth.service';
 
-export interface PolicySummary {
-  policyNumber: string;
-  productCode: string;
-  holderName: string;
-}
-
+/**
+ * Role-aware landing page. It fetches no data: the old whole-book policy table
+ * (GET /api/policies — every customer's number + holder name) was a privacy leak
+ * and is now supervisor-only, so home shows no customer data at all.
+ *
+ * Each audience gets exactly its own surface (separation of concern; the route
+ * guards enforce the same split): anonymous visitors get the claimant acquisition
+ * path, claimants get their own quick links, adjusters get a staff card pointing
+ * at the queue with no filing/tracking CTAs, and supervisors get oversight links.
+ */
 @Component({
   imports: [RouterLink],
   selector: 'app-home',
   styleUrl: './home.css',
   templateUrl: './home.html',
 })
-export class Home {
-  private readonly http = inject(HttpClient);
+export class Home implements OnDestroy {
+  private readonly stopListening: () => void;
 
-  protected readonly policies = signal<PolicySummary[]>([]);
-  protected readonly error = signal<string | null>(null);
-  protected readonly loaded = signal(false);
-  protected readonly forbidden = signal(false);
+  /** Re-render the chrome when the session changes (sign-in/out, expiry). */
+  protected readonly sessionVersion = signal(0);
 
   constructor() {
-    void this.load();
+    this.stopListening = onSessionChange(() => {
+      this.sessionVersion.update((v) => v + 1);
+    });
   }
 
-  load() {
-    this.error.set(null);
-    this.forbidden.set(false);
-    this.loaded.set(false);
-    this.http.get<PolicySummary[]>('/api/policies').subscribe({
-      next: (policies) => {
-        this.policies.set(policies);
-        this.loaded.set(true);
-      },
-      error: (err: unknown) => {
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status: unknown }).status
-            : null;
-        if (status === 401) {
-          // Anonymous visitor: the reference list needs a session. Keep the page
-          // useful — the primary CTAs (file/track) trigger sign-in themselves.
-          this.forbidden.set(true);
-        } else {
-          this.error.set(serverMessage(err, 'Could not load policies from the backend.'));
-        }
-        this.loaded.set(true);
-      },
-    });
+  ngOnDestroy(): void {
+    this.stopListening();
+  }
+
+  protected isSignedIn(): boolean {
+    this.sessionVersion();
+    return isAuthenticated();
+  }
+
+  /** Supervisors get the oversight card (operational role wins over claimant). */
+  protected isSupervisor(): boolean {
+    this.sessionVersion();
+    return sessionState().roles.includes('supervisor');
+  }
+
+  /** Adjusters and supervisors: operations staff, never claimant CTAs. */
+  protected isInternal(): boolean {
+    this.sessionVersion();
+    const roles = sessionState().roles;
+    return (
+      roles.includes('adjuster_l1') || roles.includes('adjuster_l2')
+      || roles.includes('adjuster_l3') || roles.includes('supervisor')
+    );
+  }
+
+  /** Claimants without an operational role: their own workspace only. */
+  protected isClaimant(): boolean {
+    this.sessionVersion();
+    return sessionState().roles.includes('claimant') && !this.isInternal();
   }
 }

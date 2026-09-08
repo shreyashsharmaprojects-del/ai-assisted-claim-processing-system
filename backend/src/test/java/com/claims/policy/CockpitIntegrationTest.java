@@ -168,9 +168,9 @@ class CockpitIntegrationTest extends ClaimTableResettingTest {
     }
 
     @Test
-    void legacyPolicyListStillServesSeedsForV1Clients() throws Exception {
+    void legacyPolicyListIsSupervisorOnlyForPrivacy() throws Exception {
         HttpResponse<String> response = get("/api/policies",
-                JwtTestConfig.tokenFor("sub-policy-1", "claimant"));
+                JwtTestConfig.tokenFor("sub-supervisor legacy-list", "supervisor"));
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("POL-10001"), response.body());
         assertTrue(response.body().contains("Ada Lovelace"), response.body());

@@ -64,7 +64,8 @@ export class App implements OnDestroy {
   /** Claimant-only nav (my claims history; the routes are guarded too). */
   protected isClaimant(): boolean {
     this.sessionVersion();
-    return sessionState().roles.includes('claimant');
+    const roles = sessionState().roles;
+    return roles.includes('claimant') && !this.isInternal();
   }
 
   protected isSignedIn(): boolean {

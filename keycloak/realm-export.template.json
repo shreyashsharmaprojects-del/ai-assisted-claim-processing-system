@@ -80,6 +80,159 @@
   ],
   "users": [
     {
+      "id": "20000000-0000-0000-0000-000000000001",
+      "username": "ada.lovelace",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ada",
+      "lastName": "Lovelace",
+      "email": "ada.lovelace@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000002",
+      "username": "grace.hopper",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Grace",
+      "lastName": "Hopper",
+      "email": "grace.hopper@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000003",
+      "username": "ravi.menon",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ravi",
+      "lastName": "Menon",
+      "email": "ravi.menon@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000004",
+      "username": "fatima.khan",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Fatima",
+      "lastName": "Khan",
+      "email": "fatima.khan@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000005",
+      "username": "david.dsouza",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "David",
+      "lastName": "D'Souza",
+      "email": "david.dsouza@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000006",
+      "username": "lakshmi.iyer",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Lakshmi",
+      "lastName": "Iyer",
+      "email": "lakshmi.iyer@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000007",
+      "username": "arjun.nair",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Arjun",
+      "lastName": "Nair",
+      "email": "arjun.nair@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000008",
+      "username": "kavya.reddy",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Kavya",
+      "lastName": "Reddy",
+      "email": "kavya.reddy@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "20000000-0000-0000-0000-000000000009",
+      "username": "vikram.rao",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Vikram",
+      "lastName": "Rao",
+      "email": "vikram.rao@example.test",
+      "realmRoles": ["claimant"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "__CLAIMANT_PASSWORD__",
+          "temporary": false
+        }
+      ]
+    },
+    {
       "id": "10000000-0000-0000-0000-000000000001",
       "username": "adjuster.one",
       "enabled": true,

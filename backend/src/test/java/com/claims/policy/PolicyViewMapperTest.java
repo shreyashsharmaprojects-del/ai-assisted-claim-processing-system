@@ -10,8 +10,9 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for the policy read-path shaping: deterministic ordering plus the structural
- * rule that contact/coverage data never reaches the public summary. No database, no Spring.
+ * Unit tests for the legacy supervisor-only book shaping: deterministic ordering plus
+ * the structural rule that contact/coverage data never reaches even the supervisor
+ * summary. No database, no Spring.
  */
 class PolicyViewMapperTest {
 
@@ -48,7 +49,7 @@ class PolicyViewMapperTest {
                 .map(RecordComponent::getName)
                 .toList();
         assertEquals(List.of("policyNumber", "productCode", "holderName"), components,
-                "adding a field to the public summary is a deliberate act");
+                "adding a field to the supervisor summary is a deliberate act");
     }
 
     @Test

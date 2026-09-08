@@ -176,7 +176,7 @@ the full three-list report — fixed / needs-a-decision / deliberately accepted)
   (`DB_USERNAME`/`DB_PASSWORD`) and Keycloak bootstrap admin (`KEYCLOAK_ADMIN_USERNAME`/
   `KEYCLOAK_ADMIN_PASSWORD`) are read from env by `docker-compose.yml` and
   `application.properties`; the provisioned realm users' passwords (`ADJUSTER_PASSWORD`,
-  `SUPERVISOR_PASSWORD`) render into a **gitignored** `keycloak/realm-export.json` from the
+  `SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`) render into a **gitignored** `keycloak/realm-export.json` from the
   committed `keycloak/realm-export.template.json` via `keycloak/render-realm.mjs`. A
   committed `.env.example` lists every variable; `npm run setup` copies it to `.env` and
   renders the realm. Git history was checked — the old dev-only values still exist in
@@ -199,10 +199,12 @@ npm run backend                                 # sources .env; backend -> :8081
 npm --prefix frontend start                     # frontend -> :4200
 ```
 
-Open http://localhost:4200. Claimant: **File a claim** → register in Keycloak
-(self-registered users get `claimant`) → FNOL against seeded `POL-10001` (Ada Lovelace /
-ada.lovelace@example.test) or `POL-20002` (AUTO → L2) → claim number immediately, then
-**Track this claim** → the status screen (steps only — no reserve/notes ever; an escalated
+Open http://localhost:4200. Claimant: sign in as a pre-provisioned customer (`ada.lovelace`
+for POL-10001, `grace.hopper` for POL-20002 AUTO → L2, plus `ravi.menon`, `fatima.khan`,
+`david.dsouza`, `lakshmi.iyer`, `arjun.nair`, `kavya.reddy`, `vikram.rao` — password =
+`CLAIMANT_PASSWORD` from `.env`) → **My policies** shows only your own policies → **File a
+claim** against your own policy → claim number immediately, then **Track this claim** → the
+status screen (steps only — no reserve/notes ever; an escalated
 claim shows the Escalated step; a **closed** claim shows the decision). Internal:
 **Adjuster queue** → sign in as a provisioned adjuster (`adjuster.one`/`adjuster.two` = L1,
 `adjuster.three` = L2, password = `ADJUSTER_PASSWORD` from `.env`) → **Open claim** → full

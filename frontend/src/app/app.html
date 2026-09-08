@@ -32,6 +32,10 @@
           </svg>
           File a claim
         </a>
+      } @else if (isInternal()) {
+        <a routerLink="/queue" class="btn btn--primary btn--sm" data-testid="nav-work-queue">
+          Work queue
+        </a>
       }
       @if (isSignedIn()) {
         <span class="user-chip" title="Signed in">

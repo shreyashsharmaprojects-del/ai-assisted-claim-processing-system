@@ -20,7 +20,7 @@ deploy traffic on **readiness**, never liveness.
 
 Prerequisites: Docker + a shell with the prod secrets in the environment
 (`DB_USERNAME`, `DB_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`, `ADJUSTER_PASSWORD`,
-`SUPERVISOR_PASSWORD`, `KEYCLOAK_URL` = the public Keycloak URL).
+`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`, `KEYCLOAK_URL` = the public Keycloak URL).
 
 ```bash
 # 1. Render the realm from secrets (passwords never touch git).
@@ -177,7 +177,7 @@ multi-tenancy is Series-A, not this sale.
 # 1. Realm render — copy keycloak/realm-export.template.json entry for the new
 #    carrier (new realm name, e.g. "carrier-acme"), then render secrets in:
 DB_USERNAME=... DB_PASSWORD=... KEYCLOAK_ADMIN_PASSWORD=... \
-ADJUSTER_PASSWORD=... SUPERVISOR_PASSWORD=... npm run realm:render
+ADJUSTER_PASSWORD=... SUPERVISOR_PASSWORD=... CLAIMANT_PASSWORD=... npm run realm:render
 # 2. Provision — staff Keycloak users + matching app_user rows (levels L1/L2/L3;
 #    V2-1 added the adjuster_l3 realm role + L3 staff; the supervisor needs a
 #    Keycloak user ONLY (no app_user row, by design).

@@ -48,7 +48,7 @@ npm run setup        # copies .env.example -> .env and renders keycloak/realm-ex
 
 `.env.example` lists every variable (`DB_USERNAME`, `DB_PASSWORD`,
 `KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `ADJUSTER_PASSWORD`,
-`SUPERVISOR_PASSWORD`). Edit `.env` if you want different local values; the values there
+`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`). Edit `.env` if you want different local values; the values there
 are DEV-ONLY for the throwaway local Postgres/Keycloak.
 
 ## Run it
@@ -69,12 +69,17 @@ npm run backend
 npm --prefix frontend start
 ```
 
-Open http://localhost:4200. **Claimant:** File a claim → register in Keycloak
-(self-registered users are `claimant`) → FNOL against seeded policy `POL-10001`
-(Ada Lovelace / ada.lovelace@example.test) or `POL-20002` (AUTO → L2) → claim number
-immediately → Track this claim for the status screen (steps only — never reserve/notes;
-a closed claim shows the decision). **Adjuster:** sign in as `adjuster.one`/`adjuster.two`
-(L1) or `adjuster.three` (L2) with the `ADJUSTER_PASSWORD` from `.env`. **Supervisor:**
+Open http://localhost:4200. **Claimant:** sign in with a pre-provisioned customer
+account — `ada.lovelace` (POL-10001, Ada Lovelace / ada.lovelace@example.test),
+`grace.hopper` (POL-20002, AUTO → L2), `ravi.menon`, `fatima.khan`,
+`david.dsouza`, `lakshmi.iyer`, `arjun.nair`, `kavya.reddy`, or `vikram.rao` —
+all with the `CLAIMANT_PASSWORD` from `.env` (`claims-Pass-123` by default).
+Your cockpit (`My policies`) shows only your own policies; file against your own
+policy number + holder details → claim number immediately → Track this claim for
+the status screen (steps only — never reserve/notes; a closed claim shows the
+decision). **Adjuster:** sign in as `adjuster.one`/`adjuster.two`
+(L1) or `adjuster.three` (L2) with the `ADJUSTER_PASSWORD` from `.env` — the
+workspace is the queue only (no filing/tracking surfaces). **Supervisor:**
 sign in as `supervisor` with `SUPERVISOR_PASSWORD` → Escalations and Authority settings.
 Keycloak admin console: http://localhost:8090 (`KEYCLOAK_ADMIN_USERNAME`/
 `KEYCLOAK_ADMIN_PASSWORD`). Emails land in Mailpit at http://localhost:8025.
