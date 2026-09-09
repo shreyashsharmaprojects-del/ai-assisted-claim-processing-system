@@ -37,6 +37,22 @@
       }
     </ol>
 
+    <!-- S6 (V22): a reopened claim is back under review — claim-level decision
+         cleared, per-cover outcomes kept as history. -->
+    @if (wasReopened()) {
+      <section class="panel panel--action" aria-label="Claim reopened">
+        <div class="panel__header">
+          <h2>Your claim was reopened — what happens next</h2>
+        </div>
+        <div class="panel__body">
+          <p class="need-info-request">
+            Your claim was reopened for further review. An adjuster is looking at it
+            again — you don't need to do anything unless we ask.
+          </p>
+        </div>
+      </section>
+    }
+
     @if (needsInfo()) {
       <section class="panel panel--action" data-testid="claim-need-info-panel" aria-label="Action needed">
         <div class="panel__header">

@@ -165,6 +165,57 @@
       </p>
     }
 
+    <!-- S6 (V22): supervisor-only reopen of a closed claim. Shown for both
+         legacy and staged closures (mirror of the role/status gates above);
+         the queue regains the claim automatically once it is open again. -->
+    @if (canReopen()) {
+      <section class="panel">
+        <div class="panel__header">
+          <h2>Reopen claim</h2>
+        </div>
+        <div class="panel__body">
+          <div class="button-row send-back-row">
+            <button
+              type="button"
+              class="btn btn--secondary"
+              data-testid="detail-reopen-toggle"
+              [disabled]="reopening()"
+              (click)="showReopenForm = !showReopenForm"
+            >
+              Reopen claim
+            </button>
+          </div>
+          @if (showReopenForm) {
+            <div class="field send-back-form">
+              <label for="detail-reopen-rationale-field">
+                Reason — at least 20 characters; the claim returns to review
+              </label>
+              <div class="inline-form">
+                <textarea
+                  id="detail-reopen-rationale-field"
+                  class="input"
+                  rows="2"
+                  placeholder="Why is this claim being reopened?"
+                  data-testid="detail-reopen-rationale"
+                  [(ngModel)]="reopenRationale"
+                  name="reopenRationale"
+                ></textarea>
+                <button
+                  type="button"
+                  class="btn btn--secondary"
+                  data-testid="detail-reopen-confirm"
+                  [disabled]="reopening() || reopenRationale.trim().length < 20"
+                  (click)="reopen()"
+                >
+                  {{ reopening() ? 'Reopening…' : 'Confirm reopen' }}
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    }
+
     @if (canDecide() || isSupervisor()) {
       <!-- ======================= THE NEXT STEP ======================= -->
       @if (isLegacy()) {

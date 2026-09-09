@@ -254,6 +254,11 @@ export class ClaimDetail {
   protected sendBackRationale = '';
   protected showSendBackForm = false;
 
+  // S6 (V22): supervisor-only reopen of a CLOSED claim — back to review.
+  protected readonly reopening = signal(false);
+  protected reopenRationale = '';
+  protected showReopenForm = false;
+
   // Verification inputs (per-row completion + the extra follow-up form).
   // Jira-style checklist: open rows expand in place (completed rows collapse
   // to one line); expansion is local UI state keyed by verification id, so a
@@ -512,6 +517,55 @@ export class ClaimDetail {
     }
   }
 
+  /** S6 (V22): supervisor-only — reopen a CLOSED claim back to review. */
+  protected canReopen(): boolean {
+    return this.isSupervisor() && this.view()?.status === 'CLOSED';
+  }
+
+  /** S6 (V22): reopen the closed claim with a rationale (≥20 chars, S5 409 path). */
+  async reopen() {
+    this.error.set(null);
+    this.decisionResult.set(null);
+    if (this.reopenRationale.trim().length < 20) {
+      this.error.set('A rationale of at least 20 characters is required to reopen a claim.');
+      return;
+    }
+    this.reopening.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.reopening.set(false);
+      return;
+    }
+    try {
+      const view = await firstValueFrom(
+        this.http.post<StagedView>(
+          `/api/claims/${this.claimNumber}/reopen`,
+          {
+            rationale: this.reopenRationale.trim(),
+            expectedVersion: this.loadedVersion(),
+          },
+          { headers },
+        ),
+      );
+      this.reopenRationale = '';
+      this.showReopenForm = false;
+      this.decisionResult.set('Claim reopened — back under review.');
+      this.toasts.success('Claim reopened.');
+      this.applyView(view);
+      await this.loadTimeline(headers);
+      if (this.isSupervisor()) {
+        await this.loadAudit(headers);
+      }
+    } catch (err) {
+      if (await this.handleConflict(headers, err)) {
+        return;
+      }
+      this.error.set(serverMessage(err, 'Could not reopen the claim.'));
+    } finally {
+      this.reopening.set(false);
+    }
+  }
+
   /** One line under the stepper: what this stage asks of the adjuster. */
   protected stageTask(): string {
     if (this.isLegacy()) {
@@ -730,6 +784,10 @@ export class ClaimDetail {
         return 'Check opened';
       case 'VERIFICATION_COMPLETED':
         return 'Check completed';
+      case 'CLAIM_REOPENED':
+        // S6 (V22): emitted once the backend maps the CLAIM_REOPENED audit
+        // row to a milestone; the generic milestone renderer picks it up.
+        return 'Reopened';
       default:
         return 'Update';
     }

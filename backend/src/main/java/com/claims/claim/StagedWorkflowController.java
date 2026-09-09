@@ -136,6 +136,20 @@ public class StagedWorkflowController {
                 result.assignedTo(), result.escalatedTo());
     }
 
+    /**
+     * V22 (V3 S6): supervisor reopen of a CLOSED claim — back to UNDER_REVIEW at
+     * REVIEW, reassigned. Flushes the in-transaction reopen mail like closures.
+     */
+    @PostMapping("/{claimNumber}/reopen")
+    public StagedClaimView reopen(@AuthenticationPrincipal Jwt jwt,
+            Authentication authentication, @PathVariable String claimNumber,
+            @RequestBody ReopenInput input) {
+        StagedClaimView view = workflow.reopen(claimNumber, jwt.getSubject(),
+                Authorities.isSupervisor(authentication), input);
+        dispatcher.dispatch();
+        return view;
+    }
+
     /** Claimant response to NEED_INFO: back to the prior stage, reassigned. */
     @PostMapping("/{claimNumber}/need-info-response")
     public ClaimantClaimView respond(@AuthenticationPrincipal Jwt jwt,

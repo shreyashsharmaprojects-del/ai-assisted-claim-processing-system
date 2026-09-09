@@ -5,6 +5,60 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S6 claim reopen / appeal, supervisor-only (V22 seq + UNIQUE(claim_id,seq))
+
+**Context:** Plan V2 keeps "no appeals" as a non-goal (2026-09-03
+"Reopening / appeals" note, ~L1636-1640: one-way flow to closure, no appeal
+process defined). This slice **overrides** that line: new evidence, claimant
+disputes, and regulator asks are handled inside the system instead of "file a
+new claim" (which corrupts cycle-time metrics). Depends on S5 (reopen is
+version-checked). Plan: `docs/plan-v3.md` S6.
+
+**What changed (all additive):**
+- **Migration `V22__reopen_payments.sql`:** `payment.seq INT NOT NULL
+  DEFAULT 1` (backfills existing rows); drops `payment_claim_id_key`; adds
+  `payment_claim_seq_unique UNIQUE (claim_id, seq)`. Claim needs no new
+  status — reopened claims re-enter UNDER_REVIEW[REVIEW].
+- **Backend:** `StagedWorkflowService.reopen` + `POST /api/claims/{n}/reopen`
+  (`SecurityConfig` → SUPERVISOR; non-supervisors get 403 at the gate, adjuster
+  403 before any claim logic). Ordering: access check first (stranger →
+  `ClaimNotFoundException` 404, never a leak), then `expectedVersion`
+  compare-and-swap (409), then guards (400): non-CLOSED → 400, rationale
+  < 20 chars → 400 (max 400). Body: `{rationale, expectedVersion}`
+  (`ReopenInput`).
+- **Effect (one transaction):** `status=UNDER_REVIEW`, `stage=REVIEW`,
+  `decision`/`decision_remarks`/`closed_at` cleared (`Claim.reopen()`); level
+  preserved; reassign via `ClaimAssigner` (skill-aware, least-loaded at claim
+  level); `CLAIM_REOPENED` audit (before CLOSED → after UNDER_REVIEW +
+  rationale); `EmailOutboxWriter.enqueueReopen` in-transaction (kind stays
+  DECISION — the V10 kind CHECK is immutable this slice and S10 assumes the
+  three kinds). Proposals stay as the closure left them (the new handler
+  assesses fresh); verification history is kept and visible.
+- **Next closure inserts `payment(seq = max+1)`** at all three closure sites
+  (staged assess path, staged escalation path, legacy `ClaimDecisionService`);
+  `payment.amount == net_payable` per row; claim totals reflect the latest closure.
+- **Timeline:** `CLAIM_REOPENED` renders "Reopened — \<rationale\>".
+- **Frontend:** supervisor-only "Reopen claim" on closed claims (testids
+  `detail-reopen-toggle/rationale/confirm`; ≥20-char client guard, S5 409
+  path); claimant tracker "Your claim was reopened — what happens next" panel
+  via a marker-free heuristic (open status + cleared decision + decided
+  covers). Queue regains the claim automatically (status-driven, no filter change).
+
+**Verified:** `ClaimReopenIntegrationTest` 6/6 (closed → reopen → re-decide:
+payment seq 2 + latest totals; open-claim 400; short-rationale 400; adjuster
+403; unknown-claim 404; stale-version 409 then fresh-version success), full
+backend suite 275/275 (269/269 at S5 per `git log` + 6 new — docs-only
+session, tests not re-run), frontend build green, `reopen.spec` 1/1 x3 runs
+(supervisor reopens a decided staged claim, tracker shows reopened, adjuster
+re-works to closure).
+**Judgment calls:** stranger-404 surfaces as unknown-claim 404 (non-supervisors
+403 at the gate); tracker marker-free heuristic (legacy no-cover edge renders
+no panel); E2E uses POL-10001 (POL-30002 carries a 10k deductible cap on the
+shared DB).
+**Deliberately not built (Non-goals):** claimant-filed appeals
+(supervisor-only this slice), multi-tranche payments (still one payment per
+closure), auto-reopen rules.
+
 ### 2026-09-09 — S5 optimistic concurrency (V21 version + @Version, 409-on-conflict)
 
 **Context:** Two adjusters on one claim (post-reassign) could silently

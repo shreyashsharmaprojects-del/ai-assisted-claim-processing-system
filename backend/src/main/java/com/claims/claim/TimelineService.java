@@ -181,6 +181,8 @@ public class TimelineService {
             case "RESERVE_SET" -> "Reserve set to ₹" + textOf(after, "reserveAmount");
             case "DECISION" -> "Decision: " + textOf(after, "decision")
                     + (row.rationale() == null ? "" : " — " + row.rationale());
+            case "CLAIM_REOPENED" -> "Reopened"
+                    + (row.rationale() == null ? "" : " — " + row.rationale());
             default -> null;
         };
     }

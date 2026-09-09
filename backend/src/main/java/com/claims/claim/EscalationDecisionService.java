@@ -128,7 +128,8 @@ public class EscalationDecisionService {
         // authorized_by is NULL on purpose: a supervisor token has no app_user row (the
         // staff cache is L1/L2 adjusters only); the DECISION audit row below carries their
         // subject as the actor.
-        payments.save(new Payment(claim.getId(), amount, null, now));
+        payments.save(new Payment(claim.getId(),
+                payments.maxSeqForClaim(claim.getId()) + 1, amount, null, now));
         auditLog.append(actorSub, "DECISION", "CLAIM", claim.getId(),
                 AuditJson.of(Map.of("status", "ESCALATED_SUPERVISOR", "level", claim.getLevel())),
                 AuditJson.of(Map.of("claimNumber", claim.getClaimNumber(),

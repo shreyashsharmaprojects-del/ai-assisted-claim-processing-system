@@ -105,6 +105,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST,
                                 "/api/claims/*/escalation-cover-decision")
                                 .hasRole("SUPERVISOR")
+                        // V22 (V3 S6): supervisor-only reopen of a closed claim.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/reopen")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/escalations")
                                 .hasRole("SUPERVISOR")
                         // Production dashboard: aggregate ops numbers, supervisor-only.

@@ -641,7 +641,9 @@ public class StagedWorkflowService {
             // Flush so the returned view carries the bumped version (see assess).
             claims.saveAndFlush(claim);
             metrics.decision(mixed ? "PARTIALLY_APPROVED" : "APPROVED");
-            payments.save(new Payment(claim.getId(), netTotal, actor.getId(), closed));
+            payments.save(new Payment(claim.getId(),
+                    payments.maxSeqForClaim(claim.getId()) + 1, netTotal, actor.getId(),
+                    closed));
             audit("DECISION", actorSub, claim,
                     Map.of("status", "UNDER_REVIEW", "stage", "DECISION"),
                     after(claim, "decision", claim.getDecision(), "approvedTotal",
@@ -893,6 +895,55 @@ public class StagedWorkflowService {
         return claimantViewOf(claim);
     }
 
+    // --- reopen (supervisor) -----------------------------------------------------------
+
+    /**
+     * V22 (V3 S6): reopens a CLOSED claim for re-work (new evidence, dispute,
+     * regulator ask) instead of filing a new claim. One transaction: the closure
+     * is cleared back to UNDER_REVIEW[REVIEW], the level is preserved, the claim
+     * is reassigned through {@link ClaimAssigner}, a CLAIM_REOPENED audit row is
+     * appended (before CLOSED → after UNDER_REVIEW + rationale), and a reopen
+     * outbox row is enqueued in-transaction. Proposals stay as the closure left
+     * them (the new handler assesses fresh); verification history is kept.
+     *
+     * <p>Ordering (S5 precedent): access check first (404-not-403), then the
+     * version compare-and-swap (409), then the guards (400).
+     */
+    @Transactional
+    public StagedClaimView reopen(String claimNumber, String actorSub, boolean supervisor,
+            ReopenInput input) {
+        Claim claim = claims.findByClaimNumberForUpdate(claimNumber)
+                .orElseThrow(ClaimNotFoundException::new);
+        if (!access.internalReaderMaySee(claim, actorSub, supervisor)) {
+            throw new ClaimNotFoundException();
+        }
+        requireExpectedVersion(input == null ? null : input.expectedVersion(), claim);
+        if (!"CLOSED".equals(claim.getStatus())) {
+            throw new InvalidRequestException(
+                    "Only a closed claim can be reopened.");
+        }
+        String rationale = textOf(input == null ? null : input.rationale());
+        if (rationale == null || rationale.length() < 20) {
+            throw new InvalidRequestException(
+                    "A rationale of at least 20 characters is required to reopen a claim.");
+        }
+        claim.reopen();
+        com.claims.staff.AppUser pick = assigner.assign(claim);
+        // Flush so the returned view carries the bumped version (see assess).
+        claims.saveAndFlush(claim);
+        Map<String, Object> after = after(claim, "stage", "REVIEW");
+        if (pick != null) {
+            after.put("assignedAdjusterId", pick.getId());
+            after.put("assignedTo", pick.getDisplayName());
+        }
+        audit("CLAIM_REOPENED", actorSub, claim, Map.of("status", "CLOSED"),
+                after, rationale);
+        Policy policy = policyOf(claim);
+        outboxWriter.enqueueReopen(claim.getId(), policy.getHolderEmail(),
+                policy.getHolderName(), claim.getClaimNumber(), rationale);
+        return viewOf(claim, actorSub);
+    }
+
     // --- supervisor escalated cover-decide ------------------------------------------
 
     /**
@@ -1047,7 +1098,8 @@ public class StagedWorkflowService {
         // Flush so the returned view carries the bumped version (see assess).
         claims.saveAndFlush(claim);
         metrics.decision(anyRejected ? "PARTIALLY_APPROVED" : "APPROVED");
-        payments.save(new Payment(claim.getId(), netTotal, null, now));
+        payments.save(new Payment(claim.getId(),
+                payments.maxSeqForClaim(claim.getId()) + 1, netTotal, null, now));
         audit("DECISION", actorSub, claim, Map.of("status", "ESCALATED_SUPERVISOR"),
                 after(claim, "decision", claim.getDecision(), "approvedTotal", approvedTotal,
                         "netPayableTotal", netTotal),

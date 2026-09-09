@@ -161,7 +161,9 @@ public class ClaimDecisionService {
                 // Flush: see deny above.
                 claims.saveAndFlush(claim);
                 metrics.decision("APPROVED");
-                payments.save(new Payment(claim.getId(), amount, actor.getId(), now));
+                payments.save(new Payment(claim.getId(),
+                        payments.maxSeqForClaim(claim.getId()) + 1, amount, actor.getId(),
+                        now));
                 auditLog.append(actor.getKeycloakSub(), "DECISION", "CLAIM", claim.getId(),
                         AuditJson.of(Map.of("status", "UNDER_REVIEW", "level", previousLevel)),
                         AuditJson.of(Map.of("claimNumber", claim.getClaimNumber(),

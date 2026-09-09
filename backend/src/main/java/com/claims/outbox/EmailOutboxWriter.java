@@ -64,6 +64,33 @@ public class EmailOutboxWriter {
                 decisionBody(holderName, decision));
     }
 
+    /**
+     * V22 (V3 S6): the reopen notice — same tone as the decision mails, queued in
+     * the reopen transaction (commits or rolls back with it). Kind stays DECISION:
+     * the V10 kind CHECK is immutable this slice and S10 assumes the three kinds.
+     * The subject carries the reopen fact; the dispatcher sends it verbatim.
+     */
+    public void enqueueReopen(long claimId, String to, String holderName,
+            String claimNumber, String rationale) {
+        outbox.enqueue(claimId, "DECISION", to,
+                "Claim " + claimNumber + " has been reopened",
+                """
+                Dear %s,
+
+                Your claim %s has been reopened for further review.
+
+                %s
+
+                What happens next: an adjuster will review the claim again and be
+                in touch with you. You can track progress on your claim status
+                screen.
+
+                Yours,
+                Claims Processing
+                """.formatted(holderName, claimNumber,
+                        rationale == null ? "" : rationale));
+    }
+
     private static String decisionBody(String holderName, ClaimDecisionView decision) {
         if ("APPROVED".equals(decision.decision())) {
             return """

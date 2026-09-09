@@ -256,6 +256,19 @@ public class Claim {
     }
 
     /**
+     * V22 (V3 S6): reopens a closed claim for re-work — back to UNDER_REVIEW at REVIEW
+     * with the closure cleared (decision/remarks/closed_at). The level is preserved;
+     * the caller reassigns through {@link com.claims.assignment.ClaimAssigner}.
+     */
+    public void reopen() {
+        this.status = "UNDER_REVIEW";
+        this.stage = "REVIEW";
+        this.decision = null;
+        this.decisionRemarks = null;
+        this.closedAt = null;
+    }
+
+    /**
      * Moves the claim to the supervisor escalation state (no adjuster holds it). Used when a
      * decision amount exceeds the L2 authority limit, or when no L2 adjuster is provisioned
      * to take an escalation.

@@ -150,6 +150,18 @@ export class ClaimStatus {
     return item.status === 'RECEIVED' ? 'Received' : item.status === 'WAIVED' ? 'Waived' : 'Pending';
   }
 
+  /** S6 (V22): a reopened claim re-enters review with the closure cleared —
+   * the decision fields are null, so the tracker shows what happens next. */
+  protected wasReopened(): boolean {
+    const claim = this.view();
+    return (
+      claim != null &&
+      (claim.status === 'UNDER_REVIEW' || claim.status === 'NEED_INFO') &&
+      claim.decision == null &&
+      (claim.covers ?? []).some((c) => c.decision != null)
+    );
+  }
+
   /** The adjuster's requested items (their own round-trip text, wall-safe). */
   protected needInfoText(): string {
     return this.view()?.needInfoReason?.trim() || 'More information is needed.';

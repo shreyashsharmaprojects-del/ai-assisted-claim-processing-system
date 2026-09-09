@@ -249,6 +249,22 @@ Content-Type: application/json
   "rationale": "The reported damage is outside the policy coverage."
 }
 
+### Reopen a closed claim (SUPERVISOR only — adjusters get 403, strangers 404)
+# Only CLOSED claims reopen (open claims -> 400); rationale >= 20 chars (400);
+# expectedVersion is the S5 compare-and-swap token (stale -> 409
+# {"error":"CONFLICT",...}). Effect: status UNDER_REVIEW, stage REVIEW,
+# decision/remarks/closed_at cleared, level preserved, reassigned via
+# ClaimAssigner, CLAIM_REOPENED audit + reopen mail, timeline "Reopened" row.
+# Next closure inserts payment(seq = max+1).
+POST {{host}}/api/claims/CLM-000001/reopen
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rationale": "New hospital evidence arrived; re-examining the assessed total.",
+  "expectedVersion": 3
+}
+
 ### Staged workflow — full view (assignee or SUPERVISOR). Stage (REVIEW | VERIFICATION
 # | DECISION), NEED_INFO state, per-cover money + outcomes + proposals, verification
 # history, and the actor's authority limit + basis for this product. 404 otherwise.
