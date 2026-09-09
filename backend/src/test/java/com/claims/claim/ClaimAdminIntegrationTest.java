@@ -348,10 +348,13 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
                 "SELECT a.level FROM claim c JOIN app_user a "
                         + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
                 String.class, claimNumber);
+        Long version = jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
         HttpResponse<String> decision = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + amount + ",\"rationale\":\"" + rationale + "\"}");
+                        + amount + ",\"rationale\":\"" + rationale + "\""
+                        + ",\"expectedVersion\":" + version + "}");
         assertEquals(200, decision.statusCode(), decision.body());
     }
 
@@ -364,10 +367,13 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
                 "SELECT a.level FROM claim c JOIN app_user a "
                         + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
                 String.class, claimNumber);
+        Long version = jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
+                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\""
+                        + ",\"expectedVersion\":" + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertEquals("ESCALATED_SUPERVISOR", jdbcTemplate.queryForObject(
                 "SELECT status FROM claim WHERE claim_number = ?", String.class, claimNumber));

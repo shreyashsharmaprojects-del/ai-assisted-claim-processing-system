@@ -191,10 +191,13 @@ class QueuePaginationIntegrationTest extends ClaimTableResettingTest {
                 "SELECT a.level FROM claim c JOIN app_user a "
                         + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
                 String.class, claimNumber);
+        Long version = jdbcTemplateForEscalation.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":1200000.00,"
-                        + "\"rationale\":\"Exceptional loss.\"}");
+                        + "\"rationale\":\"Exceptional loss.\",\"expectedVersion\":"
+                        + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
     }
 

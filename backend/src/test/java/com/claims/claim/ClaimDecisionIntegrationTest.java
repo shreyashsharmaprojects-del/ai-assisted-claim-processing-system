@@ -116,7 +116,9 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + WITHIN_L1 + ",\"rationale\":\"Quotes verified; within my authority.\"}");
+                        + WITHIN_L1
+                        + ",\"rationale\":\"Quotes verified; within my authority.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"APPROVED\""), response.body());
 
@@ -179,7 +181,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"DENIED\",\"rationale\":"
-                        + "\"Coverage excludes the reported damage.\"}");
+                        + "\"Coverage excludes the reported damage.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"DENIED\""), response.body());
 
@@ -222,7 +225,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + ABOVE_L1_WITHIN_L2
-                        + ",\"rationale\":\"Large water damage claim.\"}");
+                        + ",\"rationale\":\"Large water damage claim.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"escalatedTo\":\"L2\""), response.body());
         assertFalse(response.body().contains("\"decision\":\"APPROVED\""),
@@ -257,7 +261,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
+                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"escalatedTo\":\"SUPERVISOR\""), response.body());
 
@@ -282,7 +287,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
                         + AUTO_ABOVE_L1_WITHIN_L2
-                        + ",\"rationale\":\"Within L2 authority.\"}");
+                        + ",\"rationale\":\"Within L2 authority.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"APPROVED\""), response.body());
         assertEquals("CLOSED", jdbcTemplate.queryForObject(
@@ -302,7 +308,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
             HttpResponse<String> response = postJson(
                     "/api/claims/" + claimNumber + "/decision", holderBearer(claimNumber),
                     "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                            + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"no L2 available\"}");
+                            + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"no L2 available\""
+                            + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
             assertEquals(200, response.statusCode(), response.body());
             assertTrue(response.body().contains("\"escalatedTo\":\"SUPERVISOR\""), response.body());
             assertFalse(response.body().contains("\"decision\":\"APPROVED\""),
@@ -343,7 +350,7 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
                 Future<ClaimDecisionOutcome> pending = pool.submit(() -> decisionService.decide(
                         claimNumber, SUB_L1_ONE,
                         new ClaimDecisionInput("APPROVED", new BigDecimal(WITHIN_L1),
-                                "held-lock decision")));
+                                "held-lock decision", versionOf(claimNumber))));
 
                 // The lock is still held, so the decision cannot have completed.
                 Thread.sleep(500);
@@ -369,12 +376,13 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
 
         HttpResponse<String> approve = postJson("/api/claims/" + claimNumber + "/decision",
                 holderBearer(claimNumber), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + WITHIN_L1 + "}");
+                        + WITHIN_L1 + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, approve.statusCode(), approve.body());
         assertTrue(approve.body().contains("rationale"), approve.body());
 
         HttpResponse<String> deny = postJson("/api/claims/" + claimNumber + "/decision",
-                holderBearer(claimNumber), "{\"decision\":\"DENIED\"}");
+                holderBearer(claimNumber),
+                "{\"decision\":\"DENIED\",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, deny.statusCode(), deny.body());
         assertTrue(deny.body().contains("rationale"), deny.body());
 
@@ -389,18 +397,23 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String bearer = holderBearer(claimNumber);
 
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
-                "{\"decision\":\"MAYBE\",\"indemnityAmount\":100,\"rationale\":\"x\"}")
+                "{\"decision\":\"MAYBE\",\"indemnityAmount\":100,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
-                "{\"decision\":\"APPROVED\",\"rationale\":\"x\"}").statusCode());
+                "{\"decision\":\"APPROVED\",\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}").statusCode());
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":0,\"rationale\":\"x\"}")
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":0,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":1.234,\"rationale\":\"x\"}")
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":1.234,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/decision", bearer,
-                "{\"decision\":\"DENIED\",\"indemnityAmount\":100,\"rationale\":\"x\"}")
+                "{\"decision\":\"DENIED\",\"indemnityAmount\":100,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
     }
 
@@ -409,13 +422,16 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
         String bearer = holderBearer(claimNumber);
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + WITHIN_L1 + ",\"rationale\":\"first\"}";
+                + WITHIN_L1 + ",\"rationale\":\"first\""
+                + ",\"expectedVersion\":" + versionOf(claimNumber) + "}";
 
         assertEquals(200, postJson("/api/claims/" + claimNumber + "/decision", bearer, body)
                 .statusCode());
 
         HttpResponse<String> second = postJson("/api/claims/" + claimNumber + "/decision",
-                bearer, body);
+                bearer, "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                        + WITHIN_L1 + ",\"rationale\":\"first\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, second.statusCode(), second.body());
         assertTrue(second.body().contains("already been decided"), second.body());
         assertEquals(1, count("SELECT count(*) FROM payment WHERE claim_id = ?",
@@ -427,8 +443,14 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
     @Test
     void decisionEndpointAuthMatrix() throws Exception {
         String claimNumber = fileHomeFnol();
+        // Unknown claim -> 404 (version 0: the row does not exist to bump).
+        assertEquals(404, postJson("/api/claims/CLM-999999/decision", adjusterOneBearer(),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                        + WITHIN_L1 + ",\"rationale\":\"x\",\"expectedVersion\":0}")
+                .statusCode());
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + WITHIN_L1 + ",\"rationale\":\"x\"}";
+                + WITHIN_L1 + ",\"rationale\":\"x\",\"expectedVersion\":"
+                + versionOf(claimNumber) + "}";
 
         // Anonymous -> 401; claimant and supervisor -> 403 (supervisor's decision surface is
         // the slice-5 escalation endpoint, not this one).
@@ -444,9 +466,6 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         assertEquals(404, postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor("10000000-0000-0000-0000-000000000002", "adjuster_l1"),
                 body).statusCode());
-        // Unknown claim -> 404.
-        assertEquals(404, postJson("/api/claims/CLM-999999/decision", adjusterOneBearer(), body)
-                .statusCode());
     }
 
     @Test
@@ -454,7 +473,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
         String originalBearer = holderBearer(claimNumber);
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"above L1\"}";
+                + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"above L1\""
+                + ",\"expectedVersion\":" + versionOf(claimNumber) + "}";
 
         assertEquals(200, postJson("/api/claims/" + claimNumber + "/decision",
                 originalBearer, body).statusCode());
@@ -476,7 +496,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> l2Decision = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holderSub, "adjuster_l2"),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"within L2\"}");
+                        + ABOVE_L1_WITHIN_L2 + ",\"rationale\":\"within L2\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, l2Decision.statusCode(), l2Decision.body());
         assertEquals("CLOSED", jdbcTemplate.queryForObject(
                 "SELECT status FROM claim WHERE id = ?", String.class, idOf(claimNumber)));
@@ -489,7 +510,8 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
         // anonymous caller (401) or another claimant (404), exactly like an open one.
         String claimNumber = fileHomeFnol();
         postJson("/api/claims/" + claimNumber + "/decision", holderBearer(claimNumber),
-                "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\"}");
+                "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}");
 
         assertEquals(200, get("/api/claims/" + claimNumber, claimantBearer()).statusCode(),
                 "the owner reads their closed claim's decision");
@@ -587,6 +609,12 @@ class ClaimDecisionIntegrationTest extends ClaimTableResettingTest {
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM claim WHERE claim_number = ?", Long.class, claimNumber);
+    }
+
+    /** V21 (V3 S5): the claim version a writer must echo back as expectedVersion. */
+    private Long versionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
     }
 
     private Long l2AdjusterId() {

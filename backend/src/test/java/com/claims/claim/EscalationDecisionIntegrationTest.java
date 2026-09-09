@@ -103,7 +103,8 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber
                 + "/escalation-decision", supervisorBearer(),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":" + ABOVE_L2
-                        + ",\"rationale\":\"Approved under full authority.\"}");
+                        + ",\"rationale\":\"Approved under full authority.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"APPROVED\""), response.body());
         assertTrue(response.body().contains("\"indemnityAmount\":"), response.body());
@@ -160,7 +161,8 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
 
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber
                 + "/escalation-decision", supervisorBearer(),
-                "{\"decision\":\"DENIED\",\"rationale\":\"Coverage excludes the reported damage.\"}");
+                "{\"decision\":\"DENIED\",\"rationale\":\"Coverage excludes the reported damage.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"decision\":\"DENIED\""), response.body());
 
@@ -201,12 +203,14 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         String path = "/api/claims/" + claimNumber + "/escalation-decision";
 
         HttpResponse<String> approve = postJson(path, supervisorBearer(),
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":" + ABOVE_L2 + "}");
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":" + ABOVE_L2
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, approve.statusCode(), approve.body());
         assertTrue(approve.body().contains("rationale"), approve.body());
 
         HttpResponse<String> deny = postJson(path, supervisorBearer(),
-                "{\"decision\":\"DENIED\"}");
+                "{\"decision\":\"DENIED\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + "}");
         assertEquals(400, deny.statusCode(), deny.body());
         assertTrue(deny.body().contains("rationale"), deny.body());
 
@@ -222,18 +226,23 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         String bearer = supervisorBearer();
 
         assertEquals(400, postJson(path, bearer,
-                "{\"decision\":\"MAYBE\",\"indemnityAmount\":100,\"rationale\":\"x\"}")
+                "{\"decision\":\"MAYBE\",\"indemnityAmount\":100,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson(path, bearer,
-                "{\"decision\":\"APPROVED\",\"rationale\":\"x\"}").statusCode());
+                "{\"decision\":\"APPROVED\",\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}").statusCode());
         assertEquals(400, postJson(path, bearer,
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":0,\"rationale\":\"x\"}")
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":0,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson(path, bearer,
-                "{\"decision\":\"APPROVED\",\"indemnityAmount\":1.234,\"rationale\":\"x\"}")
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":1.234,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
         assertEquals(400, postJson(path, bearer,
-                "{\"decision\":\"DENIED\",\"indemnityAmount\":100,\"rationale\":\"x\"}")
+                "{\"decision\":\"DENIED\",\"indemnityAmount\":100,\"rationale\":\"x\","
+                        + "\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
     }
 
@@ -242,10 +251,14 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = escalatedClaimNumber();
         String path = "/api/claims/" + claimNumber + "/escalation-decision";
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + ABOVE_L2 + ",\"rationale\":\"first\"}";
+                + ABOVE_L2 + ",\"rationale\":\"first\""
+                + ",\"expectedVersion\":" + versionOf(claimNumber) + "}";
 
         assertEquals(200, postJson(path, supervisorBearer(), body).statusCode());
-        HttpResponse<String> second = postJson(path, supervisorBearer(), body);
+        HttpResponse<String> second = postJson(path, supervisorBearer(),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                        + ABOVE_L2 + ",\"rationale\":\"first\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, second.statusCode(), second.body());
         assertTrue(second.body().contains("already been decided"), second.body());
         assertEquals(1, count("SELECT count(*) FROM payment WHERE claim_id = ?",
@@ -259,7 +272,8 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = escalatedClaimNumber();
         String path = "/api/claims/" + claimNumber + "/escalation-decision";
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + ABOVE_L2 + ",\"rationale\":\"x\"}";
+                + ABOVE_L2 + ",\"rationale\":\"x\","
+                + "\"expectedVersion\":" + versionOf(claimNumber) + "}";
 
         // Only SUPERVISOR acts here: anonymous 401; claimant and both adjuster levels 403.
         assertEquals(401, postJson(path, null, body).statusCode());
@@ -272,10 +286,16 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         // Unknown claim -> 404; a claim not on the supervisor -> 400 with an actionable
         // message (the supervisor can see team claims, so the state is the problem).
         assertEquals(404, postJson("/api/claims/CLM-999999/escalation-decision",
-                supervisorBearer(), body).statusCode());
+                supervisorBearer(),
+                "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                        + ABOVE_L2 + ",\"rationale\":\"x\",\"expectedVersion\":0}")
+                .statusCode());
         String plainClaim = fileHomeFnol();
+        String plainBody = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
+                + ABOVE_L2 + ",\"rationale\":\"x\","
+                + "\"expectedVersion\":" + versionOf(plainClaim) + "}";
         HttpResponse<String> notEscalated = postJson("/api/claims/" + plainClaim
-                + "/escalation-decision", supervisorBearer(), body);
+                + "/escalation-decision", supervisorBearer(), plainBody);
         assertEquals(400, notEscalated.statusCode(), notEscalated.body());
         assertTrue(notEscalated.body().contains("not awaiting a supervisor decision"),
                 notEscalated.body());
@@ -314,7 +334,9 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
 
         assertEquals(200, postJson("/api/claims/" + claimNumber + "/escalation-decision",
                 supervisorBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Approved.\"}").statusCode());
+                        + ABOVE_L2 + ",\"rationale\":\"Approved.\""
+                        + ",\"expectedVersion\":" + versionOf(claimNumber) + "}")
+                .statusCode());
 
         HttpResponse<String> after = get("/api/escalations", supervisorBearer());
         assertFalse(after.body().contains("\"" + claimNumber + "\""),
@@ -353,10 +375,12 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
                 "SELECT a.level FROM claim c JOIN app_user a "
                         + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
                 String.class, claimNumber);
+        Long version = versionOf(claimNumber);
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\"}");
+                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\""
+                        + ",\"expectedVersion\":" + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertTrue(escalation.body().contains("\"escalatedTo\":\"SUPERVISOR\""),
                 escalation.body());
@@ -431,6 +455,12 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM claim WHERE claim_number = ?", Long.class, claimNumber);
+    }
+
+    /** V21 (V3 S5): the claim version a writer must echo back as expectedVersion. */
+    private Long versionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
     }
 
     private String statusOf(String claimNumber) {

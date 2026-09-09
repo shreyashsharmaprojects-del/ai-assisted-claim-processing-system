@@ -62,7 +62,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
 
         // Decision before the DECISION stage is rejected.
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"too early\",\"covers\":["
+                "{\"rationale\":\"too early\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":1000}]}").statusCode());
 
@@ -83,7 +84,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
 
         // Assessment before the whole checklist is COMPLETE is rejected.
         assertEquals(400, putJson("/api/claims/" + claimNumber + "/assessment", bearer,
-                "{\"rationale\":\"x\",\"covers\":["
+                "{\"rationale\":\"x\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":1000},"
                         + "{\"coverCode\":\"OPD\",\"assessedAmount\":1000}]}").statusCode());
 
@@ -110,7 +112,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // Assessment: OPD assessed 40000 > 30000 sub-limit -> 400, claim stays open.
         HttpResponse<String> overLimit = putJson(
                 "/api/claims/" + claimNumber + "/assessment", bearer,
-                "{\"rationale\":\"Trying over-limit.\",\"covers\":["
+                "{\"rationale\":\"Trying over-limit.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
                         + "{\"coverCode\":\"OPD\",\"assessedAmount\":40000}]}");
         assertEquals(400, overLimit.statusCode(), overLimit.body());
@@ -121,7 +124,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // Valid assessment moves VERIFICATION -> DECISION.
         HttpResponse<String> assessed = putJson(
                 "/api/claims/" + claimNumber + "/assessment", bearer,
-                "{\"rationale\":\"Bills verified.\",\"covers\":["
+                "{\"rationale\":\"Bills verified.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
                         + "{\"coverCode\":\"OPD\",\"assessedAmount\":25000}]}");
         assertEquals(200, assessed.statusCode(), assessed.body());
@@ -131,7 +135,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // PARTIALLY_APPROVED with payment = Σ net = (80000-10000) + 0 = 70000.
         HttpResponse<String> decided = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Within authority.\",\"covers\":["
+                "{\"rationale\":\"Within authority.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":80000,\"remarks\":\"Bills verified.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
@@ -276,7 +281,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // HLTH-PLUS L1 100000; propose 150000 approved -> proposals saved, claim stays.
         HttpResponse<String> gated = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Needs senior sign-off.\",\"covers\":["
+                "{\"rationale\":\"Needs senior sign-off.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
@@ -327,7 +333,9 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         assertEquals(404,
                 get("/api/claims/" + claimNumber + "/staged", actorBearer).statusCode());
         assertEquals(404, postJson("/api/claims/" + claimNumber + "/cover-decision",
-                actorBearer, "{\"rationale\":\"x\",\"covers\":[]}").statusCode());
+                actorBearer,
+                "{\"rationale\":\"x\",\"expectedVersion\":" + versionOf(claimNumber)
+                        + ",\"covers\":[]}").statusCode());
 
         // The L2 holder sees the proposals and may modify + close within authority.
         String holderBearer = holderBearer(claimNumber);
@@ -335,7 +343,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         assertTrue(staged.contains("\"proposal\":true"), staged);
         HttpResponse<String> closed = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", holderBearer,
-                "{\"rationale\":\"Revised within L2 authority.\",\"covers\":["
+                "{\"rationale\":\"Revised within L2 authority.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Agreed.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
@@ -408,7 +417,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = driveToDecision();
         assertEquals(400, postJson("/api/claims/" + claimNumber + "/escalation-cover-decision",
                 supervisorBearer(),
-                "{\"rationale\":\"x\",\"covers\":["
+                "{\"rationale\":\"x\",\"expectedVersion\":" + versionOf(claimNumber)
+                        + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":1000}]}").statusCode());
 
@@ -453,7 +463,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> closed = postJson(
                 "/api/claims/" + claimNumber + "/escalation-cover-decision",
                 supervisorBearer(),
-                "{\"rationale\":\"Agreed at revised figures.\",\"covers\":["
+                "{\"rationale\":\"Agreed at revised figures.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":120000,\"remarks\":\"Revised.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
@@ -633,15 +644,24 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
             body = "{\"rationale\":\"Bills verified.\",\"covers\":["
                     + covers + "]}";
         }
+        body = withExpectedVersion(claimNumber, body);
         HttpResponse<String> assessed = putJson(
                 "/api/claims/" + claimNumber + "/assessment", bearer, body);
         assertEquals(200, assessed.statusCode(), assessed.body());
     }
 
+    /** V21 (V3 S5): splices expectedVersion into an assessment JSON body under test. */
+    private String withExpectedVersion(String claimNumber, String json) {
+        Long version = versionOf(claimNumber);
+        return json.endsWith("}") ? json.substring(0, json.length() - 1)
+                + ",\"expectedVersion\":" + version + "}" : json;
+    }
+
     private void proposeAboveL1(String claimNumber, String bearer) throws Exception {
         HttpResponse<String> gated = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Needs senior sign-off.\",\"covers\":["
+                "{\"rationale\":\"Needs senior sign-off.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
@@ -801,7 +821,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // The holder can re-assess and move forward again.
         HttpResponse<String> reassessed = putJson(
                 "/api/claims/" + claimNumber + "/assessment", bearer,
-                "{\"rationale\":\"Re-checked the bills.\",\"covers\":["
+                "{\"rationale\":\"Re-checked the bills.\",\"expectedVersion\":"
+                        + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
                         + "{\"coverCode\":\"OPD\",\"assessedAmount\":25000}]}");
         assertEquals(200, reassessed.statusCode(), reassessed.body());
@@ -954,6 +975,12 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
 
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject("SELECT id FROM claim WHERE claim_number = ?",
+                Long.class, claimNumber);
+    }
+
+    /** V21 (V3 S5): the claim version a writer must echo back as expectedVersion. */
+    private Long versionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject("SELECT version FROM claim WHERE claim_number = ?",
                 Long.class, claimNumber);
     }
 

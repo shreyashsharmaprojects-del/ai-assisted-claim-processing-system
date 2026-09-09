@@ -159,7 +159,8 @@ class AuthorityConfigIntegrationTest extends ClaimTableResettingTest {
             HttpResponse<String> decision = postJson("/api/claims/" + claimNumber + "/decision",
                     adjusterOneBearer(),
                     "{\"decision\":\"APPROVED\",\"indemnityAmount\":2800.00,"
-                            + "\"rationale\":\"Within the raised L1 limit.\"}");
+                            + "\"rationale\":\"Within the raised L1 limit.\","
+                            + "\"expectedVersion\":" + versionOf(claimNumber) + "}");
             assertEquals(200, decision.statusCode(), decision.body());
             assertTrue(decision.body().contains("\"decision\":\"APPROVED\""), decision.body());
             assertEquals("CLOSED", jdbcTemplate.queryForObject(
@@ -345,6 +346,12 @@ class AuthorityConfigIntegrationTest extends ClaimTableResettingTest {
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM claim WHERE claim_number = ?", Long.class, claimNumber);
+    }
+
+    /** V21 (V3 S5): the claim version a writer must echo back as expectedVersion. */
+    private Long versionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
     }
 
     private long count(String sql, Object... args) {

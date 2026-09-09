@@ -160,15 +160,20 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> first = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": 1500.00}");
+                adjusterOneBearer(),
+                "{\"amount\": 1500.00,\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, first.statusCode(), first.body());
         assertTrue(first.body().contains("\"reserveAmount\":1500.00"), first.body());
+        // The returned view carries the bumped version (echo it on the next write).
+        assertTrue(
+                first.body().contains("\"version\":" + (versionOf(claimNumber))), first.body());
 
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'RESERVE_SET' "
                 + "AND entity_id = ? AND actor_sub = ?", idOf(claimNumber), SUB_L1_ONE));
 
         HttpResponse<String> updated = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": 1800.50}");
+                adjusterOneBearer(),
+                "{\"amount\": 1800.50,\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, updated.statusCode(), updated.body());
         assertTrue(updated.body().contains("\"reserveAmount\":1800.50"), updated.body());
         assertEquals(2, count("SELECT count(*) FROM audit_log WHERE action = 'RESERVE_SET' "
@@ -195,18 +200,22 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol();
 
         HttpResponse<String> tooBig = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": 1000000000000}");
+                adjusterOneBearer(),
+                "{\"amount\": 1000000000000,\"expectedVersion\":"
+                        + versionOf(claimNumber) + "}");
         assertEquals(400, tooBig.statusCode(), tooBig.body());
         assertTrue(tooBig.body().contains("too large"), tooBig.body());
 
         HttpResponse<String> tooPrecise = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": 1.234}");
+                adjusterOneBearer(),
+                "{\"amount\": 1.234,\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, tooPrecise.statusCode(), tooPrecise.body());
         assertTrue(tooPrecise.body().contains("2 decimal places"), tooPrecise.body());
 
         // Zero is a legal reserve (the adjuster may have nothing set aside yet).
         HttpResponse<String> zero = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": 0}");
+                adjusterOneBearer(),
+                "{\"amount\": 0,\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, zero.statusCode(), zero.body());
         assertTrue(zero.body().contains("\"reserveAmount\":0"), zero.body());
     }
@@ -234,14 +243,18 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
 
         assertEquals(200, putJson("/api/claims/" + claimNumber + "/reserve",
                 JwtTestConfig.tokenFor("sub-supervisor-1", "supervisor"),
-                "{\"amount\": 500}").statusCode());
+                "{\"amount\": 500,\"expectedVersion\":" + versionOf(claimNumber) + "}")
+                .statusCode());
 
         assertEquals(404, putJson("/api/claims/" + claimNumber + "/reserve",
-                JwtTestConfig.tokenFor(SUB_L1_TWO, "adjuster_l1"), "{\"amount\": 500}").statusCode(),
+                JwtTestConfig.tokenFor(SUB_L1_TWO, "adjuster_l1"),
+                "{\"amount\": 500,\"expectedVersion\":" + versionOf(claimNumber) + "}")
+                .statusCode(),
                 "a non-assignee adjuster gets 404 on reserve, never 403");
 
         HttpResponse<String> negative = putJson("/api/claims/" + claimNumber + "/reserve",
-                adjusterOneBearer(), "{\"amount\": -1}");
+                adjusterOneBearer(),
+                "{\"amount\": -1,\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, negative.statusCode(), negative.body());
         assertTrue(negative.body().contains("zero or more"), negative.body());
     }
@@ -312,7 +325,8 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         assertEquals(401, get("/api/claims/" + claimNumber, null).statusCode());
         assertEquals(401, get("/api/claims/" + claimNumber + "/full", null).statusCode());
         assertEquals(401, putJson("/api/claims/" + claimNumber + "/reserve", null,
-                "{\"amount\": 1}").statusCode());
+                "{\"amount\": 1,\"expectedVersion\":" + versionOf(claimNumber) + "}")
+                .statusCode());
         assertEquals(401, postJson("/api/claims/" + claimNumber + "/notes", null,
                 "{\"body\": \"x\"}").statusCode());
         assertEquals(401, get("/api/claims/" + claimNumber + "/attachments/" + attachmentId,
@@ -323,7 +337,8 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         assertEquals(403, get("/api/claims/" + claimNumber, adjusterOneBearer()).statusCode());
         assertEquals(403, get("/api/claims/" + claimNumber + "/full", claimantBearer()).statusCode());
         assertEquals(403, putJson("/api/claims/" + claimNumber + "/reserve", claimantBearer(),
-                "{\"amount\": 1}").statusCode());
+                "{\"amount\": 1,\"expectedVersion\":" + versionOf(claimNumber) + "}")
+                .statusCode());
         assertEquals(403, postJson("/api/claims/" + claimNumber + "/notes", claimantBearer(),
                 "{\"body\": \"x\"}").statusCode());
         assertEquals(403, get("/api/claims/" + claimNumber + "/attachments/" + attachmentId,
@@ -333,7 +348,7 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
         assertEquals(404, get("/api/claims/CLM-999999", claimantBearer()).statusCode());
         assertEquals(404, get("/api/claims/CLM-999999/full", adjusterOneBearer()).statusCode());
         assertEquals(404, putJson("/api/claims/CLM-999999/reserve", adjusterOneBearer(),
-                "{\"amount\": 1}").statusCode());
+                "{\"amount\": 1,\"expectedVersion\":0}").statusCode());
         assertEquals(404, postJson("/api/claims/CLM-999999/notes", adjusterOneBearer(),
                 "{\"body\": \"x\"}").statusCode());
         assertEquals(404, get("/api/claims/CLM-999999/attachments/1", adjusterOneBearer()).statusCode());
@@ -474,6 +489,12 @@ class ClaimWorkIntegrationTest extends ClaimTableResettingTest {
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM claim WHERE claim_number = ?", Long.class, claimNumber);
+    }
+
+    /** V21 (V3 S5): the claim version a writer must echo back as expectedVersion. */
+    private Long versionOf(String claimNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
     }
 
     private long count(String sql, Object... args) {

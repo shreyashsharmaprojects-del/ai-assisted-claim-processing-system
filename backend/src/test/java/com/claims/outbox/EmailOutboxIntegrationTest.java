@@ -240,9 +240,18 @@ class EmailOutboxIntegrationTest extends ClaimTableResettingTest {
     }
 
     private void decide(String claimNumber, String json) throws Exception {
+        Long version = jdbcTemplate.queryForObject(
+                "SELECT version FROM claim WHERE claim_number = ?", Long.class, claimNumber);
+        String body = withExpectedVersion(json, version);
         HttpResponse<String> response = postJson("/api/claims/" + claimNumber + "/decision",
-                JwtTestConfig.tokenFor(SUB_L1_ONE, "adjuster_l1"), json);
+                JwtTestConfig.tokenFor(SUB_L1_ONE, "adjuster_l1"), body);
         assertEquals(200, response.statusCode(), response.body());
+    }
+
+    /** V21 (V3 S5): splices expectedVersion into a decision JSON body under test. */
+    private static String withExpectedVersion(String json, Long version) {
+        return json.endsWith("}") ? json.substring(0, json.length() - 1)
+                + ",\"expectedVersion\":" + version + "}" : json;
     }
 
     /** A sender pointed at an unroutable port: every send fails fast (SMTP-down). */
