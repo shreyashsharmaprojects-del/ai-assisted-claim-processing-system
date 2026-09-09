@@ -5,6 +5,34 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S2 S3-compatible object storage behind the seam (MinIO dev, filesystem default)
+
+**Context:** Evidence must survive re-images and multi-host deploys, but local-disk
+bytes do not. `attachment.storage_path` already stores portable keys
+`{claimId}/{uuid}{ext}` (V11), so no schema change was needed.
+
+**What changed (backend, all additive):**
+- **`PhotoValidator`** extracted from `FilesystemPhotoStorage` so S1 rules (image +
+  PDF allowlist, magic-byte gate, 10MB / 5-file caps, sha pinning) are shared.
+- **New `S3PhotoStorage` (bean `s3PhotoStorage`):** `java.net.http.HttpClient` +
+  hand-rolled SigV4, zero new Maven deps (no AWS SDK in the offline cache).
+- **Bean selection via `claims.storage.backend`** (default `filesystem`);
+  the `ClaimWorkService` instanceof branch is gone (serve via
+  `photoStorage.load()`).
+- **One-shot `S3BackfillRunner`** (`claims.storage.backfill=false` default): PUTs
+  keys, verifies sha, logs orphans, never deletes locals.
+- **Compose/env:** `docker-compose.yml` gains MinIO + bucket-init; prod compose
+  passes S3 env through; `.env.example` gains `CLAIMS_S3_*`.
+- **`operations.md`** gains an S3 page (config table, backfill runbook, bucket +
+  volume restore gate).
+
+**Verified:** `S3StorageIntegrationTest` 5/5 (fake-S3 `HttpServer` stub: SigV4 + key
+shape + store→load→delete), full suite 246/246 on the filesystem default,
+frontend build green (untouched), `pom.xml` diff empty.
+
+**Deliberately not built (Non-goals):** presigned-URL browser uploads,
+lifecycle/versioning policies, CDN.
+
 ### 2026-09-09 — S1 evidence file types: PDF + integrity (V18)
 
 **Context:** The NEED_INFO copy already asks claimants for PDFs (discharge summary,

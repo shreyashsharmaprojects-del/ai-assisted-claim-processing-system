@@ -1,8 +1,6 @@
 package com.claims.claim;
 
 import java.math.BigDecimal;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -168,6 +166,11 @@ public class ClaimWorkService {
      * carries a sha pin, the bytes are re-hashed and a mismatch is an error
      * log + 404 (never serve corrupt bytes; 404-not-403 keeps the rule).
      * Legacy NULL rows (pre-V18) skip verification and serve as before.
+     *
+     * <p>S2: served via {@code photoStorage.load()} so both backends (filesystem
+     * and S3) serve identically — keys ({@code {claimId}/{uuid}{ext}}) are
+     * backend-portable; legacy absolute-path rows resolve on the filesystem
+     * backend only.
      */
     public AttachmentDownload download(String claimNumber, String actorSub,
             boolean supervisor, Long attachmentId) {
@@ -175,38 +178,23 @@ public class ClaimWorkService {
         Attachment attachment = attachments.findById(attachmentId)
                 .filter(a -> a.getClaimId().equals(claim.getId()))
                 .orElseThrow(ClaimNotFoundException::new);
-        Path file = photoStoragePath(attachment.getStoragePath());
-        if (!Files.isRegularFile(file)) {
+        byte[] bytes;
+        try {
+            bytes = photoStorage.load(attachment.getStoragePath());
+        } catch (IllegalStateException ex) {
             log.error("Attachment {} for claim {} points at a missing file: {}",
-                    attachment.getId(), claimNumber, file);
+                    attachment.getId(), claimNumber, attachment.getStoragePath(), ex);
             throw new ClaimNotFoundException();
         }
-        try {
-            byte[] bytes = Files.readAllBytes(file);
-            if (attachment.getSha256() != null
-                    && !attachment.getSha256().equalsIgnoreCase(
-                            FilesystemPhotoStorage.sha256Hex(bytes))) {
-                log.error("Attachment {} for claim {} failed integrity check (sha mismatch)",
-                        attachment.getId(), claimNumber);
-                throw new ClaimNotFoundException();
-            }
-            return new AttachmentDownload(bytes,
-                    attachment.getContentType(), attachment.getOriginalName());
-        } catch (java.io.IOException ex) {
-            throw new IllegalStateException("Could not read attachment " + attachmentId, ex);
+        if (attachment.getSha256() != null
+                && !attachment.getSha256().equalsIgnoreCase(
+                        FilesystemPhotoStorage.sha256Hex(bytes))) {
+            log.error("Attachment {} for claim {} failed integrity check (sha mismatch)",
+                    attachment.getId(), claimNumber);
+            throw new ClaimNotFoundException();
         }
-    }
-
-    /**
-     * R5: the DB holds an object key ({@code {claimId}/{uuid}{ext}}); legacy absolute-path
-     * rows (pre-V11 migration) resolve as-is. The filesystem implementation knows both
-     * forms; a future S3 implementation resolves keys against its bucket instead.
-     */
-    private Path photoStoragePath(String storageKeyOrPath) {
-        if (photoStorage instanceof FilesystemPhotoStorage filesystem) {
-            return filesystem.resolve(storageKeyOrPath);
-        }
-        return Path.of(storageKeyOrPath);
+        return new AttachmentDownload(bytes,
+                attachment.getContentType(), attachment.getOriginalName());
     }
 
     private Claim requireVisible(String claimNumber, String actorSub, boolean supervisor) {

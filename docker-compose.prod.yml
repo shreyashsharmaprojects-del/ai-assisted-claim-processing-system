@@ -43,6 +43,15 @@ services:
       SPRING_MAIL_PORT: ${SMTP_PORT:-1025}
       CLAIMS_MAIL_FROM: ${MAIL_FROM:-no-reply@claims.test}
       CLAIMS_UPLOADS_DIR: /var/lib/claims-uploads
+      # S2 storage backend: filesystem (default — keeps the volume below) or s3
+      # (real S3 endpoint via CLAIMS_S3_ENDPOINT + credentials, never committed).
+      CLAIMS_STORAGE_BACKEND: ${CLAIMS_STORAGE_BACKEND:-filesystem}
+      CLAIMS_STORAGE_BACKFILL: ${CLAIMS_STORAGE_BACKFILL:-false}
+      CLAIMS_S3_ENDPOINT: ${CLAIMS_S3_ENDPOINT:-http://localhost:9000}
+      CLAIMS_S3_BUCKET: ${CLAIMS_S3_BUCKET:-claims-evidence}
+      CLAIMS_S3_REGION: ${CLAIMS_S3_REGION:-us-east-1}
+      CLAIMS_S3_ACCESS_KEY: ${CLAIMS_S3_ACCESS_KEY:-}
+      CLAIMS_S3_SECRET_KEY: ${CLAIMS_S3_SECRET_KEY:-}
     volumes:
       - claims-uploads:/var/lib/claims-uploads
     depends_on:

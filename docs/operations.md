@@ -92,11 +92,10 @@ curl -sf http://localhost:8080/api/ready   # traffic gate, as above
 ```
 
 A `MISSING` line means the pair is mismatched — stop and re-restore the correct
-pair. (R5 storage seam, LANDED: `PhotoStorage` is now an interface, the only
-implementation is `FilesystemPhotoStorage` (bean name `photoStorage` unchanged), and
-`attachment.storage_path` holds the portable object key `{claimId}/{uuid}{ext}` — V11
-converted legacy absolute-path rows, null-safe. `claims-uploads` stays a named volume;
-S3 wiring is P1 — see "moving to S3" below.)
+pair. (S2 LANDED below: `PhotoStorage` now has two implementations —
+`FilesystemPhotoStorage` (default) and `S3PhotoStorage`
+(`claims.storage.backend=s3`); legacy absolute-path rows resolve on the filesystem
+backend only.)
 
 ## Metrics & alerting (R3)
 
@@ -126,34 +125,85 @@ attempts, last_error FROM email_outbox WHERE status = 'FAILED' ORDER BY created_
 LIMIT 50;` — `last_error` + the claim number go to the carrier; the request id is in the
 error log.
 
-## Photo storage & moving to S3 (R5)
+## Photo storage & moving to S3 (R5 → S2)
 
 Evidence photos live behind the `PhotoStorage` interface (`store/load/deleteClaimDir`).
-The only implementation is `FilesystemPhotoStorage` (bean name `photoStorage`, so every
-injection point is unchanged): files at `{baseDir}/{claimId}/{uuid}{ext}`, and
-`attachment.storage_path` holds the portable object key (`{claimId}/{uuid}{ext}`) — the
-base dir (`claims.uploads.dir` / `CLAIMS_UPLOADS_DIR`) is resolved at runtime, never
-stored. V11 converted legacy absolute-path rows to key form
-(`regexp_replace(storage_path, '^.*([^/]+/[^/]+)$', '\1')`, null-safe; non-absolute and
-short paths untouched). Downloads dual-read (absolute legacy paths still resolve), and
-rollback-delete (`deleteClaimDir`) still removes the claim dir when the FNOL transaction
-rolls back.
+Two implementations share the S1 validation gates via `PhotoValidator`
+(count → content-type → size → magic bytes, byte-identical messages):
+`FilesystemPhotoStorage` (bean `photoStorage` when
+`claims.storage.backend=filesystem`, the default) and `S3PhotoStorage` (bean
+`s3PhotoStorage`, active when `claims.storage.backend=s3` — zero-dependency
+`HttpClient` + hand-rolled SigV4 PUT/GET/HEAD/DELETE). Files land at
+`{baseDir}/{claimId}/{uuid}{ext}` (filesystem) or `{bucket}/{claimId}/{uuid}{ext}`
+(S3), and `attachment.storage_path` holds the portable object key
+(`{claimId}/{uuid}{ext}`) — the base dir (`claims.uploads.dir` /
+`CLAIMS_UPLOADS_DIR`) or bucket is resolved at runtime, never stored. V11
+converted legacy absolute-path rows to key form
+(`regexp_replace(storage_path, '^.*([^/]+/[^/]+)$', '\1')`, null-safe;
+non-absolute and short paths untouched). Downloads serve via
+`photoStorage.load()` on both backends (legacy absolute paths resolve on the
+filesystem backend only), and rollback-delete (`deleteClaimDir`) removes the
+claim prefix/dir when the FNOL transaction rolls back.
 
-### Moving to S3 (no schema migration needed)
+### S3 config (all in `application.properties` + `.env.example`)
 
-1. **Implement the interface** against your SDK (S3/MinIO): `store` PUTs the bytes under
-   the same `{claimId}/{uuid}{ext}` key and returns it; `load` GETs by key;
-   `deleteClaimDir` lists+deletes the `{claimId}/` prefix. Register it as the
-   `photoStorage` bean (profile or conditional) — no caller changes.
-2. **Config keys** (new, S3 only): `claims.storage.s3.endpoint`,
-   `claims.storage.s3.bucket`, `claims.storage.s3.region`,
-   `claims.storage.s3.access-key` / `secret-key` (env-only, never git). The existing
-   `claims.uploads.*` caps (count/size/type) stay enforced before upload.
-3. **Backfill sketch** (one-shot job, idempotent — keys are content-independent):
-   `SELECT id, storage_path FROM attachment` → for each key, `PUT s3://bucket/{key}`
-   from `{baseDir}/{key}` → verify ETag/size → next. New writes go straight to S3 once
-   the bean flips; reads already key-addressed. Keep the volume snapshot until the
-   backfill verifies 100%.
+| Key | Default | Notes |
+|---|---|---|
+| `claims.storage.backend` | `filesystem` | `filesystem` or `s3`; flips the `photoStorage` bean |
+| `claims.storage.backfill` | `false` | set `true` once for the one-shot backfill |
+| `claims.s3.endpoint` | `http://localhost:9000` | MinIO dev, or the real S3 endpoint in prod |
+| `claims.s3.bucket` | `claims-evidence` | auto-created by the `minio-init` compose job |
+| `claims.s3.region` | `us-east-1` | SigV4 scope region |
+| `claims.s3.access-key` / `secret-key` | empty | env-only (`CLAIMS_S3_*`), never committed |
+
+Dev: `docker compose up -d` starts MinIO (S3 API `:9000`, console `:9001`);
+run the backend with `CLAIMS_STORAGE_BACKEND` unset (filesystem default) or
+`claims.storage.backend=s3` + the `CLAIMS_S3_*` vars for S3 mode. Prod
+(`docker-compose.prod.yml`): set `CLAIMS_STORAGE_BACKEND=s3` with
+`CLAIMS_S3_ENDPOINT` + bucket/region/credentials from the environment.
+
+### Backfill runbook (one-shot, filesystem → S3)
+
+1. Deploy with `claims.storage.backend=s3` and `claims.storage.backfill=true` once
+   (or run the job explicitly) — `S3BackfillRunner` iterates every attachment row
+   with a portable key, PUTs each local file, verifies the sha pin, and logs
+   missing-file orphans. Legacy absolute-path rows are skipped with a warning.
+2. Check the logs: `S3 backfill complete: rows=… uploaded=… verified=… orphans=…
+   skipped=…`. Every orphan (`Backfill orphan: attachment … has no local file`)
+   must be investigated — the DB row points at bytes that no longer exist.
+3. The job never deletes local files itself: only after the orphan check is
+   clean does the operator remove the old volume files.
+4. Set `claims.storage.backfill=false` again (one-shot — it must not run on
+   every boot).
+
+### Restore-pairing gate (DB + bucket together — both, or neither)
+
+`attachment.storage_path` is a database pointer to an object in the bucket (S3)
+or a file on the `claims-uploads` volume (filesystem). A DB backup without the
+matching bucket/volume snapshot (or vice versa) silently orphans evidence: every
+restore MUST apply the matching pair from the same timestamp
+(`claims-YYYY-MM-DD.dump` + `uploads-YYYY-MM-DD.tgz`, or the DB dump + a bucket
+versioning snapshot as one atomic pair). After the restore, confirm the pairing
+before opening traffic:
+
+```bash
+# Filesystem backend: every attachment row must resolve to a file on the volume.
+# <UPLOADS_DIR> is the host path behind the claims-uploads volume.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e PGPASSWORD="$DB_PASSWORD" db \
+  psql -U "$DB_USERNAME" -d claims -t -A -c "SELECT storage_path FROM attachment;" \
+  | while read -r p; do [ -e "<UPLOADS_DIR>/$p" ] || echo "MISSING: $p"; done
+# S3 backend: every attachment key must HEAD in the bucket (aws cli or the
+# backfill dry-run log); same MISSING discipline — stop on any miss.
+curl -sf http://localhost:8080/api/ready   # traffic gate, as above
+```
+
+A `MISSING` line means the pair is mismatched — stop and re-restore the correct
+pair. (S2 LANDED above: `PhotoStorage` has two implementations —
+`FilesystemPhotoStorage` (bean `photoStorage`, default) and `S3PhotoStorage`
+(bean `s3PhotoStorage`, active when `claims.storage.backend=s3`) — and
+`attachment.storage_path` holds the portable object key `{claimId}/{uuid}{ext}`;
+V11 converted legacy absolute-path rows, null-safe.)
 
 ## IP-level flood protection (R6)
 
