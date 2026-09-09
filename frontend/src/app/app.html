@@ -1,10 +1,12 @@
 <div class="app-canvas">
   <header class="app-topbar">
     <a routerLink="/" class="brand" data-testid="app-brand">
-      <svg class="brand__mark" viewBox="0 0 20 20" aria-hidden="true">
-        <path d="M10 1.5 16 4v5.2c0 3.9-2.6 7-6 9.3-3.4-2.3-6-5.4-6-9.3V4l6-2.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-        <path d="m7.2 10 1.9 1.9 3.8-3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <span class="brand__mark" aria-hidden="true">
+        <svg viewBox="0 0 20 20">
+          <path d="M10 1.5 16 4v5.2c0 3.9-2.6 7-6 9.3-3.4-2.3-6-5.4-6-9.3V4l6-2.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          <path d="m7.2 10 1.9 1.9 3.8-3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </span>
       <span>
         <span class="brand__name">Meridian Claims</span>
         <span class="brand__sub">Loss management</span>
@@ -55,14 +57,9 @@
   <div class="app-layout">
     @if (isInternal()) {
       <nav class="app-sidebar" aria-label="Primary" data-testid="app-sidebar">
-        <div class="sidebar__logo">
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M10 1.5 16 4v5.2c0 3.9-2.6 7-6 9.3-3.4-2.3-6-5.4-6-9.3V4l6-2.5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
-          </svg>
-          <span>
-            <span class="sidebar__logo-name">Claims workspace</span>
-            <span class="sidebar__logo-sub">Internal</span>
-          </span>
+        <div class="sidebar__head">
+          <span class="sidebar__eyebrow">Claims workspace</span>
+          <span class="chip">Internal</span>
         </div>
 
         <div class="nav-group">

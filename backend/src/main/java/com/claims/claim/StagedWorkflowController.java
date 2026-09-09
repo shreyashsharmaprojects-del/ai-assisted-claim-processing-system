@@ -93,6 +93,18 @@ public class StagedWorkflowController {
     }
 
     /**
+     * V18: send the claim one step back (DECISION→VERIFICATION or
+     * VERIFICATION→REVIEW) with a reason. Returns the staged view.
+     */
+    @PostMapping("/{claimNumber}/send-back")
+    public StagedClaimView sendBack(@AuthenticationPrincipal Jwt jwt,
+            Authentication authentication, @PathVariable String claimNumber,
+            @RequestBody SendBackInput input) {
+        return workflow.sendBack(claimNumber, jwt.getSubject(),
+                Authorities.isSupervisor(authentication), input);
+    }
+
+    /**
      * The dual-shape decision: legacy single-figure on no-cover claims (V1 behaviour,
      * byte-identical, including auto-escalation), per-cover outcomes on claims with
      * covers (within-authority closes, above-authority saves proposals and stays).

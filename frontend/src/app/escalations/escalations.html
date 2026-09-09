@@ -120,45 +120,45 @@
         </div>
       } @else {
         <div class="table-scroll">
-          <table class="data-table">
+          <table class="data-table queue-table">
             <thead>
               <tr>
                 <th scope="col">Claim</th>
-                <th scope="col">Status</th>
-                <th scope="col">Level</th>
-                <th scope="col">Policy</th>
-                <th scope="col">Loss date</th>
+                <th scope="col">Loss</th>
                 <th scope="col">Age</th>
-                <th scope="col">SLA</th>
-                <th scope="col">Location</th>
-                <th scope="col">Description</th>
                 <th scope="col"><span class="sr-only">Review</span></th>
               </tr>
             </thead>
             <tbody>
               @for (claim of visible(); track claim.claimNumber) {
                 <tr data-testid="esc-row">
-                  <td class="cell-id" data-testid="esc-claim-number"><a [routerLink]="['/claims', claim.claimNumber]">{{ claim.claimNumber }}</a></td>
                   <td>
-                    <span class="{{ statusBadge(claim.status) }}" data-testid="esc-status">{{ claim.status }}</span>
+                    <a class="queue-claim" [routerLink]="['/claims', claim.claimNumber]">
+                      <span class="queue-claim__id" data-testid="esc-claim-number">{{ claim.claimNumber }}</span>
+                      <span class="queue-claim__sub">
+                        <span class="{{ statusBadge(claim.status) }}" data-testid="esc-status">{{ claim.status }}</span>
+                        <span class="queue-claim__level" data-testid="esc-level">{{ claim.level }}</span>
+                        <span class="{{ slaBadge(claim) }}" data-testid="esc-sla">{{ slaText(claim) }}</span>
+                      </span>
+                    </a>
                   </td>
-                  <td>
-                    <span class="chip" data-testid="esc-level">{{ claim.level }}</span>
+                  <td data-testid="esc-loss-description">
+                    <span class="queue-loss">{{ claim.lossDescription }}</span>
+                    <span class="queue-loss__sub">
+                      <span data-testid="esc-loss-location">{{ claim.lossLocation }}</span>
+                      <span aria-hidden="true">·</span>
+                      <span class="mono" data-testid="esc-policy">{{ claim.policyNumber }}</span>
+                      <span aria-hidden="true">·</span>
+                      <span data-testid="esc-loss-date">{{ lossDateText(claim) }}</span>
+                    </span>
                   </td>
-                  <td class="mono identifier" data-testid="esc-policy">{{ claim.policyNumber }}</td>
-                  <td data-testid="esc-loss-date">{{ lossDateText(claim) }}</td>
-                  <td data-testid="esc-age">{{ ageText(claim) }}</td>
-                  <td data-testid="esc-sla"><span class="{{ slaBadge(claim) }}">{{ slaText(claim) }}</span></td>
-                  <td data-testid="esc-loss-location">{{ claim.lossLocation }}</td>
-                  <td class="cell-truncate" title="{{ claim.lossDescription }}" data-testid="esc-loss-description">
-                    {{ claim.lossDescription }}
-                  </td>
+                  <td class="num" data-testid="esc-age">{{ ageText(claim) }}</td>
                   <td class="td-action">
                     <a
                       class="btn btn--secondary btn--sm"
                       [routerLink]="['/claims', claim.claimNumber]"
                       data-testid="esc-open-claim"
-                      >Review claim</a
+                      >Review</a
                     >
                   </td>
                 </tr>

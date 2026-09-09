@@ -2,14 +2,18 @@
   display: block;
 }
 
-/* Grey canvas behind everything */
+/* Grey canvas behind everything.
+   Cool-slate wash: the canvas carries a whisper of blue so white cards read
+   as layered surfaces, not floating on printer paper. */
 .app-canvas {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   padding: var(--space-4);
   gap: var(--space-4);
-  background: var(--surface-sunken);
+  background:
+    radial-gradient(1200px 320px at 50% -120px, rgba(0, 86, 179, 0.06), transparent 70%),
+    var(--surface-sunken);
 }
 
 /* ---- Floating top bar (rounded white card, reference style) ---- */
@@ -23,7 +27,7 @@
   justify-content: space-between;
   gap: var(--space-4);
   height: 60px;
-  padding: 0 var(--space-6);
+  padding: 0 var(--space-4) 0 var(--space-3);
   background: var(--surface-default);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -33,23 +37,37 @@
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   text-decoration: none;
   color: var(--text-primary);
+  padding: var(--space-1);
+  border-radius: var(--radius-md);
 }
 
+/* Solid accent tile as the brand mark: the one place the accent fills a shape. */
 .brand__mark {
-  width: 30px;
-  height: 30px;
-  color: var(--accent-600);
+  width: 32px;
+  height: 32px;
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-600);
+  border-radius: var(--radius-md);
+  color: #fff;
+}
+
+.brand__mark svg {
+  width: 18px;
+  height: 18px;
 }
 
 .brand__name {
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   letter-spacing: -0.01em;
   color: var(--gray-800);
+  line-height: 1.2;
 }
 
 .brand__sub {
@@ -57,7 +75,8 @@
   font-size: 10px;
   font-weight: var(--weight-medium);
   color: var(--text-tertiary);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .topbar__right {
@@ -105,34 +124,22 @@
   overflow-y: auto;
 }
 
-.sidebar__logo {
+.sidebar__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-2) var(--space-4);
-  margin-bottom: var(--space-4);
+  padding: 0 var(--space-3) var(--space-3);
+  margin-bottom: var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.sidebar__logo svg {
-  width: 26px;
-  height: 26px;
-  color: var(--accent-600);
-  flex: none;
-}
-
-.sidebar__logo-name {
+.sidebar__eyebrow {
+  font-size: 10px;
   font-weight: var(--weight-semibold);
-  font-size: var(--text-sm);
-  color: var(--gray-800);
-  line-height: 1.2;
-}
-
-.sidebar__logo-sub {
-  display: block;
-  font-size: 9px;
-  font-weight: var(--weight-medium);
-  color: var(--text-tertiary);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
 }
 
 .nav-group + .nav-group {
@@ -156,8 +163,7 @@
   height: 40px;
   padding: 0 var(--space-3);
   margin-bottom: 2px;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  border-left: 3px solid transparent;
+  border-radius: var(--radius-md);
   font-size: var(--text-sm);
   color: var(--text-secondary);
   text-decoration: none;
@@ -177,15 +183,28 @@
   color: var(--text-primary);
 }
 
+/* Active nav: solid accent block with white text and icon — the wayfinding
+   anchor of the sidebar. One active item, unmissable at a glance. */
 .nav-item.is-active {
-  background: var(--surface-selected);
-  border-left-color: var(--accent-600);
-  color: var(--accent-700);
+  background: var(--accent-600);
+  color: #fff;
   font-weight: var(--weight-medium);
 }
 
 .nav-item.is-active svg {
-  color: var(--accent-600);
+  color: #fff;
+}
+
+.nav-item.is-active .nav-item__count {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #fff;
+}
+
+.nav-item.is-active .nav-item__count--alert {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
 }
 
 /* Queue-depth count at the row end: tabular, quiet, never a second accent. */

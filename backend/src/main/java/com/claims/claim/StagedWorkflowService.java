@@ -203,6 +203,50 @@ public class StagedWorkflowService {
 
     // --- verifications ----------------------------------------------------------
 
+    /**
+     * V18: send a claim one step back — DECISION back to VERIFICATION when new
+     * doubts arise (the plan's normative re-open path), or VERIFICATION back to
+     * REVIEW to re-triage. Saved decision proposals do not survive the step back:
+     * they described a decision at a stage the claim no longer occupies, so they
+     * are cleared to ordinary PENDING rows (assessed figures stay — they are
+     * re-usable input, not a verdict). Every send-back writes a STAGE_SENT_BACK
+     * audit row with the rationale. Terminal states (CLOSED, NEED_INFO,
+     * ESCALATED_SUPERVISOR) cannot move.
+     */
+    @Transactional
+    public StagedClaimView sendBack(String claimNumber, String actorSub,
+            boolean supervisor, SendBackInput input) {
+        Claim claim = requireAssigneeForUpdate(claimNumber, actorSub, supervisor);
+        requireOpenUnderReview(claim);
+        String current = stageOf(claim);
+        if ("REVIEW".equals(current)) {
+            throw new InvalidRequestException(
+                    "This claim is already at review — there is no earlier stage.");
+        }
+        String rationale = textOf(input == null ? null : input.rationale());
+        requireRationale(rationale, "A reason is required to send a claim back.");
+        String target = "DECISION".equals(current) ? "VERIFICATION" : "REVIEW";
+        List<ClaimCover> rows = claimCovers.findByClaimIdOrderByIdAsc(claim.getId());
+        long cleared = 0;
+        for (ClaimCover row : rows) {
+            if (row.isProposal()) {
+                row.applyDecision("PENDING", null, row.getDeductibleAmount(),
+                        row.getAdjustmentAmount(), null, null, null, null, false);
+                claimCovers.save(row);
+                cleared++;
+            }
+        }
+        claim.setStage(target);
+        claims.save(claim);
+        Map<String, Object> after = after(claim, "stage", target);
+        if (cleared > 0) {
+            after.put("proposalsCleared", cleared);
+        }
+        audit("STAGE_SENT_BACK", actorSub, claim,
+                Map.of("status", "UNDER_REVIEW", "stage", current), after, rationale);
+        return viewOf(claim, actorSub);
+    }
+
     @Transactional
     public StagedClaimView.VerificationView createVerification(String claimNumber,
             String actorSub, boolean supervisor, VerificationInput input) {

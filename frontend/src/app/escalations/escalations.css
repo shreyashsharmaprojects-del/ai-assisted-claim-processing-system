@@ -2,7 +2,72 @@
   display: block;
 }
 
-/* Escalations borrows the shared .toolbar recipe from styles.css — nothing local. */
+/* Escalations shares the queue's two-line row language (see queue.css):
+   claim cell stacks id over pills, loss cell stacks what over where. */
+.queue-table tbody td {
+  height: auto;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+  vertical-align: middle;
+}
+
+.queue-claim {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-decoration: none;
+  min-width: 0;
+}
+
+.queue-claim__id {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  letter-spacing: -0.01em;
+  color: var(--text-link);
+  white-space: nowrap;
+}
+
+.queue-claim:hover .queue-claim__id {
+  text-decoration: underline;
+}
+
+.queue-claim__sub {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.queue-claim__level {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.queue-loss {
+  display: block;
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-loss__sub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Escalations borrows the shared .load-more recipe from styles.css. */
 .load-more {
   display: flex;
   align-items: center;

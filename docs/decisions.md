@@ -5,6 +5,61 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — V18 stage revisit + send-back + adjuster workspace theme
+
+**Context:** The adjuster screen showed only the current stage (no way back to update or
+re-check earlier work), the stepper was a static indicator, and the whole screen was
+flat white-on-white — hard on the eyes, no visual hierarchy. Asked: move through the
+stages back and forth, plus a good theme with contrast.
+
+**What changed (backend, all additive — V15–V17 untouched):**
+- **`POST /api/claims/{n}/send-back`** (assignee-only, 404 otherwise): moves the claim
+  exactly one step back — DECISION→VERIFICATION (the plan's normative re-open path for
+  new doubts) or VERIFICATION→REVIEW (re-triage). Requires a rationale; writes a
+  `STAGE_SENT_BACK` audit row (before stage → after stage + rationale). Saved decision
+  **proposals clear** to ordinary PENDING rows (they described a decision at a stage the
+  claim no longer occupies); **assessed figures stay** as re-usable input; verification
+  history untouched. Terminal states (CLOSED / NEED_INFO / ESCALATED_SUPERVISOR) and
+  REVIEW itself are 400s. Appears on the timeline as "Sent back to …".
+- No migration: `claim.stage` already admits all three values; the audit action is a
+  free-text value like every other.
+
+**What changed (frontend, adjuster workspace only):**
+- **Clickable stepper:** reached stages are buttons — clicking an earlier step shows a
+  read-only revisit panel (review = filed covers/limits; verification = checks +
+  outcomes + evidence downloads) with a "Read-only" badge and a "Back to …" return.
+  Future stages stay locked/disabled. Forms only ever render on the claim's true
+  stage, so nothing can be edited out of order. New testids:
+  `detail-stage-view-{REVIEW,VERIFICATION,DECISION}`, `detail-stage-revisit`,
+  `detail-stage-back-current`, `detail-review-revisit`, `detail-verification-revisit`.
+- **Send-back action** beside the decision form and the assessment box
+  (`detail-send-back-toggle/rationale/confirm`): reason required, proposals-clear
+  warning in the label, success toast + timeline refresh. The true stage drives the
+  target label ("Send back to verification / review").
+- **Workspace theme (scoped to the claim page):** deep-navy masthead (identity +
+  status on dark, no more white banner), stepper as a raised control bar (current =
+  accent fill, done = filled dot, locked = dimmed), verification cards with accent
+  spine, tinted assessment exit box, zebra + tinted header on the decision grid,
+  highlighted totals line. Reference rail (loss/reserve/coverage/timeline) untouched.
+  No global token changes — other screens are byte-identical.
+
+**Verified:** new `sendBackFromDecisionClearsProposalsAndKeepsHistory` integration
+test (proposals clear, history/assessed persist, audit row, re-assess forward,
+REVIEW + reason-less 400s); full suite **224/224 green**; `ng build` green (CSS
+budget warning only); live probe on the dev stack (REVIEW claim: locked futures;
+DECISION claim: revisit both earlier stages read-only, send-back lands at
+VERIFICATION with the timeline row, 0px overflow). Probe moved CLM-000226
+DECISION→VERIFICATION with a `STAGE_SENT_BACK` row — re-assess to move it forward.
+
+**Deliberately not built:** forward jumps past the true stage (guards stay —
+revisit is viewing, never editing); editing proposals instead of clearing them on
+send-back (a cleared proposal re-decides cleanly; history keeps the rationale);
+multi-step jumps (one step back keeps the audit story legible); a global dark mode
+or token overhaul (scoped theme only — the "too much white" complaint was about
+this screen, not the product).
+
+---
+
 ### 2026-09-09 — V17 claim timeline: one sequential feed replaces the scattered boxes
 
 **Context:** The adjuster workspace showed notes, documents, and audit rows in three

@@ -147,6 +147,9 @@ public class TimelineService {
                         + " (" + textOf(after, "level") + ")";
             case "REVIEW_ADVANCED" -> "Review passed — moved to verification"
                     + (row.rationale() == null ? "" : " — " + row.rationale());
+            case "STAGE_SENT_BACK" -> "Sent back to "
+                    + textOf(after, "stage")
+                    + (row.rationale() == null ? "" : " — " + row.rationale());
             case "NEED_INFO_SENT" -> "Sent back to claimant — "
                     + (row.rationale() == null ? "more information requested"
                             : row.rationale());

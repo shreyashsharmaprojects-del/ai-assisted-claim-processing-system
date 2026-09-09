@@ -213,8 +213,20 @@ export class ClaimDetail {
   protected showRejectForm = false;
   protected showNeedInfoForm = false;
 
+  // V18: the stage the workspace shows. Defaults to the claim's true stage;
+  // the stepper lets the adjuster revisit earlier stages read-only to update
+  // their view of what happened (forms stay gated on the true stage).
+  protected readonly viewedStage = signal<Stage | null>(null);
+  protected readonly sendingBack = signal(false);
+  protected sendBackRationale = '';
+  protected showSendBackForm = false;
+
   // Verification inputs (per-row completion + the extra follow-up form).
-  protected extraVerType: 'DIGITAL' | 'PHYSICAL' = 'DIGITAL';
+  // Jira-style checklist: open rows expand in place (completed rows collapse
+  // to one line); expansion is local UI state keyed by verification id, so a
+  // reload keeps whichever rows the adjuster opened.
+  protected readonly verExpanded: Record<number, boolean> = {};
+  protected extraVerType: 'DIGITAL' | 'PHYSICAL' | 'DOCUMENT' | 'CLAUSE' = 'DIGITAL';
   protected verificationNotes = '';
   protected verOutcome: Record<number, string> = {};
   protected verNotes: Record<number, string> = {};
@@ -256,6 +268,37 @@ export class ClaimDetail {
   coverageText(): string {
     const coverage = this.view()?.coverage;
     return coverage == null ? '' : JSON.stringify(coverage, null, 2);
+  }
+
+  /** Coverage-only facts for the summary row (policy/product/holder are
+   * their own facts in the template — known keys get rows, anything else
+   * collapses to one line). */
+  protected coverageFacts(): Array<{ label: string; value: string }> {
+    const coverage = this.view()?.coverage;
+    const facts: Array<{ label: string; value: string }> = [];
+    if (coverage != null && typeof coverage === 'object' && !Array.isArray(coverage)) {
+      const known = new Set(['type', 'plan', 'sum_insured']);
+      const record = coverage as Record<string, unknown>;
+      const type = record['type'];
+      if (typeof type === 'string' && type.trim()) {
+        facts.push({ label: 'Cover type', value: type });
+      }
+      const plan = record['plan'];
+      if (typeof plan === 'string' && plan.trim()) {
+        facts.push({ label: 'Plan', value: plan });
+      }
+      const sum = record['sum_insured'];
+      if (typeof sum === 'number') {
+        facts.push({ label: 'Sum insured', value: this.money(sum) });
+      }
+      const rest = Object.entries(record)
+        .filter(([key]) => !known.has(key))
+        .map(([key, value]) => `${key}: ${coverageScalar(value)}`);
+      if (rest.length > 0) {
+        facts.push({ label: 'Other', value: rest.join(' · ') });
+      }
+    }
+    return facts;
   }
 
   /** Supervisor-only: reassign targets and the audit trail (both supervisor surfaces). */
@@ -344,16 +387,6 @@ export class ClaimDetail {
     return (type != null && VER_META[type]?.hint) || '';
   }
 
-  protected verStatusBadge(status: string): string {
-    if (status === 'COMPLETE') {
-      return 'badge badge--success';
-    }
-    if (status === 'CANCELLED') {
-      return 'badge badge--neutral';
-    }
-    return 'badge badge--info';
-  }
-
   protected stageIndex(): number {
     return this.stage() === 'REVIEW' ? 0 : this.stage() === 'VERIFICATION' ? 1 : 2;
   }
@@ -361,6 +394,85 @@ export class ClaimDetail {
   protected stageReached(step: Stage): boolean {
     const order: Stage[] = ['REVIEW', 'VERIFICATION', 'DECISION'];
     return order.indexOf(step) <= order.indexOf(this.stage());
+  }
+
+  /**
+   * V18: the stage on screen — the adjuster's chosen revisit, or the claim's
+   * true stage. Revisit is read-only context (earlier work, figures so far);
+   * actions stay on the true stage, so nothing can be edited out of order.
+   */
+  protected shownStage(): Stage {
+    return this.viewedStage() ?? this.stage();
+  }
+
+  protected viewStage(step: Stage): void {
+    this.error.set(null);
+    this.viewedStage.set(step === this.stage() ? null : step);
+  }
+
+  protected backToCurrentStage(): void {
+    this.error.set(null);
+    this.viewedStage.set(null);
+  }
+
+  protected isViewingEarlier(): boolean {
+    return this.viewedStage() != null && this.viewedStage() !== this.stage();
+  }
+
+  /** One-line summary of what an earlier stage holds (for the revisit panels). */
+  protected revisitSummary(step: Stage): string {
+    switch (step) {
+      case 'REVIEW':
+        return 'Covers filed, claimed amounts and limits — the triage picture.';
+      case 'VERIFICATION':
+        return `${this.checklistDone()} of ${this.checklistTotal()} checks complete.`;
+      case 'DECISION':
+        return `Assessed ${this.money(this.assessedTotal())} so far.`;
+    }
+  }
+
+  /** Send-back target label: one step back from the true stage. */
+  protected sendBackTarget(): Stage {
+    return this.stage() === 'DECISION' ? 'VERIFICATION' : 'REVIEW';
+  }
+
+  protected sendBackTargetLabel(): string {
+    return this.sendBackTarget() === 'VERIFICATION' ? 'verification' : 'review';
+  }
+
+  /** V18: send the claim one step back with a reason (proposals clear, history stays). */
+  async sendBack() {
+    this.error.set(null);
+    this.decisionResult.set(null);
+    if (!this.sendBackRationale.trim()) {
+      this.error.set('A reason is required to send a claim back.');
+      return;
+    }
+    this.sendingBack.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.sendingBack.set(false);
+      return;
+    }
+    try {
+      const view = await firstValueFrom(
+        this.http.post<StagedView>(
+          `/api/claims/${this.claimNumber}/send-back`,
+          { rationale: this.sendBackRationale.trim() },
+          { headers },
+        ),
+      );
+      this.sendBackRationale = '';
+      this.showSendBackForm = false;
+      this.viewedStage.set(null);
+      this.toasts.success(`Sent back to ${this.sendBackTargetLabel()}.`);
+      this.applyView(view);
+      await this.loadTimeline(headers);
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not send the claim back.'));
+    } finally {
+      this.sendingBack.set(false);
+    }
   }
 
   /** One line under the stepper: what this stage asks of the adjuster. */
@@ -489,6 +601,83 @@ export class ClaimDetail {
   /** Timeline rows: the unified feed (empty until loaded — never null). */
   protected timelineEntries(): TimelineEntry[] {
     return this.timeline();
+  }
+
+  /** Feed filter — frontend-only, the feed itself stays chronological. */
+  protected readonly timelineFilter = signal<'ALL' | 'NOTES' | 'DOCUMENTS' | 'CHECKS' | 'MILESTONES'>('ALL');
+
+  protected setTimelineFilter(filter: 'ALL' | 'NOTES' | 'DOCUMENTS' | 'CHECKS' | 'MILESTONES'): void {
+    this.timelineFilter.set(filter);
+  }
+
+  /** Visual group for a feed row: notes read, documents download, checks track, rest is history. */
+  protected timelineGroup(kind: string): 'note' | 'document' | 'check' | 'milestone' {
+    switch (kind) {
+      case 'NOTE':
+        return 'note';
+      case 'DOCUMENT':
+        return 'document';
+      case 'VERIFICATION_OPENED':
+      case 'VERIFICATION_COMPLETED':
+        return 'check';
+      default:
+        return 'milestone';
+    }
+  }
+
+  protected filteredTimeline(): TimelineEntry[] {
+    const filter = this.timelineFilter();
+    if (filter === 'ALL') {
+      return this.timeline();
+    }
+    return this.timeline().filter((e) => {
+      const group = this.timelineGroup(e.kind);
+      switch (filter) {
+        case 'NOTES':
+          return group === 'note';
+        case 'DOCUMENTS':
+          return group === 'document';
+        case 'CHECKS':
+          return group === 'check';
+        case 'MILESTONES':
+          return group === 'milestone';
+      }
+    });
+  }
+
+  protected timelineCount(group: 'ALL' | 'NOTES' | 'DOCUMENTS' | 'CHECKS' | 'MILESTONES'): number {
+    if (group === 'ALL') {
+      return this.timeline().length;
+    }
+    const want =
+      group === 'NOTES'
+        ? 'note'
+        : group === 'DOCUMENTS'
+          ? 'document'
+          : group === 'CHECKS'
+            ? 'check'
+            : 'milestone';
+    return this.timeline().filter((e) => this.timelineGroup(e.kind) === want).length;
+  }
+
+  /** Avatar initials for a feed actor ("Aisha Verma" → "AV", claimant keeps the dot). */
+  protected timelineInitials(actor: string | null | undefined): string {
+    if (!actor) {
+      return '•';
+    }
+    const clean = actor.replace(' (claimant)', '').trim();
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) {
+      return '•';
+    }
+    if (parts.length === 1) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  protected timelineIsClaimant(actor: string | null | undefined): boolean {
+    return (actor ?? '').includes('(claimant)');
   }
 
   /** Friendly label for a timeline row kind. */
@@ -751,6 +940,43 @@ export class ClaimDetail {
 
   // --- verifications ------------------------------------------------------------
 
+  /** A row starts expanded while it still needs work, collapsed once done. */
+  protected isVerExpanded(ver: VerificationView): boolean {
+    const manual = this.verExpanded[ver.id];
+    if (manual !== undefined) {
+      return manual;
+    }
+    return ver.status !== 'COMPLETE' && ver.status !== 'CANCELLED';
+  }
+
+  protected toggleVerExpanded(ver: VerificationView): void {
+    this.verExpanded[ver.id] = !this.isVerExpanded(ver);
+  }
+
+  /** Jira-subtask style status word for a checklist row. */
+  protected verState(ver: VerificationView): 'done' | 'working' | 'todo' | 'cancelled' {
+    if (ver.status === 'COMPLETE') {
+      return 'done';
+    }
+    if (ver.status === 'CANCELLED') {
+      return 'cancelled';
+    }
+    return this.isVerExpanded(ver) ? 'working' : 'todo';
+  }
+
+  protected verStateLabel(ver: VerificationView): string {
+    switch (this.verState(ver)) {
+      case 'done':
+        return ver.outcome ?? 'Done';
+      case 'working':
+        return 'In progress';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return 'To do';
+    }
+  }
+
   async createVerification() {
     this.error.set(null);
     this.savingVerification.set(true);
@@ -799,6 +1025,8 @@ export class ClaimDetail {
         ),
       );
       this.toasts.success('Verification completed.');
+      // Done rows collapse to one line — the checklist stays scannable.
+      this.verExpanded[id] = false;
       await this.reloadStaged(headers);
     } catch (err) {
       this.error.set(serverMessage(err, 'Could not save the verification.'));
@@ -1189,8 +1417,7 @@ export class ClaimDetail {
   }
 }
 
-function actionClass(action: string): string {
-  switch (action) {
+function actionClass(action: string): string {  switch (action) {
     case 'DECISION':
       return 'badge badge--success';
     case 'CLAIM_ESCALATED':
@@ -1203,4 +1430,15 @@ function actionClass(action: string): string {
     default:
       return 'badge badge--neutral';
   }
+}
+
+/** One-line scalar for an unknown coverage key (objects/arrays collapse). */
+function coverageScalar(value: unknown): string {
+  if (value == null) {
+    return '—';
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return '…';
 }

@@ -77,7 +77,7 @@ public class SecurityConfig {
                                         "SUPERVISOR")
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/review",
                                 "/api/claims/*/verifications", "/api/claims/*/cover-decision",
-                                "/api/claims/*/refer")
+                                "/api/claims/*/refer", "/api/claims/*/send-back")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3")
                         .requestMatchers(HttpMethod.PUT, "/api/claims/*/verifications/*",
                                 "/api/claims/*/assessment")

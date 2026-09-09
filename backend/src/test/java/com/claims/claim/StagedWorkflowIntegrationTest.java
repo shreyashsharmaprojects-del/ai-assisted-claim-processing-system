@@ -766,6 +766,56 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                 holderBearer(claimNumber), "{\"reason\":\"Nowhere.\"}").statusCode());
     }
 
+    /** V18 send-back: DECISION→VERIFICATION clears proposals, audit survives. */
+    @Test
+    void sendBackFromDecisionClearsProposalsAndKeepsHistory() throws Exception {
+        String claimNumber = driveToDecision();
+        String bearer = holderBearer(claimNumber);
+        proposeAboveL1(claimNumber, bearer);
+        assertEquals(1, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", idOf(claimNumber)));
+
+        HttpResponse<String> sentBack = postJson(
+                "/api/claims/" + claimNumber + "/send-back", bearer,
+                "{\"rationale\":\"New doubts on the bills — re-checking.\"}");
+        assertEquals(200, sentBack.statusCode(), sentBack.body());
+        assertTrue(sentBack.body().contains("\"stage\":\"VERIFICATION\""),
+                sentBack.body());
+        assertEquals("VERIFICATION", stageOf(claimNumber));
+        assertEquals("UNDER_REVIEW", statusOf(claimNumber));
+        assertEquals(0, count("SELECT count(*) FROM claim_cover WHERE claim_id = ? "
+                + "AND is_proposal = TRUE", idOf(claimNumber)),
+                "proposals clear on the step back");
+        assertTrue(count("SELECT count(*) FROM verification WHERE claim_id = ?",
+                idOf(claimNumber)) >= 4,
+                "verification history travels");
+        assertNotNull(jdbcTemplate.queryForObject(
+                "SELECT assessed_amount FROM claim_cover WHERE claim_id = ? LIMIT 1",
+                java.math.BigDecimal.class, idOf(claimNumber)),
+                "assessed figures stay as re-usable input");
+        assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = "
+                + "'STAGE_SENT_BACK' AND entity_id = ?", idOf(claimNumber)));
+        String feed = get("/api/claims/" + claimNumber + "/timeline", bearer).body();
+        assertTrue(feed.contains("STAGE_SENT_BACK"), feed);
+
+        // The holder can re-assess and move forward again.
+        HttpResponse<String> reassessed = putJson(
+                "/api/claims/" + claimNumber + "/assessment", bearer,
+                "{\"rationale\":\"Re-checked the bills.\",\"covers\":["
+                        + "{\"coverCode\":\"HOSPITALIZATION\",\"assessedAmount\":180000},"
+                        + "{\"coverCode\":\"OPD\",\"assessedAmount\":25000}]}");
+        assertEquals(200, reassessed.statusCode(), reassessed.body());
+        assertEquals("DECISION", stageOf(claimNumber));
+
+        // Guards: send-back at REVIEW is a 400; without a reason is a 400.
+        String fresh = fileCoverFnol(
+                "[{\"coverCode\":\"OPD\",\"claimedAmount\":5000}]");
+        assertEquals(400, postJson("/api/claims/" + fresh + "/send-back",
+                holderBearer(fresh), "{\"rationale\":\"Nowhere to go.\"}").statusCode());
+        assertEquals(400, postJson("/api/claims/" + claimNumber + "/send-back",
+                holderBearer(claimNumber), "{}").statusCode());
+    }
+
     /** V16 claimant document upload: NEED_INFO only, own claim only. */
     @Test
     void claimantDocumentUploadNeedsNeedInfoAndOwnClaim() throws Exception {

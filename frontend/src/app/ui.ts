@@ -14,9 +14,13 @@ export function statusKind(status: string | null | undefined): StatusKind {
       return 'neutral';
     case 'UNDER_REVIEW':
       return 'info';
+    case 'NEED_INFO':
+      return 'warning';
     case 'APPROVED':
     case 'ACTIVE':
     case 'SENT':
+      return 'success';
+    case 'PARTIALLY_APPROVED':
       return 'success';
     case 'DENIED':
     case 'EXPIRED':
@@ -28,6 +32,11 @@ export function statusKind(status: string | null | undefined): StatusKind {
       return 'special';
     case 'CLOSED':
     default:
+      // Future ESCALATED_* variants (e.g. level escalations) fall through to the
+      // supervisor purple — escalation is one concept, one color.
+      if (status != null && status.startsWith('ESCALATED')) {
+        return 'special';
+      }
       return 'neutral';
   }
 }

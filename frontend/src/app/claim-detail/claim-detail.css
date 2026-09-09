@@ -1,11 +1,3 @@
-.claim-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-  flex-wrap: wrap;
-}
-
 /* The workspace constrains itself to the content column: nothing on this
    screen may push past the desktop width. Wide children (decision grid,
    coverage JSON) scroll inside their own card, never the page. */
@@ -14,9 +6,50 @@
   overflow-x: clip;
 }
 
-/* Slim supporting rail: one quiet column of reference cards beside the step.
-   It wraps underneath on narrow screens — never beside the content forcing
-   a horizontal page scroll. */
+/* Banner: white identity card like every other screen — the claim number,
+   status, level and assignee read as one line, loss facts beneath. */
+.page[data-testid='claim-detail-page'] .page-banner {
+  align-items: center;
+}
+
+.page[data-testid='claim-detail-page'] .page-banner .mono {
+  color: var(--text-primary);
+}
+
+.detail-id {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+}
+
+.detail-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.detail-assignee__avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: var(--weight-semibold);
+  background: var(--accent-50);
+  border: 1px solid var(--accent-200);
+  color: var(--accent-700);
+  flex: none;
+}
+
+.page[data-testid='claim-detail-page'] .breadcrumb a {
+  color: var(--accent-500);
+}
+
+/* Supporting rail: the context strip first, supervisor admin beside it,
+   the timeline always last — full width, in its own scroll window. */
 .support-rail {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
@@ -29,24 +62,123 @@
   min-width: 0;
 }
 
-.kv--full {
-  grid-column: 1 / -1;
-}
-
-/* Reserve: current value sits above the edit row, separated by a hairline. */
-.reserve-current {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+/* Legacy reserve panel: one hint line, then the amount + save baseline. */
+.reserve-hint {
   margin-bottom: var(--space-3);
 }
 
-.reserve-current strong {
-  color: var(--gray-800);
-  font-variant-numeric: tabular-nums;
+/* Claim context: a read-only record strip above the timeline. One flex
+   row of label-above-value facts (the story takes the remaining width);
+   no forms, no boxes, nothing to align against. */
+.context-strip {
+  grid-column: 1 / -1;
+  min-width: 0;
 }
 
-/* Timeline: left-rail entries with a connecting line. Notes render in a
-   bordered block; audit entries are plain system rows. Nothing editable. */
+.context-summary {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, max-content));
+  gap: var(--space-4) var(--space-6);
+  align-items: start;
+  justify-content: start;
+}
+
+.context-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.context-fact--story {
+  grid-column: 1 / -1;
+}
+
+.context-fact__label {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.context-fact__value {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.context-remarks {
+  color: var(--text-secondary);
+}
+
+/* Raw coverage JSON stays in the DOM for tests but never paints. */
+.code-block--hidden {
+  display: none;
+}
+
+/* Reserve + refer ride the stage panels (verification assessment, decision)
+   as quiet side rows: label on top, controls on one baseline beneath. */
+.assess-side,
+.decision-side {
+  margin-top: var(--space-3);
+  border-top: 1px dashed var(--border-default);
+  padding-top: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+}
+
+.assess-side__item,
+.decision-side__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 280px;
+  min-width: min(280px, 100%);
+  max-width: 520px;
+}
+
+.assess-side__item > label,
+.decision-side__item > label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+}
+
+.assess-side__row,
+.decision-side__row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.assess-side__row .input,
+.decision-side__row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.assess-side__row textarea.input,
+.decision-side__row textarea.input {
+  min-height: 0;
+  height: var(--control-height);
+  padding-top: 7px;
+  padding-bottom: 7px;
+  resize: none;
+}
+
+.assess-side__id,
+.decision-side__id {
+  flex: 0 0 96px !important;
+}
+
+.assess-side__row .btn,
+.decision-side__row .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Timeline: the activity feed below (rows + cards + rail lines), and the
+   supervisor audit list. Nothing editable. */
 .timeline {
   list-style: none;
   padding: 0;
@@ -60,14 +192,6 @@
   position: relative;
   border-left: 2px solid var(--border-default);
   padding: var(--space-1) var(--space-3);
-}
-
-.timeline__item--note {
-  background: var(--surface-tint);
-  border: 1px solid var(--border-subtle);
-  border-left: 2px solid var(--accent-600);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  padding: var(--space-2) var(--space-3);
 }
 
 .timeline__body {
@@ -89,21 +213,168 @@
   margin-top: var(--space-1);
 }
 
-/* V17 claim timeline: the one sequential feed — full-width and first, never
-   another small card. Notes, documents, checks and milestones read oldest to
-   newest, Jira-activity style; the note composer + claim-files upload close it. */
+/* V17 claim timeline: a trust-forward activity feed, not a flat list.
+   One left rail carries every row; the row treatment says what it is:
+   notes and documents are cards (read / download), checks and milestones
+   are compact rail lines (scan). Claimant actors get a dashed marker so
+   "who said what" survives a fast scroll. */
 .timeline-panel {
   grid-column: 1 / -1;
-  order: -1;
+  min-width: 0;
+}
+
+.timeline-panel__header {
+  align-items: flex-start;
+}
+
+.timeline-panel__header h2 {
+  margin: 0;
+}
+
+.timeline-panel__sub {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin: var(--space-1) 0 0;
+}
+
+/* Filter pills: frontend-only views over the one chronological feed. */
+.timeline-filters {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+
+.timeline-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.timeline-filter:hover {
+  background: var(--surface-hover);
+}
+
+.timeline-filter.is-active {
+  background: var(--surface-selected);
+  border-color: var(--accent-600);
+  color: var(--accent-600);
+}
+
+.timeline-filter .num {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.timeline-filter.is-active .num {
+  color: var(--accent-600);
 }
 
 .timeline--feed {
-  gap: var(--space-2);
+  gap: 0;
   margin-bottom: var(--space-3);
+  /* The feed can run long — it scrolls inside its own window (filters above
+     and the note/upload composer below stay put). */
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: var(--space-2);
+  scrollbar-gutter: stable;
 }
 
-.timeline__item--feed {
-  background: transparent;
+.timeline__row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+.timeline__row:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 32px;
+  bottom: var(--space-1);
+  width: 2px;
+  background: var(--border-default);
+}
+
+.timeline__marker {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  background: var(--surface-default);
+  border: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  z-index: 1;
+  flex: none;
+}
+
+.timeline__marker svg {
+  width: 14px;
+  height: 14px;
+}
+
+.timeline__marker--note {
+  background: var(--accent-50);
+  border-color: var(--accent-200);
+  color: var(--accent-600);
+}
+
+.timeline__marker--document {
+  background: var(--status-special-bg);
+  border-color: var(--status-special-br);
+  color: var(--status-special-fg);
+}
+
+.timeline__marker--check {
+  background: var(--status-success-bg);
+  border-color: var(--status-success-br);
+  color: var(--status-success-fg);
+}
+
+.timeline__marker--milestone {
+  background: var(--surface-tint);
+  color: var(--text-tertiary);
+}
+
+.timeline__marker.is-claimant {
+  border-style: dashed;
+  border-width: 1.5px;
+}
+
+/* Note + document cards: the readable surface; milestones stay rail-thin. */
+.timeline-card {
+  min-width: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-default);
+}
+
+.timeline-card--note {
+  border-left: 3px solid var(--accent-200);
+}
+
+.timeline-card--document {
+  background: var(--surface-default);
+  border-color: var(--border-default);
+  border-left: 3px solid var(--status-special-br);
 }
 
 .timeline__head {
@@ -115,13 +386,160 @@
 
 .timeline__actor {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.timeline__time {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Compact rail lines for checks + milestones: pill, text, and byline. */
+.timeline-line {
+  min-width: 0;
+  padding-top: 5px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+}
+
+.timeline-line__text {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.timeline-line__meta {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Document card body: one file row — icon, name, scope, download. */
+.timeline-doc {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin-top: var(--space-2);
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  text-align: left;
+  min-height: 44px;
+}
+
+.timeline-doc:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent-600);
+}
+
+.timeline-card--document .timeline-doc {
+  margin-top: var(--space-2);
+  background: var(--surface-tint);
+  border-color: var(--border-subtle);
+}
+
+.timeline-card--document .timeline-doc:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent-600);
+}
+
+.timeline-doc__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--status-special-bg);
+  color: var(--status-special-fg);
+}
+
+.timeline-doc__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.timeline-doc__name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.timeline-doc__scope {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.timeline-doc__go {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--text-tertiary);
+  flex: none;
+}
+
+.timeline-doc:hover .timeline-doc__go {
+  color: var(--accent-600);
+}
+
+.timeline-doc__go svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Add-to-timeline: note + upload side by side, stacked on narrow screens. */
+.timeline-add {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.timeline-add__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-3);
+}
+
+.timeline-add__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.timeline-add .timeline__composer {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.timeline-add .doc-upload {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 900px) {
+  .timeline-add__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .timeline__composer {
   margin-top: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-3);
 }
 
 /* Per-check evidence list + attach form inside each verification card. */
@@ -166,7 +584,6 @@
   flex-wrap: wrap;
 }
 
-.reserve-hint,
 .decision-hint {
   margin-bottom: var(--space-3);
 }
@@ -180,18 +597,25 @@
   margin-top: var(--space-4);
 }
 
-/* Staged workflow: Review → Verification → Decision stepper + the one-line
-   task for the current stage. */
+/* Staged workflow: a connected progress rail — dots joined by one line,
+   check marks on completed steps, accent ring on the current step. Labels
+   sit beside (not under) each dot so three steps read as one control bar.
+   Reached stages revisit read-only, future stages stay locked. */
 .stage-head {
   margin-bottom: var(--space-4);
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4) var(--space-6) var(--space-3);
 }
 
 .stage-stepper {
   list-style: none;
   display: flex;
-  gap: var(--space-2);
+  gap: 0;
   padding: 0;
-  margin: 0 0 var(--space-2);
+  margin: 0 0 var(--space-3);
   flex-wrap: wrap;
 }
 
@@ -203,76 +627,316 @@
 
 .stage-step {
   flex: 1;
-  min-width: 140px;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  background: var(--surface-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-card);
-  padding: var(--space-2) var(--space-3);
+  min-width: 160px;
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  position: relative;
+}
+
+/* The connector line runs behind the dots, centered on them. */
+.stage-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--space-3) + 28px);
+  right: calc(var(--space-3) * -1);
+  top: 22px;
+  height: 2px;
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+.stage-step.is-done:not(:last-child)::after {
+  background: var(--accent-600);
+}
+
+.stage-step__btn {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: calc(var(--space-2) * -1) calc(var(--space-3) * -1);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  width: calc(100% + var(--space-6));
+}
+
+button.stage-step__btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.stage-step__btn:disabled {
+  cursor: not-allowed;
 }
 
 .stage-step__dot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 999px;
-  border: 1px solid var(--border-default);
+  border: 2px solid var(--border-strong);
+  background: var(--surface-default);
   font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
   flex: none;
 }
 
-.stage-step.is-current {
-  border-color: var(--accent-600);
+.stage-step__dot svg {
+  width: 14px;
+  height: 14px;
+}
+
+.stage-step__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.stage-step__label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.stage-step__hint {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
 }
 
 .stage-step.is-current .stage-step__dot {
-  background: var(--accent-600);
   border-color: var(--accent-600);
+  background: var(--accent-600);
   color: #fff;
+  box-shadow: var(--focus-ring);
+}
+
+.stage-step.is-current .stage-step__label {
+  color: var(--accent-700);
 }
 
 .stage-step.is-done .stage-step__dot {
+  background: var(--accent-600);
   border-color: var(--accent-600);
-  color: var(--accent-600);
+  color: #fff;
 }
 
 .stage-step.is-locked {
   opacity: 0.6;
 }
 
-/* Verification checklist: one card per check, completed work reads compact. */
+/* Revisit banner + read-only revisit panels: the dashed border alone marks
+   read-only — the panel stays white so nested tables and rows keep depth. */
+.stage-revisit {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+.revisit-panel {
+  border-style: dashed;
+}
+
+.ver-list--readonly {
+  margin-bottom: var(--space-3);
+}
+
+.send-back-row {
+  margin-top: var(--space-4);
+}
+
+.send-back-form {
+  margin-top: var(--space-2);
+}
+
+/* Verification checklist, Jira-subtask style: one progress bar, then one
+   compact row per check. Rows carry a 3px state spine (blue = to do, teal =
+   in progress, green = done) and expand in place for the completion work;
+   the row button is full-bleed so the whole line is the affordance. */
+.ver-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.ver-progress__bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.ver-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent-600);
+  transition: width var(--duration-base) var(--ease-out);
+}
+
+.ver-progress__text {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
 .ver-list {
   list-style: none;
   padding: 0;
   margin: 0 0 var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
-.ver-card {
-  border: 1px solid var(--border-subtle);
+.ver-row {
+  border: 1px solid var(--border-default);
+  border-left-width: 3px;
   border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-card);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-card);
   min-width: 0;
+  overflow: hidden;
 }
 
-.ver-card__head {
+.ver-row--todo {
+  border-left-color: var(--accent-600);
+}
+
+.ver-row--working {
+  border-left-color: var(--accent-600);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.ver-row--cancelled {
+  border-left-color: var(--border-strong);
+  opacity: 0.72;
+}
+
+.ver-row--done {
+  border-left-color: var(--status-success-fg);
+  background: var(--surface-tint);
+}
+
+.ver-row__main {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  background: none;
+  border: 0;
+  padding: var(--space-2) var(--space-3);
+  min-height: var(--row-height);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
   flex-wrap: wrap;
+}
+
+.ver-row__main:hover {
+  background: var(--surface-hover);
+}
+
+.ver-row__chev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.ver-row.is-open .ver-row__chev {
+  transform: rotate(90deg);
+}
+
+/* State lozenge: Jira's TO DO / IN PROGRESS / DONE word on the row. */
+.ver-state {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+  flex: none;
+}
+
+.ver-state--todo {
+  color: var(--accent-600);
+  background: var(--surface-selected);
+  border-color: var(--accent-200);
+}
+
+.ver-state--working {
+  color: var(--accent-700);
+  background: var(--surface-selected);
+  border-color: var(--accent-200);
+}
+
+.ver-state--done {
+  color: var(--status-success-fg);
+  background: var(--status-success-bg);
+  border-color: var(--status-success-br);
+}
+
+.ver-state--cancelled {
+  color: var(--text-tertiary);
+  background: var(--surface-active);
+  border-color: var(--border-default);
+}
+
+.ver-row__title {
   font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.ver-row__meta {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ver-row__detail {
+  border-top: 1px dashed var(--border-default);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Read-only rows (revisit panel): same language, no hover affordance. */
+.ver-row__main--static {
+  cursor: default;
+}
+
+.ver-row__main--static:hover {
+  background: none;
+}
+
+.ver-row__detail--static {
+  padding-top: var(--space-2);
 }
 
 .ver-card__hint {
@@ -283,11 +947,11 @@
   font-size: var(--text-sm);
   color: var(--text-secondary);
   white-space: pre-wrap;
-  margin-top: var(--space-1);
+  margin: 0;
 }
 
 .ver-card__form {
-  margin-top: var(--space-3);
+  margin-top: var(--space-1);
   border-top: 1px dashed var(--border-default);
   padding-top: var(--space-3);
   display: flex;
@@ -299,10 +963,15 @@
   align-self: flex-start;
 }
 
-/* Assessment: the verification stage's exit box. */
+/* Assessment: the verification stage's exit — a bordered box so the exit
+   reads apart from the checklist cards above it. */
 .assess-box {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent-600);
+  border-radius: var(--radius-md);
+  background: var(--surface-default);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4) var(--space-4);
   margin-top: var(--space-3);
   display: flex;
   flex-direction: column;
@@ -311,17 +980,43 @@
 
 .assess-box h3 {
   font-size: var(--text-md);
+  margin: 0;
 }
 
-.assess-row label {
+/* One compact money row per cover: code, claimed · limit, input right. */
+.assess-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-default);
+  overflow: hidden;
+}
+
+.assess-row {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
+  min-height: var(--row-height);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
   flex-wrap: wrap;
 }
 
+.assess-row + .assess-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.assess-row:hover {
+  background: var(--surface-hover);
+}
+
 .assess-row .input {
-  max-width: 220px;
+  margin-left: auto;
+  max-width: 160px;
 }
 
 /* Collapsible follow-ups: extra checks + send-back beside the checklist. */
@@ -342,25 +1037,21 @@
   margin-top: var(--space-2);
 }
 
-/* Per-cover lists (review) + the decision grid. The grid scrolls inside its
-   own card on narrow screens — five columns must never widen the page. */
-.cover-list {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 var(--space-3);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* Review tables reuse the decision .cover-grid language (code + name, right-
+   aligned money, flag column) so claimed vs limit compares down columns.
+   Read-only revisit tables inherit the dashed read-only border. */
+.cover-review {
+  margin-bottom: var(--space-4);
 }
 
-.cover-list__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-  font-size: var(--text-sm);
+.cover-name {
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
 }
 
+/* Decision + review grids. The grid scrolls inside its own card on narrow
+   screens — columns must never widen the page. Header row is tinted so the
+   money columns separate from the data. */
 .table-scroll {
   overflow-x: auto;
   margin: 0 calc(var(--space-4) * -1);
@@ -378,9 +1069,21 @@
 .cover-grid th,
 .cover-grid td {
   text-align: left;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.cover-grid th {
+  background: var(--surface-tint);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  height: 36px;
+}
+
+.cover-grid tbody tr:last-child td {
+  border-bottom: none;
 }
 
 .cover-grid th.num,
@@ -397,7 +1100,12 @@
 
 .totals-line {
   font-size: var(--text-sm);
-  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  background: var(--surface-selected);
+  border: 1px solid var(--accent-100);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
   font-variant-numeric: tabular-nums;
   margin-bottom: var(--space-3);
   overflow-wrap: anywhere;

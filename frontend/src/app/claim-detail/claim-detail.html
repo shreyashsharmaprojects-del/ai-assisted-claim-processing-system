@@ -26,18 +26,21 @@
     <div class="page-banner">
       <div class="page-banner__main">
         <div class="page-banner__title-row">
-          <h1>Claim <span class="mono identifier" data-testid="detail-claim-number">{{ claim.claimNumber }}</span></h1>
+          <h1>Claim <span class="mono detail-id" data-testid="detail-claim-number">{{ claim.claimNumber }}</span></h1>
           <span class="{{ statusBadge(claim.status) }}" data-testid="detail-status">{{ claim.status }}</span>
           <span class="chip">{{ claim.level }}</span>
           @if (claim.assignedTo; as assignee) {
-            <span class="muted">{{ assignee }}</span>
+            <span class="detail-assignee">
+              <span class="detail-assignee__avatar" aria-hidden="true">{{ timelineInitials(assignee) }}</span>
+              {{ assignee }}
+            </span>
           } @else {
             <span class="muted">Unassigned</span>
           }
         </div>
         <p class="page-banner__sub">
           <span class="mono" data-testid="detail-policy">{{ claim.policyNumber }}</span>
-          · {{ claim.holderName }} · loss {{ lossDateText() }}
+          · {{ claim.holderName }} · loss {{ lossDateText() }} · reserve {{ reserveText() }}
         </p>
       </div>
     </div>
@@ -53,34 +56,96 @@
         <ol class="stage-stepper" data-testid="detail-stage-stepper" aria-label="Claim stage">
           <li
             class="stage-step"
-            [class.is-current]="stage() === 'REVIEW'"
+            [class.is-current]="shownStage() === 'REVIEW'"
             [class.is-done]="stageIndex() > 0"
             data-testid="detail-stage-REVIEW"
           >
-            <span class="stage-step__dot" aria-hidden="true">1</span>
-            <span class="stage-step__label">Review</span>
+            <button
+              type="button"
+              class="stage-step__btn"
+              data-testid="detail-stage-view-REVIEW"
+              [disabled]="!stageReached('REVIEW')"
+              [attr.aria-current]="shownStage() === 'REVIEW' ? 'step' : null"
+              (click)="viewStage('REVIEW')"
+            >
+              <span class="stage-step__dot" aria-hidden="true">
+                @if (stageIndex() > 0) {
+                  <svg viewBox="0 0 16 16"><path d="M3.2 8.6l3.2 3.2 6.4-7.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                } @else {
+                  1
+                }
+              </span>
+              <span class="stage-step__text">
+                <span class="stage-step__label">Review</span>
+                <span class="stage-step__hint">Triage</span>
+              </span>
+            </button>
           </li>
           <li
             class="stage-step"
-            [class.is-current]="stage() === 'VERIFICATION'"
+            [class.is-current]="shownStage() === 'VERIFICATION'"
             [class.is-done]="stageIndex() > 1"
             [class.is-locked]="!stageReached('VERIFICATION')"
             data-testid="detail-stage-VERIFICATION"
           >
-            <span class="stage-step__dot" aria-hidden="true">2</span>
-            <span class="stage-step__label">Verification</span>
+            <button
+              type="button"
+              class="stage-step__btn"
+              data-testid="detail-stage-view-VERIFICATION"
+              [disabled]="!stageReached('VERIFICATION')"
+              [attr.aria-current]="shownStage() === 'VERIFICATION' ? 'step' : null"
+              (click)="viewStage('VERIFICATION')"
+            >
+              <span class="stage-step__dot" aria-hidden="true">
+                @if (stageIndex() > 1) {
+                  <svg viewBox="0 0 16 16"><path d="M3.2 8.6l3.2 3.2 6.4-7.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                } @else {
+                  2
+                }
+              </span>
+              <span class="stage-step__text">
+                <span class="stage-step__label">Verification</span>
+                <span class="stage-step__hint">{{ checklistDone() }} of {{ checklistTotal() }} checks</span>
+              </span>
+            </button>
           </li>
           <li
             class="stage-step"
-            [class.is-current]="stage() === 'DECISION'"
+            [class.is-current]="shownStage() === 'DECISION'"
             [class.is-locked]="!stageReached('DECISION')"
             data-testid="detail-stage-DECISION"
           >
-            <span class="stage-step__dot" aria-hidden="true">3</span>
-            <span class="stage-step__label">Decision</span>
+            <button
+              type="button"
+              class="stage-step__btn"
+              data-testid="detail-stage-view-DECISION"
+              [disabled]="!stageReached('DECISION')"
+              [attr.aria-current]="shownStage() === 'DECISION' ? 'step' : null"
+              (click)="viewStage('DECISION')"
+            >
+              <span class="stage-step__dot" aria-hidden="true">3</span>
+              <span class="stage-step__text">
+                <span class="stage-step__label">Decision</span>
+                <span class="stage-step__hint">Per cover</span>
+              </span>
+            </button>
           </li>
         </ol>
         <p class="stage-task">{{ stageTask() }}</p>
+        @if (isViewingEarlier()) {
+          <p class="notice notice--info stage-revisit" data-testid="detail-stage-revisit" role="status">
+            Viewing {{ shownStage().toLowerCase() }} — read-only. The claim itself is at
+            {{ stage().toLowerCase() }}.
+            <button
+              type="button"
+              class="btn btn--tertiary btn--sm"
+              data-testid="detail-stage-back-current"
+              (click)="backToCurrentStage()"
+            >
+              Back to {{ stage().toLowerCase() }}
+            </button>
+          </p>
+        }
       </div>
     }
 
@@ -160,26 +225,90 @@
             }
           </div>
         </section>
-      } @else if (stage() === 'REVIEW') {
+      } @else if (shownStage() === 'REVIEW') {
+        @if (isViewingEarlier()) {
+          <!-- Revisit: the triage picture, read-only. -->
+          <section class="panel revisit-panel" data-testid="detail-review-revisit">
+            <div class="panel__header">
+              <h2>Review — what was filed</h2>
+              <span class="badge badge--neutral">Read-only</span>
+            </div>
+            <div class="panel__body">
+              <div class="table-scroll">
+                <table class="cover-grid cover-review" data-testid="detail-review-covers-readonly">
+                  <thead>
+                    <tr>
+                      <th scope="col">Cover</th>
+                      <th scope="col" class="num">Claimed</th>
+                      <th scope="col" class="num">Sub-limit</th>
+                      <th scope="col"><span class="sr-only">Flag</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (cover of covers(); track cover.coverCode) {
+                      <tr>
+                        <td>
+                          <span class="mono">{{ cover.coverCode }}</span>
+                          <span class="muted cover-name">{{ cover.displayName }}</span>
+                        </td>
+                        <td class="num">{{ money(cover.claimedAmount) }}</td>
+                        <td class="num">{{ money(cover.subLimit) }}</td>
+                        <td>
+                          @if (cover.aboveLimit) {
+                            <span class="badge badge--warning">Above limit</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <button
+                type="button"
+                class="btn btn--secondary"
+                data-testid="detail-stage-back-current-2"
+                (click)="backToCurrentStage()"
+              >
+                Back to {{ stage().toLowerCase() }}
+              </button>
+            </div>
+          </section>
+        } @else {
         <section class="panel" data-testid="detail-review-panel">
           <div class="panel__header">
             <h2>Review — is this claim valid?</h2>
             <span class="{{ statusBadge(claim.status) }}">{{ claim.status }}</span>
           </div>
           <div class="panel__body">
-            <ul class="cover-list" data-testid="detail-review-covers">
-              @for (cover of covers(); track cover.coverCode) {
-                <li class="cover-list__item">
-                  <span class="mono">{{ cover.coverCode }}</span>
-                  <span class="muted">{{ cover.displayName }}</span>
-                  <span class="num">{{ money(cover.claimedAmount) }}</span>
-                  <span class="muted">limit {{ money(cover.subLimit) }}</span>
-                  @if (cover.aboveLimit) {
-                    <span class="badge badge--warning">Above limit</span>
-                  }
-                </li>
-              }
-            </ul>
+            <div class="table-scroll">
+              <table class="cover-grid cover-review" data-testid="detail-review-covers">
+                <thead>
+                  <tr>
+                    <th scope="col">Cover</th>
+                    <th scope="col" class="num">Claimed</th>
+                    <th scope="col" class="num">Sub-limit</th>
+                    <th scope="col"><span class="sr-only">Flag</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (cover of covers(); track cover.coverCode) {
+                    <tr>
+                      <td>
+                        <span class="mono">{{ cover.coverCode }}</span>
+                        <span class="muted cover-name">{{ cover.displayName }}</span>
+                      </td>
+                      <td class="num">{{ money(cover.claimedAmount) }}</td>
+                      <td class="num">{{ money(cover.subLimit) }}</td>
+                      <td>
+                        @if (cover.aboveLimit) {
+                          <span class="badge badge--warning">Above limit</span>
+                        }
+                      </td>
+                    </tr>
+                    }
+                </tbody>
+              </table>
+            </div>
             <div class="field">
               <label for="review-rationale">Rationale</label>
               <textarea
@@ -260,139 +389,236 @@
             }
           </div>
         </section>
-      } @else if (stage() === 'VERIFICATION') {
+        }
+      } @else if (shownStage() === 'VERIFICATION') {
+        @if (isViewingEarlier()) {
+          <!-- Revisit: the checks and their outcomes, read-only. -->
+          <section class="panel revisit-panel" data-testid="detail-verification-revisit">
+            <div class="panel__header">
+              <h2>Verification — {{ checklistDone() }} of {{ checklistTotal() }} complete</h2>
+              <span class="badge badge--neutral">Read-only</span>
+            </div>
+            <div class="panel__body">
+              @if (verifications().length === 0) {
+                <p class="muted">No verification records yet.</p>
+              } @else {
+                <ol class="ver-list ver-list--readonly" data-testid="detail-verification-list-readonly">
+                  @for (ver of verifications(); track ver.id) {
+                    <li
+                      class="ver-row ver-row--{{ ver.status === 'COMPLETE' ? 'done' : 'todo' }}"
+                      data-testid="detail-verification-item-readonly"
+                    >
+                      <div class="ver-row__main ver-row__main--static">
+                        <span class="ver-state ver-state--{{ ver.status === 'COMPLETE' ? 'done' : 'todo' }}">
+                          {{ ver.status === 'COMPLETE' ? (ver.outcome ?? 'Done') : 'To do' }}
+                        </span>
+                        <span class="ver-row__title">{{ verTitle(ver.type) }}</span>
+                        <span class="ver-row__meta">
+                          {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
+                          @if (ver.completedAt) {
+                            · done {{ verificationTimeText(ver.completedAt) }}
+                          }
+                        </span>
+                      </div>
+                      @if (ver.notes) {
+                        <div class="ver-row__detail ver-row__detail--static">
+                          <p class="ver-card__notes">{{ ver.notes }}</p>
+                        </div>
+                      }
+                      @if (verAttachments(ver.id).length > 0) {
+                        <div class="ver-row__detail ver-row__detail--static">
+                          <ul class="ver-docs" [attr.data-testid]="'detail-ver-docs-readonly-' + ver.id">
+                          @for (doc of verAttachments(ver.id); track doc.id) {
+                            <li>
+                              <button
+                                type="button"
+                                class="btn btn--tertiary btn--sm"
+                                data-testid="detail-attachment"
+                                (click)="download(doc)"
+                              >
+                                <svg viewBox="0 0 16 16" aria-hidden="true">
+                                  <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                {{ docName(doc) }}
+                              </button>
+                            </li>
+                          }
+                        </ul>
+                        </div>
+                      }
+                    </li>
+                  }
+                </ol>
+              }
+              <button
+                type="button"
+                class="btn btn--secondary"
+                data-testid="detail-stage-back-current-3"
+                (click)="backToCurrentStage()"
+              >
+                Back to {{ stage().toLowerCase() }}
+              </button>
+            </div>
+          </section>
+        } @else {
         <section class="panel" data-testid="detail-verification-panel">
           <div class="panel__header">
-            <h2>Verification — {{ checklistDone() }} of {{ checklistTotal() }} complete</h2>
+            <h2>Verification — checklist</h2>
             @if (allVerComplete()) {
               <span class="badge badge--success">Ready to assess</span>
             }
           </div>
           <div class="panel__body">
+            <!-- Jira-style checklist progress: done over open, one bar. -->
+            <div class="ver-progress" role="status" aria-label="Verification progress">
+              <div class="ver-progress__bar" aria-hidden="true">
+                <span
+                  class="ver-progress__fill"
+                  [style.width.%]="checklistTotal() === 0 ? 0 : (checklistDone() / checklistTotal()) * 100"
+                ></span>
+              </div>
+              <span class="ver-progress__text num">{{ checklistDone() }} of {{ checklistTotal() }} done</span>
+            </div>
             @if (verifications().length === 0) {
               <p class="muted">No verification records yet.</p>
             } @else {
               <ol class="ver-list" data-testid="detail-verification-list">
                 @for (ver of verifications(); track ver.id) {
-                  <li class="ver-card" data-testid="detail-verification-item">
-                    <div class="ver-card__head">
-                      <strong>{{ verTitle(ver.type) }}</strong>
-                      <span class="{{ verStatusBadge(ver.status) }}">{{ ver.status }}</span>
-                      @if (ver.outcome) {
-                        <span class="badge badge--success">{{ ver.outcome }}</span>
-                      }
-                    </div>
-                    @if (verHint(ver.type)) {
-                      <p class="muted ver-card__hint">{{ verHint(ver.type) }}</p>
-                    }
-                    @if (ver.notes) {
-                      <p class="ver-card__notes">{{ ver.notes }}</p>
-                    }
-                    @if (ver.evidenceRefs) {
-                      <p class="timeline__meta">Evidence: {{ ver.evidenceRefs }}</p>
-                    }
-                    @if (verAttachments(ver.id).length > 0) {
-                      <ul class="ver-docs" [attr.data-testid]="'detail-ver-docs-' + ver.id">
-                        @for (doc of verAttachments(ver.id); track doc.id) {
-                          <li>
-                            <button
-                              type="button"
-                              class="btn btn--tertiary btn--sm"
-                              data-testid="detail-attachment"
-                              (click)="download(doc)"
-                            >
-                              <svg viewBox="0 0 16 16" aria-hidden="true">
-                                <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                              </svg>
-                              {{ docName(doc) }}
-                            </button>
-                          </li>
+                  <!-- One compact subtask row per check: state lozenge, title,
+                       outcome, owner + time; expands in place for the work. -->
+                  <li
+                    class="ver-row ver-row--{{ verState(ver) }}"
+                    [class.is-open]="isVerExpanded(ver)"
+                    data-testid="detail-verification-item"
+                  >
+                    <button
+                      type="button"
+                      class="ver-row__main"
+                      [attr.aria-expanded]="isVerExpanded(ver)"
+                      [attr.data-testid]="'detail-ver-toggle-' + ver.id"
+                      (click)="toggleVerExpanded(ver)"
+                    >
+                      <svg class="ver-row__chev" viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      <span class="ver-state ver-state--{{ verState(ver) }}">{{ verStateLabel(ver) }}</span>
+                      <span class="ver-row__title">{{ verTitle(ver.type) }}</span>
+                      <span class="ver-row__meta">
+                        {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
+                        @if (ver.completedAt) {
+                          · done {{ verificationTimeText(ver.completedAt) }}
                         }
-                      </ul>
-                    }
-                    <p class="timeline__meta">
-                      {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
-                      @if (ver.completedAt) {
-                        · completed {{ verificationTimeText(ver.completedAt) }}
-                      }
-                    </p>
-                    @if (canDecide() && ver.status !== 'COMPLETE' && ver.status !== 'CANCELLED') {
-                      <div class="ver-card__form">
-                        <div class="inline-form">
-                          <div class="field">
-                            <label [for]="'ver-outcome-' + ver.id">Outcome</label>
-                            <select
-                              [id]="'ver-outcome-' + ver.id"
-                              class="input"
-                              [attr.data-testid]="'detail-ver-outcome-' + ver.id"
-                              [(ngModel)]="verOutcome[ver.id]"
-                              [name]="'verOutcome' + ver.id"
-                            >
-                              <option value="PASSED">PASSED</option>
-                              <option value="FAILED">FAILED</option>
-                              <option value="WAIVED">WAIVED</option>
-                              <option value="INCONCLUSIVE">INCONCLUSIVE</option>
-                            </select>
-                          </div>
-                          <div class="field">
-                            <label [for]="'ver-evidence-' + ver.id">Evidence refs</label>
-                            <input
-                              [id]="'ver-evidence-' + ver.id"
-                              class="input"
-                              placeholder="Attachment ids / refs"
-                              [attr.data-testid]="'detail-ver-evidence-' + ver.id"
-                              [(ngModel)]="verEvidence[ver.id]"
-                              [name]="'verEvidence' + ver.id"
-                            />
-                          </div>
-                        </div>
-                        <div class="field">
-                          <label [for]="'ver-notes-' + ver.id">Notes</label>
-                          <textarea
-                            [id]="'ver-notes-' + ver.id"
-                            class="input"
-                            rows="2"
-                            placeholder="Required to complete"
-                            [attr.data-testid]="'detail-ver-notes-' + ver.id"
-                            [(ngModel)]="verNotes[ver.id]"
-                            [name]="'verNotes' + ver.id"
-                          ></textarea>
-                        </div>
-                        <button
-                          type="button"
-                          class="btn btn--primary"
-                          [attr.data-testid]="'detail-ver-save-' + ver.id"
-                          [disabled]="savingVerification()"
-                          (click)="saveVerification(ver.id)"
-                        >
-                          Complete {{ verTitle(ver.type).toLowerCase() }}
-                        </button>
-                        <div class="field ver-attach">
-                          <label [for]="'ver-file-' + ver.id">Attach evidence to this check</label>
-                          <div class="inline-form">
-                            <input
-                              #verFile
-                              [id]="'ver-file-' + ver.id"
-                              type="file"
-                              accept="image/*,.pdf"
-                              class="input"
-                              [attr.data-testid]="'detail-ver-file-' + ver.id"
-                            />
+                      </span>
+                    </button>
+                    @if (isVerExpanded(ver)) {
+                      <div class="ver-row__detail">
+                        @if (verHint(ver.type)) {
+                          <p class="muted ver-card__hint">{{ verHint(ver.type) }}</p>
+                        }
+                        @if (ver.notes) {
+                          <p class="ver-card__notes">{{ ver.notes }}</p>
+                        }
+                        @if (ver.evidenceRefs) {
+                          <p class="timeline__meta">Evidence: {{ ver.evidenceRefs }}</p>
+                        }
+                        @if (verAttachments(ver.id).length > 0) {
+                          <ul class="ver-docs" [attr.data-testid]="'detail-ver-docs-' + ver.id">
+                            @for (doc of verAttachments(ver.id); track doc.id) {
+                              <li>
+                                <button
+                                  type="button"
+                                  class="btn btn--tertiary btn--sm"
+                                  data-testid="detail-attachment"
+                                  (click)="download(doc)"
+                                >
+                                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                                    <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                                  </svg>
+                                  {{ docName(doc) }}
+                                </button>
+                              </li>
+                            }
+                          </ul>
+                        }
+                        @if (canDecide() && ver.status !== 'COMPLETE' && ver.status !== 'CANCELLED') {
+                          <div class="ver-card__form">
+                            <div class="inline-form">
+                              <div class="field">
+                                <label [for]="'ver-outcome-' + ver.id">Outcome</label>
+                                <select
+                                  [id]="'ver-outcome-' + ver.id"
+                                  class="input"
+                                  [attr.data-testid]="'detail-ver-outcome-' + ver.id"
+                                  [(ngModel)]="verOutcome[ver.id]"
+                                  [name]="'verOutcome' + ver.id"
+                                >
+                                  <option value="PASSED">PASSED</option>
+                                  <option value="FAILED">FAILED</option>
+                                  <option value="WAIVED">WAIVED</option>
+                                  <option value="INCONCLUSIVE">INCONCLUSIVE</option>
+                                </select>
+                              </div>
+                              <div class="field">
+                                <label [for]="'ver-evidence-' + ver.id">Evidence refs</label>
+                                <input
+                                  [id]="'ver-evidence-' + ver.id"
+                                  class="input"
+                                  placeholder="Attachment ids / refs"
+                                  [attr.data-testid]="'detail-ver-evidence-' + ver.id"
+                                  [(ngModel)]="verEvidence[ver.id]"
+                                  [name]="'verEvidence' + ver.id"
+                                />
+                              </div>
+                            </div>
+                            <div class="field">
+                              <label [for]="'ver-notes-' + ver.id">Notes</label>
+                              <textarea
+                                [id]="'ver-notes-' + ver.id"
+                                class="input"
+                                rows="2"
+                                placeholder="Required to complete"
+                                [attr.data-testid]="'detail-ver-notes-' + ver.id"
+                                [(ngModel)]="verNotes[ver.id]"
+                                [name]="'verNotes' + ver.id"
+                              ></textarea>
+                            </div>
                             <button
                               type="button"
-                              class="btn btn--secondary"
-                              [attr.data-testid]="'detail-ver-upload-' + ver.id"
-                              [disabled]="uploading()"
-                              (click)="uploadDoc(verFile, ver.id)"
+                              class="btn btn--primary"
+                              [attr.data-testid]="'detail-ver-save-' + ver.id"
+                              [disabled]="savingVerification()"
+                              (click)="saveVerification(ver.id)"
                             >
-                              Attach
+                              Complete {{ verTitle(ver.type).toLowerCase() }}
                             </button>
+                            <div class="field ver-attach">
+                              <label [for]="'ver-file-' + ver.id">Attach evidence to this check</label>
+                              <div class="inline-form">
+                                <input
+                                  #verFile
+                                  [id]="'ver-file-' + ver.id"
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  class="input"
+                                  [attr.data-testid]="'detail-ver-file-' + ver.id"
+                                />
+                                <button
+                                  type="button"
+                                  class="btn btn--secondary"
+                                  [attr.data-testid]="'detail-ver-upload-' + ver.id"
+                                  [disabled]="uploading()"
+                                  (click)="uploadDoc(verFile, ver.id)"
+                                >
+                                  Attach
+                                </button>
+                              </div>
+                              <p class="muted ver-attach__hint">
+                                Uses the document name chosen below in Claim files — the file
+                                lands on this check and on the timeline.
+                              </p>
+                            </div>
                           </div>
-                          <p class="muted ver-attach__hint">
-                            Uses the document name chosen below in Claim files — the file
-                            lands on this check and on the timeline.
-                          </p>
-                        </div>
+                        }
                       </div>
                     }
                   </li>
@@ -405,29 +631,33 @@
                   Still to complete: {{ pendingVerNames() }} — then record the assessment below.
                 </p>
               }
-              <!-- Assessment: the verification stage's exit -->
+              <!-- Assessment: the verification stage's exit — the Jira-style
+                   transition form that resolves this stage into decision. -->
               <div class="assess-box">
-                <h3>Assessment</h3>
-                <p class="muted">Set the assessed figure per cover (never above claimed or the sub-limit).</p>
-                @for (cover of covers(); track cover.coverCode) {
-                  <div class="field assess-row">
-                    <label [for]="'assess-' + cover.coverCode">
+                <h3>Assessment — resolve this stage</h3>
+                <p class="muted">Set the assessed figure per cover (never above claimed or the sub-limit). Saving moves the claim to decision.</p>
+                <ul class="assess-list">
+                  @for (cover of covers(); track cover.coverCode) {
+                    <li class="assess-row">
                       <span class="mono">{{ cover.coverCode }}</span>
                       <span class="muted">claimed {{ money(cover.claimedAmount) }} · limit {{ money(cover.subLimit) }}</span>
-                    </label>
-                    <input
-                      [id]="'assess-' + cover.coverCode"
-                      class="input input--sm num"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      [attr.data-testid]="'detail-assess-' + cover.coverCode"
-                      [(ngModel)]="assessInputs[cover.coverCode]"
-                      [name]="'assess' + cover.coverCode"
-                      [disabled]="!allVerComplete()"
-                    />
-                  </div>
-                }
+                      <label class="sr-only" [for]="'assess-' + cover.coverCode">
+                        Assessed amount for {{ cover.coverCode }}
+                      </label>
+                      <input
+                        [id]="'assess-' + cover.coverCode"
+                        class="input input--sm num"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        [attr.data-testid]="'detail-assess-' + cover.coverCode"
+                        [(ngModel)]="assessInputs[cover.coverCode]"
+                        [name]="'assess' + cover.coverCode"
+                        [disabled]="!allVerComplete()"
+                      />
+                    </li>
+                  }
+                </ul>
                 <p class="totals-line">Assessed {{ money(assessedTotal()) }}</p>
                 <div class="field">
                   <label for="assessment-rationale">Assessment rationale</label>
@@ -449,6 +679,74 @@
                 >
                   Save assessment — move to decision
                 </button>
+                <div class="assess-side">
+                  <form (ngSubmit)="saveReserve()" class="assess-side__item">
+                    <label for="reserve">Reserve (£) — internal, never shown to the claimant</label>
+                    <div class="assess-side__row">
+                      <input
+                        id="reserve"
+                        class="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="0.00"
+                        data-testid="detail-reserve-input"
+                        [(ngModel)]="reserveInput"
+                        name="reserve"
+                      />
+                      <button
+                        type="submit"
+                        class="btn btn--secondary"
+                        data-testid="detail-reserve-save"
+                        [disabled]="savingReserve() || !reserveReady()"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </form>
+                  <div class="assess-side__item" data-testid="detail-refer-panel">
+                    <label for="refer-reason">Refer upwards — stage, checks and figures travel with it</label>
+                    <div class="assess-side__row">
+                      <textarea
+                        id="refer-reason"
+                        class="input"
+                        rows="1"
+                        placeholder="Why does this need a higher authority?"
+                        data-testid="detail-refer-reason"
+                        [(ngModel)]="referReason"
+                        name="referReason"
+                      ></textarea>
+                      <input
+                        id="refer-target"
+                        class="input assess-side__id"
+                        inputmode="numeric"
+                        placeholder="Senior id"
+                        aria-label="Senior adjuster id"
+                        data-testid="detail-refer-target"
+                        [(ngModel)]="referTarget"
+                        name="referTarget"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--secondary"
+                        data-testid="detail-refer-named"
+                        [disabled]="referring()"
+                        (click)="referNamed()"
+                      >
+                        Refer
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn--tertiary"
+                        data-testid="detail-refer-auto"
+                        [disabled]="referring()"
+                        (click)="referAuto()"
+                      >
+                        Auto
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
               <!-- Extra follow-up + send-back live beside the checklist -->
               <div class="button-row" style="margin-top: var(--space-3)">
@@ -487,7 +785,7 @@
                 </div>
               }
               <details class="more-box">
-                <summary>Need another check?</summary>
+                <summary>Add a follow-up check</summary>
                 <div class="inline-form">
                   <div class="field">
                     <label for="verification-type">Type</label>
@@ -500,6 +798,8 @@
                     >
                       <option value="DIGITAL">DIGITAL</option>
                       <option value="PHYSICAL">PHYSICAL</option>
+                      <option value="DOCUMENT">DOCUMENT</option>
+                      <option value="CLAUSE">CLAUSE</option>
                     </select>
                   </div>
                   <div class="field">
@@ -524,15 +824,56 @@
                   </button>
                 </div>
               </details>
+              <!-- V18: one step back — DECISION is the only stage with somewhere to go. -->
+              <div class="button-row send-back-row">
+                <button
+                  type="button"
+                  class="btn btn--secondary"
+                  data-testid="detail-send-back-toggle"
+                  [disabled]="sendingBack()"
+                  (click)="showSendBackForm = !showSendBackForm"
+                >
+                  Send back to {{ sendBackTargetLabel() }}
+                </button>
+              </div>
+              @if (showSendBackForm) {
+                <div class="field send-back-form">
+                  <label for="send-back-rationale">
+                    Reason — the decision work so far stays on the timeline
+                  </label>
+                  <div class="inline-form">
+                    <input
+                      id="send-back-rationale"
+                      class="input"
+                      placeholder="What needs re-checking?"
+                      data-testid="detail-send-back-rationale"
+                      [(ngModel)]="sendBackRationale"
+                      name="sendBackRationale"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn--secondary"
+                      data-testid="detail-send-back-confirm"
+                      [disabled]="sendingBack() || !sendBackRationale.trim()"
+                      (click)="sendBack()"
+                    >
+                      {{ sendingBack() ? 'Sending back…' : 'Confirm send-back' }}
+                    </button>
+                  </div>
+                </div>
+              }
             }
           </div>
         </section>
+        }
       } @else {
         <!-- ======================= DECISION ======================= -->
         <section class="panel" data-testid="detail-decision-panel">
           <div class="panel__header">
-            <h2>Decision — per cover</h2>
-            <span class="muted" data-testid="detail-authority-hint">{{ authorityHint() }}</span>
+            <div>
+              <h2>Decision — per cover</h2>
+              <p class="panel__sub" data-testid="detail-authority-hint">{{ authorityHint() }}</p>
+            </div>
           </div>
           <div class="panel__body">
             @if (!assessedDone()) {
@@ -615,6 +956,74 @@
                 name="decisionRationale"
               ></textarea>
             </div>
+            <div class="decision-side">
+              <form (ngSubmit)="saveReserve()" class="decision-side__item">
+                <label for="decision-reserve">Reserve (£) — internal, never shown to the claimant</label>
+                <div class="decision-side__row">
+                  <input
+                    id="decision-reserve"
+                    class="input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    data-testid="detail-reserve-input"
+                    [(ngModel)]="reserveInput"
+                    name="decisionReserve"
+                  />
+                  <button
+                    type="submit"
+                    class="btn btn--secondary"
+                    data-testid="detail-reserve-save"
+                    [disabled]="savingReserve() || !reserveReady()"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+              <div class="decision-side__item" data-testid="detail-refer-panel">
+                <label for="decision-refer-reason">Refer upwards — stage, checks and figures travel with it</label>
+                <div class="decision-side__row">
+                  <textarea
+                    id="decision-refer-reason"
+                    class="input"
+                    rows="1"
+                    placeholder="Why does this need a higher authority?"
+                    data-testid="detail-refer-reason"
+                    [(ngModel)]="referReason"
+                    name="decisionReferReason"
+                  ></textarea>
+                  <input
+                    id="decision-refer-target"
+                    class="input decision-side__id"
+                    inputmode="numeric"
+                    placeholder="Senior id"
+                    aria-label="Senior adjuster id"
+                    data-testid="detail-refer-target"
+                    [(ngModel)]="referTarget"
+                    name="decisionReferTarget"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    data-testid="detail-refer-named"
+                    [disabled]="referring()"
+                    (click)="referNamed()"
+                  >
+                    Refer
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--tertiary"
+                    data-testid="detail-refer-auto"
+                    [disabled]="referring()"
+                    (click)="referAuto()"
+                  >
+                    Auto
+                  </button>
+                </div>
+              </div>
+            </div>
             <div class="button-row decision-actions">
               <button
                 type="button"
@@ -659,265 +1068,136 @@
                 </div>
               </div>
             }
+            <!-- V18: one step back from decision — new doubts, audited, proposals clear. -->
+            <div class="button-row send-back-row">
+              <button
+                type="button"
+                class="btn btn--secondary"
+                data-testid="detail-send-back-toggle"
+                [disabled]="sendingBack()"
+                (click)="showSendBackForm = !showSendBackForm"
+              >
+                Send back to {{ sendBackTargetLabel() }}
+              </button>
+            </div>
+            @if (showSendBackForm) {
+              <div class="field send-back-form">
+                <label for="decision-send-back-rationale">
+                  Reason — proposals clear, assessed figures and history stay
+                </label>
+                <div class="inline-form">
+                  <input
+                    id="decision-send-back-rationale"
+                    class="input"
+                    placeholder="What needs re-checking?"
+                    data-testid="detail-send-back-rationale"
+                    [(ngModel)]="sendBackRationale"
+                    name="decisionSendBackRationale"
+                  />
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    data-testid="detail-send-back-confirm"
+                    [disabled]="sendingBack() || !sendBackRationale.trim()"
+                    (click)="sendBack()"
+                  >
+                    {{ sendingBack() ? 'Sending back…' : 'Confirm send-back' }}
+                  </button>
+                </div>
+              </div>
+            }
           </div>
         </section>
       }
 
-      <!-- ======================= SUPPORTING RAIL ======================= -->
+      <!-- Context, then the timeline last on every stage. -->
       <div class="support-rail">
-        @if (canDecide() && !isLegacy()) {
-          <section class="panel support-card" data-testid="detail-refer-panel">
+        <!-- ======================= CLAIM CONTEXT ======================= -->
+        <!-- Read-only record strip above the timeline: loss, policy, money.
+             Reserve editing and referral move into the stage panels where the
+             adjuster already works (verification assessment / decision). -->
+        <section class="panel context-strip" data-testid="detail-context-panel">
+          <div class="panel__body context-summary">
+            <div class="context-fact">
+              <span class="context-fact__label">Date of loss</span>
+              <span class="context-fact__value num" data-testid="detail-loss-date-field">{{ lossDateText() }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Location</span>
+              <span class="context-fact__value" data-testid="detail-loss-location">{{ claim.lossLocation }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Policy</span>
+              <span class="context-fact__value mono">{{ claim.policyNumber }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Product</span>
+              <span class="context-fact__value">{{ claim.productCode }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Holder</span>
+              <span class="context-fact__value">{{ claim.holderName }}</span>
+            </div>
+            @for (fact of coverageFacts(); track fact.label) {
+              <div class="context-fact">
+                <span class="context-fact__label">{{ fact.label }}</span>
+                <span class="context-fact__value">{{ fact.value }}</span>
+              </div>
+            }
+            <div class="context-fact">
+              <span class="context-fact__label">Reserve</span>
+              <span class="context-fact__value num" data-testid="detail-reserve-value">{{ reserveText() }}</span>
+            </div>
+            <div class="context-fact context-fact--story">
+              <span class="context-fact__label">What happened</span>
+              <span class="context-fact__value" data-testid="detail-loss-description">{{ claim.lossDescription }}</span>
+              @if (claim.claimantRemarks; as remarks) {
+                <span class="context-fact__value context-remarks" data-testid="detail-remarks">{{ remarks }}</span>
+              }
+            </div>
+          </div>
+          <pre class="code-block code-block--hidden" data-testid="detail-coverage">{{ coverageText() }}</pre>
+        </section>
+
+        <!-- Legacy single-figure claims carry no stage panels, so the reserve
+             editor lives here in the rail (staged claims edit it inside their
+             verification/decision panels). Internal only, never claimant-visible. -->
+        @if (isLegacy() && canDecide()) {
+          <section class="panel support-card" data-testid="detail-reserve-panel">
             <div class="panel__header">
-              <h2>Refer upwards</h2>
+              <h2>Reserve</h2>
             </div>
             <div class="panel__body">
-              <p class="muted">Hand this claim to a senior at any stage — stage, checks and figures travel with it.</p>
-              <div class="field">
-                <label for="refer-reason">Reason</label>
-                <textarea
-                  id="refer-reason"
-                  class="input"
-                  rows="2"
-                  placeholder="Why does this need a higher authority?"
-                  data-testid="detail-refer-reason"
-                  [(ngModel)]="referReason"
-                  name="referReason"
-                ></textarea>
-              </div>
-              <div class="inline-form">
+              <p class="muted reserve-hint">
+                An internal estimate of what this claim may cost — never shown to the claimant.
+              </p>
+              <form (ngSubmit)="saveReserve()" class="inline-form">
                 <div class="field">
-                  <label for="refer-target">Senior adjuster id</label>
+                  <label for="reserve">New reserve (£)</label>
                   <input
-                    id="refer-target"
+                    id="reserve"
                     class="input"
-                    inputmode="numeric"
-                    placeholder="e.g. 7"
-                    data-testid="detail-refer-target"
-                    [(ngModel)]="referTarget"
-                    name="referTarget"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    data-testid="detail-reserve-input"
+                    [(ngModel)]="reserveInput"
+                    name="reserve"
                   />
                 </div>
                 <button
-                  type="button"
+                  type="submit"
                   class="btn btn--secondary"
-                  data-testid="detail-refer-named"
-                  [disabled]="referring()"
-                  (click)="referNamed()"
+                  data-testid="detail-reserve-save"
+                  [disabled]="savingReserve() || !reserveReady()"
                 >
-                  Refer to named senior
+                  {{ savingReserve() ? 'Saving…' : 'Save' }}
                 </button>
-              </div>
-              <button
-                type="button"
-                class="btn btn--secondary"
-                data-testid="detail-refer-auto"
-                [disabled]="referring()"
-                (click)="referAuto()"
-              >
-                Assign to any qualified senior
-              </button>
+              </form>
             </div>
           </section>
         }
-
-        <!-- ======================= CLAIM TIMELINE ======================= -->
-        <!-- V17: one sequential feed — notes, documents, checks, milestones.
-             Replaces the scattered Documents / Internal-notes / Audit boxes. -->
-        <section class="panel timeline-panel" data-testid="detail-timeline-panel">
-          <div class="panel__header">
-            <h2>Claim timeline</h2>
-            @if (timelineEntries().length > 0) {
-              <span class="panel__count">{{ timelineEntries().length }}</span>
-            }
-          </div>
-          <div class="panel__body">
-            @if (timelineEntries().length === 0) {
-              <p class="muted" data-testid="detail-timeline-empty">
-                Nothing on the timeline yet — notes you add and documents you attach appear here.
-              </p>
-            } @else {
-              <ol class="timeline timeline--feed" data-testid="detail-timeline-list">
-                @for (entry of timelineEntries(); track $index) {
-                  <li class="timeline__item timeline__item--feed" data-testid="detail-timeline-item">
-                    <div class="timeline__head">
-                      <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
-                        {{ timelineKindLabel(entry.kind) }}
-                      </span>
-                      <span class="timeline__actor" data-testid="detail-timeline-actor">
-                        {{ entry.actor ?? 'Internal' }}
-                      </span>
-                      <span class="timeline__meta" data-testid="detail-timeline-time">
-                        {{ timelineTime(entry.at) }}
-                      </span>
-                    </div>
-                    @if (entry.detail) {
-                      <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
-                    }
-                    @if (timelineDoc(entry); as doc) {
-                      <button
-                        type="button"
-                        class="btn btn--tertiary btn--sm"
-                        data-testid="detail-attachment"
-                        (click)="download(doc)"
-                      >
-                        <svg viewBox="0 0 16 16" aria-hidden="true">
-                          <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                        {{ docName(doc) }}
-                      </button>
-                    }
-                  </li>
-                }
-              </ol>
-            }
-
-            @if (canDecide()) {
-              <!-- Add a note — lands on the timeline with your name and time. -->
-              <form (ngSubmit)="addNote()" class="field timeline__composer">
-                <label for="note">Add a note</label>
-                <textarea
-                  id="note"
-                  class="input"
-                  rows="2"
-                  placeholder="Observations, follow-ups, coverage checks…"
-                  data-testid="detail-note-input"
-                  [(ngModel)]="noteInput"
-                  name="note"
-                ></textarea>
-                <div class="form-actions note-form-actions">
-                  <button
-                    type="submit"
-                    class="btn btn--secondary"
-                    data-testid="detail-note-add"
-                    [disabled]="savingNote() || !noteInput.trim()"
-                  >
-                    Add note
-                  </button>
-                </div>
-              </form>
-
-              <!-- Claim files — the one upload form (per-check attach lives on each check). -->
-              <div class="field doc-upload">
-                <label for="doc-choice">Attach a document</label>
-                <select
-                  id="doc-choice"
-                  class="input"
-                  data-testid="detail-doc-choice"
-                  [(ngModel)]="docChoice"
-                  name="docChoice"
-                >
-                  @for (label of DOC_LABELS; track label) {
-                    <option [value]="label">{{ label }}</option>
-                  }
-                </select>
-                @if (docChoice === 'Other…') {
-                  <input
-                    id="doc-custom"
-                    class="input"
-                    placeholder="Name this document"
-                    data-testid="detail-doc-custom"
-                    [(ngModel)]="docCustom"
-                    name="docCustom"
-                  />
-                }
-                <input
-                  #docFile
-                  id="doc-file"
-                  type="file"
-                  accept="image/*,.pdf"
-                  class="input"
-                  data-testid="detail-doc-file"
-                />
-                <button
-                  type="button"
-                  class="btn btn--secondary"
-                  data-testid="detail-doc-upload"
-                  [disabled]="uploading()"
-                  (click)="uploadDoc(docFile)"
-                >
-                  {{ uploading() ? 'Attaching…' : 'Attach' }}
-                </button>
-              </div>
-            }
-          </div>
-        </section>
-
-        <section class="panel support-card">
-          <div class="panel__header">
-            <h2>Loss details</h2>
-          </div>
-          <div class="panel__body">
-            <dl class="kv-list">
-              <div class="kv">
-                <dt class="kv__label">Date of loss</dt>
-                <dd class="kv__value num" data-testid="detail-loss-date-field">{{ lossDateText() }}</dd>
-              </div>
-              <div class="kv">
-                <dt class="kv__label">Location</dt>
-                <dd class="kv__value" data-testid="detail-loss-location">{{ claim.lossLocation }}</dd>
-              </div>
-              <div class="kv kv--full">
-                <dt class="kv__label">Description</dt>
-                <dd class="kv__value" data-testid="detail-loss-description">{{ claim.lossDescription }}</dd>
-              </div>
-              @if (claim.claimantRemarks; as remarks) {
-                <div class="kv kv--full">
-                  <dt class="kv__label">Claimant remarks</dt>
-                  <dd class="kv__value" data-testid="detail-remarks">{{ remarks }}</dd>
-                </div>
-              }
-            </dl>
-          </div>
-        </section>
-
-        <section class="panel support-card">
-          <div class="panel__header">
-            <h2>Reserve</h2>
-          </div>
-          <div class="panel__body">
-            <p class="muted reserve-hint">
-              An internal estimate of what this claim may cost — never shown to the claimant.
-            </p>
-            @if (claim.reserveAmount != null) {
-              <p class="reserve-current" data-testid="detail-reserve-value">
-                Current reserve <strong class="num">{{ reserveText() }}</strong>
-              </p>
-            }
-            <form (ngSubmit)="saveReserve()" class="inline-form">
-              <div class="field">
-                <label for="reserve">New reserve (£)</label>
-                <input
-                  id="reserve"
-                  class="input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  data-testid="detail-reserve-input"
-                  [(ngModel)]="reserveInput"
-                  name="reserve"
-                />
-              </div>
-              <button
-                type="submit"
-                class="btn btn--secondary"
-                data-testid="detail-reserve-save"
-                [disabled]="savingReserve() || !reserveReady()"
-              >
-                Save reserve
-              </button>
-            </form>
-          </div>
-        </section>
-
-        <section class="panel support-card">
-          <div class="panel__header">
-            <h2>Policy &amp; coverage</h2>
-          </div>
-          <div class="panel__body">
-            <pre class="code-block" data-testid="detail-coverage">{{ coverageText() }}</pre>
-          </div>
-        </section>
 
         @if (isSupervisor()) {
           <section class="panel support-card" data-testid="detail-reassign-panel">
@@ -925,7 +1205,7 @@
               <h2>Reassign</h2>
             </div>
             <div class="panel__body">
-              <p class="muted reserve-hint">
+              <p class="muted">
                 Move this claim to the least-loaded adjuster of the target level.
               </p>
               <form (ngSubmit)="reassign()" class="inline-form">
@@ -982,6 +1262,257 @@
             </div>
           </section>
         }
+
+        <!-- ======================= CLAIM TIMELINE ======================= -->
+        <!-- V17: one sequential feed — notes, documents, checks, milestones.
+             Replaces the scattered Documents / Internal-notes / Audit boxes. -->
+        <section class="panel timeline-panel" data-testid="detail-timeline-panel">
+          <div class="panel__header timeline-panel__header">
+            <div>
+              <h2>Claim timeline</h2>
+              <p class="timeline-panel__sub">Every note, document, check and decision — oldest first.</p>
+            </div>
+            @if (timelineEntries().length > 0) {
+              <span class="panel__count">{{ timelineEntries().length }}</span>
+            }
+          </div>
+          <div class="panel__body">
+            @if (timelineEntries().length === 0) {
+              <p class="muted" data-testid="detail-timeline-empty">
+                Nothing on the timeline yet — notes you add and documents you attach appear here.
+              </p>
+            } @else {
+              <div class="timeline-filters" role="group" aria-label="Filter timeline">
+                <button
+                  type="button"
+                  class="timeline-filter"
+                  [class.is-active]="timelineFilter() === 'ALL'"
+                  [attr.aria-pressed]="timelineFilter() === 'ALL'"
+                  data-testid="detail-timeline-filter-all"
+                  (click)="setTimelineFilter('ALL')"
+                >
+                  All <span class="num">{{ timelineCount('ALL') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="timeline-filter"
+                  [class.is-active]="timelineFilter() === 'NOTES'"
+                  [attr.aria-pressed]="timelineFilter() === 'NOTES'"
+                  data-testid="detail-timeline-filter-notes"
+                  (click)="setTimelineFilter('NOTES')"
+                >
+                  Notes <span class="num">{{ timelineCount('NOTES') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="timeline-filter"
+                  [class.is-active]="timelineFilter() === 'DOCUMENTS'"
+                  [attr.aria-pressed]="timelineFilter() === 'DOCUMENTS'"
+                  data-testid="detail-timeline-filter-documents"
+                  (click)="setTimelineFilter('DOCUMENTS')"
+                >
+                  Documents <span class="num">{{ timelineCount('DOCUMENTS') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="timeline-filter"
+                  [class.is-active]="timelineFilter() === 'CHECKS'"
+                  [attr.aria-pressed]="timelineFilter() === 'CHECKS'"
+                  data-testid="detail-timeline-filter-checks"
+                  (click)="setTimelineFilter('CHECKS')"
+                >
+                  Checks <span class="num">{{ timelineCount('CHECKS') }}</span>
+                </button>
+                <button
+                  type="button"
+                  class="timeline-filter"
+                  [class.is-active]="timelineFilter() === 'MILESTONES'"
+                  [attr.aria-pressed]="timelineFilter() === 'MILESTONES'"
+                  data-testid="detail-timeline-filter-milestones"
+                  (click)="setTimelineFilter('MILESTONES')"
+                >
+                  Milestones <span class="num">{{ timelineCount('MILESTONES') }}</span>
+                </button>
+              </div>
+              @if (filteredTimeline().length === 0) {
+                <p class="muted" data-testid="detail-timeline-filtered-empty">
+                  Nothing here under this filter.
+                  <button
+                    type="button"
+                    class="btn btn--tertiary btn--sm"
+                    (click)="setTimelineFilter('ALL')"
+                  >
+                    Show everything
+                  </button>
+                </p>
+              } @else {
+                <ol class="timeline timeline--feed" data-testid="detail-timeline-list">
+                  @for (entry of filteredTimeline(); track $index) {
+                    <li
+                      class="timeline__row timeline__row--{{ timelineGroup(entry.kind) }}"
+                      data-testid="detail-timeline-item"
+                    >
+                      <span
+                        class="timeline__marker timeline__marker--{{ timelineGroup(entry.kind) }}"
+                        [class.is-claimant]="timelineIsClaimant(entry.actor)"
+                        aria-hidden="true"
+                      >
+                        @if (timelineGroup(entry.kind) === 'document') {
+                          <svg viewBox="0 0 16 16">
+                            <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        } @else if (timelineGroup(entry.kind) === 'check') {
+                          <svg viewBox="0 0 16 16">
+                            <path d="M3.2 8.6l3.2 3.2 6.4-7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        } @else if (timelineGroup(entry.kind) === 'milestone') {
+                          <svg viewBox="0 0 16 16">
+                            <circle cx="8" cy="8" r="3" fill="currentColor" />
+                          </svg>
+                        } @else {
+                          {{ timelineInitials(entry.actor) }}
+                        }
+                      </span>
+                      @if (timelineGroup(entry.kind) === 'check' || timelineGroup(entry.kind) === 'milestone') {
+                        <div class="timeline-line">
+                          <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
+                            {{ timelineKindLabel(entry.kind) }}
+                          </span>
+                          @if (entry.detail) {
+                            <span class="timeline-line__text" data-testid="detail-timeline-detail">{{ entry.detail }}</span>
+                          }
+                          <span class="timeline-line__meta">
+                            <span data-testid="detail-timeline-actor">{{ entry.actor ?? 'Internal' }}</span>
+                            ·
+                            <span data-testid="detail-timeline-time">{{ timelineTime(entry.at) }}</span>
+                          </span>
+                        </div>
+                      } @else {
+                        <div class="timeline-card timeline-card--{{ timelineGroup(entry.kind) }}">
+                          <div class="timeline__head">
+                            <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
+                              {{ timelineKindLabel(entry.kind) }}
+                            </span>
+                            <span class="timeline__actor" data-testid="detail-timeline-actor">
+                              {{ entry.actor ?? 'Internal' }}
+                            </span>
+                            <span class="timeline__time" data-testid="detail-timeline-time">
+                              {{ timelineTime(entry.at) }}
+                            </span>
+                          </div>
+                          @if (timelineGroup(entry.kind) === 'document') {
+                            @if (timelineDoc(entry); as doc) {
+                              <button
+                                type="button"
+                                class="timeline-doc"
+                                data-testid="detail-attachment"
+                                (click)="download(doc)"
+                                title="Download {{ docName(doc) }}"
+                              >
+                                <span class="timeline-doc__icon" aria-hidden="true">
+                                  <svg viewBox="0 0 16 16">
+                                    <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                                  </svg>
+                                </span>
+                                <span class="timeline-doc__name">{{ docName(doc) }}</span>
+                                <span class="timeline-doc__scope">
+                                  {{ entry.verificationId != null ? 'Verification evidence' : 'Attached' }}
+                                </span>
+                                <span class="timeline-doc__go" aria-hidden="true">
+                                  <svg viewBox="0 0 16 16">
+                                    <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                                  </svg>
+                                </span>
+                              </button>
+                            } @else if (entry.detail) {
+                              <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                            }
+                          } @else if (entry.detail) {
+                            <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                          }
+                        </div>
+                      }
+                    </li>
+                  }
+                </ol>
+              }
+            }
+
+            @if (canDecide()) {
+              <!-- Add to the timeline — notes and files land here with your name and time. -->
+              <div class="timeline-add">
+                <p class="timeline-add__title">Add to the timeline</p>
+                <div class="timeline-add__grid">
+                  <form (ngSubmit)="addNote()" class="field timeline__composer">
+                    <label for="note">Add a note</label>
+                    <textarea
+                      id="note"
+                      class="input"
+                      rows="2"
+                      placeholder="Observations, follow-ups, coverage checks…"
+                      data-testid="detail-note-input"
+                      [(ngModel)]="noteInput"
+                      name="note"
+                    ></textarea>
+                    <div class="form-actions note-form-actions">
+                      <button
+                        type="submit"
+                        class="btn btn--secondary"
+                        data-testid="detail-note-add"
+                        [disabled]="savingNote() || !noteInput.trim()"
+                      >
+                        Add note
+                      </button>
+                    </div>
+                  </form>
+
+                  <div class="field doc-upload">
+                    <label for="doc-choice">Attach a document</label>
+                    <select
+                      id="doc-choice"
+                      class="input"
+                      data-testid="detail-doc-choice"
+                      [(ngModel)]="docChoice"
+                      name="docChoice"
+                    >
+                      @for (label of DOC_LABELS; track label) {
+                        <option [value]="label">{{ label }}</option>
+                      }
+                    </select>
+                    @if (docChoice === 'Other…') {
+                      <input
+                        id="doc-custom"
+                        class="input"
+                        placeholder="Name this document"
+                        data-testid="detail-doc-custom"
+                        [(ngModel)]="docCustom"
+                        name="docCustom"
+                      />
+                    }
+                    <input
+                      #docFile
+                      id="doc-file"
+                      type="file"
+                      accept="image/*,.pdf"
+                      class="input"
+                      data-testid="detail-doc-file"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn--secondary"
+                      data-testid="detail-doc-upload"
+                      [disabled]="uploading()"
+                      (click)="uploadDoc(docFile)"
+                    >
+                      {{ uploading() ? 'Attaching…' : 'Attach' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
+        </section>
+
       </div>
     } @else if (!isLegacy() && claim.status === 'CLOSED') {
       <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
