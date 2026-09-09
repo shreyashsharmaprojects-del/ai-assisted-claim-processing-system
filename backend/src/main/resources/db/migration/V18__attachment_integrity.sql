@@ -1,0 +1,3 @@
+ALTER TABLE attachment
+    ADD COLUMN sha256 CHAR(64) NULL,
+    ADD COLUMN size_bytes BIGINT NULL;

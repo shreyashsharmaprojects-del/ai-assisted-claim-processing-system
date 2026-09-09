@@ -120,7 +120,7 @@ public class ClaimantStatusController {
         }
         Attachment row = attachments.save(new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
-                jwt.getSubject()));
+                jwt.getSubject(), null, photo.sha256(), photo.sizeBytes()));
         return new DocumentView(row.getId(), row.getLabel() == null
                 ? row.getOriginalName() : row.getLabel());
     }

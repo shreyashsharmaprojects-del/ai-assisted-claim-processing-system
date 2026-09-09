@@ -51,6 +51,16 @@ public class Attachment {
     @Column(name = "verification_id")
     private Long verificationId;
 
+    /**
+     * V18: integrity pinning — SHA-256 hex + byte size of the stored file.
+     * Null on pre-V18 rows ("unpinned legacy"): downloads skip verification.
+     */
+    @Column(name = "sha256")
+    private String sha256;
+
+    @Column(name = "size_bytes")
+    private Long sizeBytes;
+
     protected Attachment() {
         // for JPA
     }
@@ -78,8 +88,18 @@ public class Attachment {
     /** V17: per-check upload (verification-linked document). */
     public Attachment(Long claimId, String storagePath, String contentType, String originalName,
             String label, String uploadedBySub, Long verificationId) {
-        this(claimId, storagePath, contentType, originalName, label, uploadedBySub);
+        this(claimId, storagePath, contentType, originalName, label);
+        this.uploadedBySub = uploadedBySub;
         this.verificationId = verificationId;
+    }
+
+    /** V18: full upload with integrity pin (sha256 + byte size). */
+    public Attachment(Long claimId, String storagePath, String contentType, String originalName,
+            String label, String uploadedBySub, Long verificationId,
+            String sha256, Long sizeBytes) {
+        this(claimId, storagePath, contentType, originalName, label, uploadedBySub, verificationId);
+        this.sha256 = sha256;
+        this.sizeBytes = sizeBytes;
     }
 
     public Long getId() {
@@ -124,5 +144,21 @@ public class Attachment {
 
     public void setVerificationId(Long verificationId) {
         this.verificationId = verificationId;
+    }
+
+    public String getSha256() {
+        return sha256;
+    }
+
+    public void setSha256(String sha256) {
+        this.sha256 = sha256;
+    }
+
+    public Long getSizeBytes() {
+        return sizeBytes;
+    }
+
+    public void setSizeBytes(Long sizeBytes) {
+        this.sizeBytes = sizeBytes;
     }
 }

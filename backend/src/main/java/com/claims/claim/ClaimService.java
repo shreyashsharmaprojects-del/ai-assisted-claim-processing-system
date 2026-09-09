@@ -176,7 +176,8 @@ public class ClaimService {
         List<StoredPhoto> storedPhotos = photoStorage.store(input.photos(), claimId);
         for (StoredPhoto photo : storedPhotos) {
             attachments.save(new Attachment(claimId, photo.storagePath(),
-                    photo.contentType(), photo.originalName()));
+                    photo.contentType(), photo.originalName(), null, null, null,
+                    photo.sha256(), photo.sizeBytes()));
         }
 
         submissions.save(new FnolSubmission(input.claimantSub(), claimId, clientIp, Instant.now()));

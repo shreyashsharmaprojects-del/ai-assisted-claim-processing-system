@@ -253,7 +253,7 @@ class FnolApiIntegrationTest extends ClaimTableResettingTest {
                         1, "damage.txt", "text/plain"));
 
         assertEquals(400, response.statusCode(), response.body());
-        assertTrue(response.body().contains("must be image files"), response.body());
+        assertTrue(response.body().contains("must be image or PDF files"), response.body());
     }
 
     @Test

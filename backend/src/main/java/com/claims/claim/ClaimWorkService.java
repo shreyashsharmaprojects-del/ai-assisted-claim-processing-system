@@ -158,12 +158,17 @@ public class ClaimWorkService {
         }
         Attachment row = attachments.save(new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
-                actorSub, verificationId));
+                actorSub, verificationId, photo.sha256(), photo.sizeBytes()));
         return new InternalClaimView.AttachmentView(row.getId(), row.getOriginalName(),
                 row.getLabel(), row.getVerificationId());
     }
 
-    /** The photo binary for an attachment of a visible claim. */
+    /**
+     * The attachment binary for a visible claim. S1 integrity: when the row
+     * carries a sha pin, the bytes are re-hashed and a mismatch is an error
+     * log + 404 (never serve corrupt bytes; 404-not-403 keeps the rule).
+     * Legacy NULL rows (pre-V18) skip verification and serve as before.
+     */
     public AttachmentDownload download(String claimNumber, String actorSub,
             boolean supervisor, Long attachmentId) {
         Claim claim = requireVisible(claimNumber, actorSub, supervisor);
@@ -177,7 +182,15 @@ public class ClaimWorkService {
             throw new ClaimNotFoundException();
         }
         try {
-            return new AttachmentDownload(Files.readAllBytes(file),
+            byte[] bytes = Files.readAllBytes(file);
+            if (attachment.getSha256() != null
+                    && !attachment.getSha256().equalsIgnoreCase(
+                            FilesystemPhotoStorage.sha256Hex(bytes))) {
+                log.error("Attachment {} for claim {} failed integrity check (sha mismatch)",
+                        attachment.getId(), claimNumber);
+                throw new ClaimNotFoundException();
+            }
+            return new AttachmentDownload(bytes,
                     attachment.getContentType(), attachment.getOriginalName());
         } catch (java.io.IOException ex) {
             throw new IllegalStateException("Could not read attachment " + attachmentId, ex);

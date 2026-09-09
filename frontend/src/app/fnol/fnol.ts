@@ -39,6 +39,11 @@ interface ClaimantClaimView {
 const MAX_PHOTOS = 5;
 const MAX_PHOTO_MB = 10;
 
+/** Mirrors the server evidence allowlist: images + PDF. */
+function isEvidenceFile(file: File): boolean {
+  return file.type.startsWith('image/') || file.type === 'application/pdf';
+}
+
 @Component({
   imports: [FormsModule, RouterLink],
   selector: 'app-fnol',
@@ -264,8 +269,8 @@ export class Fnol {
     }
     const names: string[] = [];
     for (const file of Array.from(this.photoFiles)) {
-      if (!file.type.startsWith('image/')) {
-        return `"${file.name}" is not an image — only image files are accepted.`;
+      if (!isEvidenceFile(file)) {
+        return `"${file.name}" must be image or PDF files.`;
       }
       if (file.size > MAX_PHOTO_MB * 1024 * 1024) {
         return `"${file.name}" is over ${MAX_PHOTO_MB} MB — choose a smaller photo.`;
@@ -292,7 +297,7 @@ export class Fnol {
         return false;
       }
       for (const file of Array.from(this.photoFiles)) {
-        if (!file.type.startsWith('image/') || file.size > MAX_PHOTO_MB * 1024 * 1024) {
+        if (!isEvidenceFile(file) || file.size > MAX_PHOTO_MB * 1024 * 1024) {
           return false;
         }
       }

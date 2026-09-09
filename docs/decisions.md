@@ -5,6 +5,35 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S1 evidence file types: PDF + integrity (V18)
+
+**Context:** The NEED_INFO copy already asks claimants for PDFs (discharge summary,
+final bill), but the validator rejected everything that wasn't an image — and stored
+bytes had no integrity pinning, so silently tampered files would be served as-is.
+
+**What changed (backend, all additive):**
+- **`V18__attachment_integrity.sql`:** `attachment.sha256 CHAR(64) NULL` +
+  `size_bytes BIGINT NULL`. New rows pin both; pre-V18 rows stay NULL
+  (NULL = unpinned legacy, still downloadable).
+- **`FilesystemPhotoStorage.validate()`:** allowlist is now `image/*` +
+  `application/pdf`, with a magic-byte gate on the leading bytes (PNG / JPEG / GIF /
+  WEBP / `%PDF` signatures). Mismatch → "Attachments must be image or PDF files."
+  The 10MB size and 5-file count caps are unchanged.
+- **`store()`** pins sha256/size on all three writers — FNOL (`ClaimService`),
+  adjuster attach (`ClaimWorkService.attach`), NEED_INFO upload
+  (`ClaimantStatusController.uploadDocument`). **`download()`** verifies sha when
+  non-null → error log + 404 on tamper (corrupt bytes are never served).
+
+**What changed (frontend):** file inputs gain
+`accept="image/*,.pdf,application/pdf"` with mirrored client guards (count +
+per-file size + type) and the new message. No new testids.
+
+**Verified:** `PhotoValidationTest` 12/12, `AttachmentIntegrityIntegrationTest` 5/5,
+full backend suite 241/241 green, frontend build green.
+
+**Deliberately not built (Non-goals):** virus scanning, inline preview
+(force-download stays), OCR/text-extraction, raising size/count caps.
+
 ### 2026-09-09 — V18 stage revisit + send-back + adjuster workspace theme
 
 **Context:** The adjuster screen showed only the current stage (no way back to update or

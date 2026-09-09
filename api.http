@@ -72,6 +72,51 @@ Content-Disposition: form-data; name="covers"\r
 # (photos are optional — add a part like the text ones above, name "photos", to upload)
 ------ApiHttpBoundary--\r
 
+### FNOL — file a claim with a PDF attachment (CLAIMANT only, 401 without a token)
+# Same shape as the FNOL example above, plus one "photos" part carrying a PDF
+# (discharge summary / final bill). Create discharge-summary.pdf next to this file
+# first — the server magic-byte gate needs real %PDF bytes; a renamed .exe/.txt is
+# rejected with "Attachments must be image or PDF files." Stored rows pin sha256 +
+# size_bytes; the attachment downloads via GET /api/claims/{n}/attachments/{id}.
+POST {{host}}/api/claims
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----ApiHttpPdfBoundary
+
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="policyNumber"\r
+\r
+POL-10001\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="holderName"\r
+\r
+Ada Lovelace\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="holderEmail"\r
+\r
+ada.lovelace@example.test\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="lossDate"\r
+\r
+2026-09-06\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="lossLocation"\r
+\r
+London\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="lossDescription"\r
+\r
+Hospital stay after the accident; discharge summary attached.\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="covers"\r
+\r
+[{"coverCode":"HOSPITALIZATION","claimedAmount":200000}]\r
+------ApiHttpPdfBoundary\r
+Content-Disposition: form-data; name="photos"; filename="discharge-summary.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./discharge-summary.pdf
+------ApiHttpPdfBoundary--\r
+
 ### Adjuster queue — own claims (ADJUSTER_L1/L2) or the whole team (SUPERVISOR)
 # Auth: access token from an adjuster/supervisor session (browser DevTools -> any
 # /api/queue request -> Authorization header), pasted as {{token}} above.
@@ -109,6 +154,35 @@ Content-Type: application/json
 ### Download a photo attachment (assigned adjuster or SUPERVISOR; served as an attachment)
 GET {{host}}/api/claims/CLM-000001/attachments/1
 Authorization: Bearer {{token}}
+
+### Adjuster attach — upload a PDF to a claim (assigned adjuster or SUPERVISOR;
+# anyone else gets a 404). Multipart `file` part + optional ?label. Use a real PDF
+# (create final-bill.pdf next to this file) — spoofed bytes are rejected with
+# "Attachments must be image or PDF files." Stored rows pin sha256 + size_bytes.
+POST {{host}}/api/claims/CLM-000001/attachments?label=Final%20bill
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----AttachPdfBoundary
+
+------AttachPdfBoundary\r
+Content-Disposition: form-data; name="file"; filename="final-bill.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./final-bill.pdf
+------AttachPdfBoundary--\r
+
+### Claimant NEED_INFO upload — upload a PDF to own claim in NEED_INFO
+# (CLAIMANT; someone else's claim is a 404). Same multipart `file` shape as the
+# adjuster attach above. Create discharge-summary.pdf next to this file first.
+POST {{host}}/api/claims/CLM-000001/documents?label=Discharge%20summary
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----ClaimantPdfBoundary
+
+------ClaimantPdfBoundary\r
+Content-Disposition: form-data; name="file"; filename="discharge-summary.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./discharge-summary.pdf
+------ClaimantPdfBoundary--\r
 
 ### Decide a claim (assigned ADJUSTER only — the authority gate)
 # Approve within the actor's level limit -> records the single payment and closes the claim

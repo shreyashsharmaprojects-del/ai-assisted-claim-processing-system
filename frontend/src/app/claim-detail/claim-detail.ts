@@ -143,6 +143,13 @@ const VER_META: Record<string, { title: string; hint: string }> = {
   },
 };
 
+/** Mirrors the server evidence allowlist: images + PDF (10MB per file). */
+function isEvidenceFile(file: File): boolean {
+  return file.type.startsWith('image/') || file.type === 'application/pdf';
+}
+
+const MAX_DOC_MB = 10;
+
 /**
  * The adjuster's claim workspace. One next step per stage — Review (validity),
  * Verification (the default checklist, then assessment), Decision (per-cover
@@ -1279,6 +1286,14 @@ export class ClaimDetail {
     const file = fileInput.files?.[0];
     if (!file) {
       this.error.set('Choose a file to attach.');
+      return;
+    }
+    if (!isEvidenceFile(file)) {
+      this.error.set(`"${file.name}" must be image or PDF files.`);
+      return;
+    }
+    if (file.size > MAX_DOC_MB * 1024 * 1024) {
+      this.error.set(`"${file.name}" is over ${MAX_DOC_MB} MB — choose a smaller file.`);
       return;
     }
     this.uploading.set(true);
