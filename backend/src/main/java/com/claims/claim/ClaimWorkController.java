@@ -31,9 +31,12 @@ import org.springframework.web.multipart.MultipartFile;
 public class ClaimWorkController {
 
     private final ClaimWorkService claimWorkService;
+    private final TimelineService timelineService;
 
-    public ClaimWorkController(ClaimWorkService claimWorkService) {
+    public ClaimWorkController(ClaimWorkService claimWorkService,
+            TimelineService timelineService) {
         this.claimWorkService = claimWorkService;
+        this.timelineService = timelineService;
     }
 
     @GetMapping("/{claimNumber}/full")
@@ -61,15 +64,32 @@ public class ClaimWorkController {
     /**
      * V16: document upload on an open claim (multipart file + optional label).
      * The adjuster attaches from any workflow stage; each stage form posts here.
+     *
+     * <p>V17: accepts an optional {@code verificationId} part linking the file
+     * to one verification check (per-check evidence, shown on the timeline).
      */
     @PostMapping(value = "/{claimNumber}/attachments",
             consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public InternalClaimView.AttachmentView attach(@AuthenticationPrincipal Jwt jwt,
             Authentication authentication, @PathVariable String claimNumber,
             @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "label", required = false) String label) {
+            @RequestParam(value = "label", required = false) String label,
+            @RequestParam(value = "verificationId", required = false) Long verificationId) {
         return claimWorkService.attach(claimNumber, jwt.getSubject(),
-                Authorities.isSupervisor(authentication), file, label);
+                Authorities.isSupervisor(authentication), file, label, verificationId);
+    }
+
+    /**
+     * V17: the claim timeline — notes, documents (with uploaders), verification
+     * history and workflow milestones in one sequential feed. Same visibility as
+     * the full view (holding adjuster or supervisor; 404 otherwise).
+     */
+    @GetMapping("/{claimNumber}/timeline")
+    public java.util.List<TimelineService.TimelineEntry> timeline(
+            @AuthenticationPrincipal Jwt jwt, Authentication authentication,
+            @PathVariable String claimNumber) {
+        return timelineService.timeline(claimNumber, jwt.getSubject(),
+                Authorities.isSupervisor(authentication));
     }
 
     @GetMapping("/{claimNumber}/attachments/{attachmentId}")

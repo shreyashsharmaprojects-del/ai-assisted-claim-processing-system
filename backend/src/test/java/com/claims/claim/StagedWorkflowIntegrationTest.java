@@ -799,6 +799,109 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                 .statusCode());
     }
 
+    /**
+     * V17 timeline: one sequential feed of notes, documents (claim-level +
+     * per-check with uploaders) and milestones, visible to the holder (404 for
+     * anyone else). Entries persist across referral — the new holder sees the
+     * same history.
+     */
+    @Test
+    void timelineUnifiesNotesDocumentsAndMilestonesAcrossReferral() throws Exception {
+        String claimNumber = driveToVerification();
+        String bearer = holderBearer(claimNumber);
+
+        // A note + a claim-level document by the holder.
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/notes", bearer,
+                "{\"body\":\"Bills look consistent.\"}").statusCode());
+        java.net.http.HttpResponse<String> uploaded = postMultipart(
+                "/api/claims/" + claimNumber + "/attachments", bearer,
+                "bill.pdf", "Hospital bill", "image/png",
+                new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47});
+        assertEquals(200, uploaded.statusCode(), uploaded.body());
+        assertTrue(uploaded.body().contains("Hospital bill"), uploaded.body());
+
+        // A per-check document linked to the first open verification row.
+        String staged = get("/api/claims/" + claimNumber + "/staged", bearer).body();
+        long verificationId = Long.parseLong(staged.replaceAll(
+                ".*\"verifications\":\\[\\{\"id\":(\\d+).*", "$1"));
+        java.net.http.HttpResponse<String> linked = postMultipartWithVerification(
+                "/api/claims/" + claimNumber + "/attachments", bearer,
+                "site.jpg", "Damage photos", "image/png",
+                new byte[] {(byte) 0x89, 0x50, 0x4E, 0x47}, verificationId);
+        assertEquals(200, linked.statusCode(), linked.body());
+
+        // Unknown verification links are a 404, never a leak.
+        assertEquals(404, postMultipartWithVerification(
+                "/api/claims/" + claimNumber + "/attachments", bearer,
+                "x.pdf", "X", "image/png",
+                new byte[] {(byte) 0x89, 0x50}, 999999L).statusCode());
+
+        // The timeline carries every row with actor + document identity.
+        HttpResponse<String> feed = get("/api/claims/" + claimNumber + "/timeline",
+                bearer);
+        assertEquals(200, feed.statusCode(), feed.body());
+        assertTrue(feed.body().contains("\"kind\":\"FILED\""), feed.body());
+        assertTrue(feed.body().contains("\"kind\":\"NOTE\""), feed.body());
+        assertTrue(feed.body().contains("Bills look consistent."), feed.body());
+        assertTrue(feed.body().contains("\"kind\":\"DOCUMENT\""), feed.body());
+        assertTrue(feed.body().contains("Hospital bill"), feed.body());
+        assertTrue(feed.body().contains("Damage photos"), feed.body());
+        assertTrue(feed.body().contains("REVIEW_ADVANCED"), feed.body());
+        assertTrue(feed.body().contains("VERIFICATION_OPENED"), feed.body());
+
+        // A stranger's claim number is a 404.
+        assertEquals(404, get("/api/claims/" + claimNumber + "/timeline",
+                JwtTestConfig.tokenFor("10000000-0000-0000-0000-000000000002",
+                        "adjuster_l1"))
+                .statusCode());
+
+        // Referral preserves the feed: the new holder sees the same rows.
+        assertEquals(200, postJson("/api/claims/" + claimNumber + "/refer",
+                bearer, "{\"auto\":true,\"reason\":\"Needs a senior eye.\"}")
+                .statusCode());
+        String newSub = assigneeSubOf(claimNumber);
+        String newLevel = jdbcTemplate.queryForObject(
+                "SELECT a.level FROM claim c JOIN app_user a "
+                        + "ON a.id = c.assigned_adjuster_id WHERE c.claim_number = ?",
+                String.class, claimNumber);
+        HttpResponse<String> afterRefer = get(
+                "/api/claims/" + claimNumber + "/timeline",
+                JwtTestConfig.tokenFor(newSub, "adjuster_" + newLevel.toLowerCase()));
+        assertEquals(200, afterRefer.statusCode(), afterRefer.body());
+        assertTrue(afterRefer.body().contains("Bills look consistent."),
+                afterRefer.body());
+        assertTrue(afterRefer.body().contains("Hospital bill"), afterRefer.body());
+        assertTrue(afterRefer.body().contains("Damage photos"), afterRefer.body());
+    }
+
+    /** Multipart upload with an explicit verificationId part (V17 per-check link). */
+    private HttpResponse<String> postMultipartWithVerification(String path, String bearer,
+            String filename, String label, String contentType, byte[] bytes,
+            long verificationId) throws Exception {
+        String partBoundary = "----StagedVerDocBoundary9";
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        String fileHead = "--" + partBoundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\""
+                + filename + "\"\r\n"
+                + "Content-Type: " + contentType + "\r\n\r\n";
+        out.write(fileHead.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        out.write(bytes);
+        out.write(("\r\n--" + partBoundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"label\"\r\n\r\n"
+                + label + "\r\n--" + partBoundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"verificationId\"\r\n\r\n"
+                + verificationId + "\r\n--" + partBoundary + "--\r\n")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        HttpRequest.Builder builder = HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port() + path))
+                .header("Content-Type", "multipart/form-data; boundary=" + partBoundary)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(out.toByteArray()));
+        if (bearer != null) {
+            builder.header("Authorization", "Bearer " + bearer);
+        }
+        return http.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
     private Long idOf(String claimNumber) {
         return jdbcTemplate.queryForObject("SELECT id FROM claim WHERE claim_number = ?",
                 Long.class, claimNumber);

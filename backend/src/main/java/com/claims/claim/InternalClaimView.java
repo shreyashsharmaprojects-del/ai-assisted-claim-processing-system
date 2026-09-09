@@ -17,11 +17,17 @@ public record InternalClaimView(String claimNumber, String status, String level,
         BigDecimal reserveAmount, String assignedTo, List<AttachmentView> attachments,
         List<NoteView> notes) {
 
-    public record AttachmentView(Long id, String originalName, String label) {
+    public record AttachmentView(Long id, String originalName, String label,
+            Long verificationId) {
 
         /** Pre-V16 convenience: rows without a label. */
         public AttachmentView(Long id, String originalName) {
-            this(id, originalName, null);
+            this(id, originalName, null, null);
+        }
+
+        /** Pre-V17 convenience: rows without a verification link. */
+        public AttachmentView(Long id, String originalName, String label) {
+            this(id, originalName, label, null);
         }
     }
 

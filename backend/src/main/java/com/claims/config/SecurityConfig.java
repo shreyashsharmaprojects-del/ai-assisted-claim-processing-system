@@ -46,7 +46,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/documents")
                                 .hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
-                                "/api/claims/*/attachments/*")
+                                "/api/claims/*/attachments/*", "/api/claims/*/timeline")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
                                         "SUPERVISOR")
                         // V16: the adjuster's per-stage document upload.

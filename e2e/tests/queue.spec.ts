@@ -207,14 +207,14 @@ test('the assigned adjuster sets a reserve, adds an internal note and downloads 
   await holder.getByTestId('detail-reserve-save').click();
   await expect(holder.getByTestId('detail-reserve-value')).toContainText('1250');
 
-  // Add an internal note; it appears in the note list.
+  // Add an internal note; it appears on the claim timeline with the actor.
   await holder.getByTestId('detail-note-input').fill('Coverage confirmed; awaiting builder quote.');
   await holder.getByTestId('detail-note-add').click();
-  await expect(holder.getByTestId('detail-note-list')).toContainText('Coverage confirmed');
+  await expect(holder.getByTestId('detail-timeline-list')).toContainText('Coverage confirmed');
 
-  // Download the uploaded photo.
+  // Download the uploaded photo from the timeline document row.
   const downloadPromise = holder.waitForEvent('download');
-  await holder.getByTestId('detail-attachment').click();
+  await holder.getByTestId('detail-attachment').first().click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('kitchen.png');
 

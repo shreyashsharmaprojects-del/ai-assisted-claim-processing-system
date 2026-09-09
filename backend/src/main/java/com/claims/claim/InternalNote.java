@@ -28,6 +28,14 @@ public class InternalNote {
     @Column(name = "author_id")
     private Long authorId;
 
+    /**
+     * V17: the author's Keycloak subject — the only identity on supervisor notes
+     * (supervisors have no app_user row, so author_id is NULL for them). Null on
+     * pre-V17 rows.
+     */
+    @Column(name = "author_sub")
+    private String authorSub;
+
     @Column(name = "body", nullable = false)
     private String body;
 
@@ -39,8 +47,15 @@ public class InternalNote {
     }
 
     public InternalNote(Long claimId, Long authorId, String body, Instant createdAt) {
+        this(claimId, authorId, null, body, createdAt);
+    }
+
+    /** V17: note with the author's identity stamped (supervisor-safe). */
+    public InternalNote(Long claimId, Long authorId, String authorSub, String body,
+            Instant createdAt) {
         this.claimId = claimId;
         this.authorId = authorId;
+        this.authorSub = authorSub;
         this.body = body;
         this.createdAt = createdAt;
     }
@@ -55,6 +70,10 @@ public class InternalNote {
 
     public Long getAuthorId() {
         return authorId;
+    }
+
+    public String getAuthorSub() {
+        return authorSub;
     }
 
     public String getBody() {

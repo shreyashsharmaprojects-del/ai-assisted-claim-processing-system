@@ -35,6 +35,22 @@ public class Attachment {
     @Column(name = "label")
     private String label;
 
+    /**
+     * V17: the uploader's Keycloak subject. Null on pre-V17 rows (un-attributed in
+     * the timeline). Claimant NEED_INFO uploads stamp the claimant subject here.
+     */
+    @Column(name = "uploaded_by_sub")
+    private String uploadedBySub;
+
+    /**
+     * V17: optional link to the verification this document supports (the
+     * adjuster's per-check attach). Null = claim-level document. SET NULL on
+     * verification delete — the document outlives the check and stays on the
+     * timeline.
+     */
+    @Column(name = "verification_id")
+    private Long verificationId;
+
     protected Attachment() {
         // for JPA
     }
@@ -50,6 +66,20 @@ public class Attachment {
         this.contentType = contentType;
         this.originalName = originalName;
         this.label = label;
+    }
+
+    /** V17: claim-level upload with the uploader's identity stamped. */
+    public Attachment(Long claimId, String storagePath, String contentType, String originalName,
+            String label, String uploadedBySub) {
+        this(claimId, storagePath, contentType, originalName, label);
+        this.uploadedBySub = uploadedBySub;
+    }
+
+    /** V17: per-check upload (verification-linked document). */
+    public Attachment(Long claimId, String storagePath, String contentType, String originalName,
+            String label, String uploadedBySub, Long verificationId) {
+        this(claimId, storagePath, contentType, originalName, label, uploadedBySub);
+        this.verificationId = verificationId;
     }
 
     public Long getId() {
@@ -78,5 +108,21 @@ public class Attachment {
 
     public void setLabel(String label) {
         this.label = label;
+    }
+
+    public String getUploadedBySub() {
+        return uploadedBySub;
+    }
+
+    public void setUploadedBySub(String uploadedBySub) {
+        this.uploadedBySub = uploadedBySub;
+    }
+
+    public Long getVerificationId() {
+        return verificationId;
+    }
+
+    public void setVerificationId(Long verificationId) {
+        this.verificationId = verificationId;
     }
 }

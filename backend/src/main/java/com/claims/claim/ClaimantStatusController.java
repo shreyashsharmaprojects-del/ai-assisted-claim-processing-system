@@ -119,7 +119,8 @@ public class ClaimantStatusController {
                     "The document name may be at most 120 characters.");
         }
         Attachment row = attachments.save(new Attachment(claim.getId(),
-                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed));
+                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
+                jwt.getSubject()));
         return new DocumentView(row.getId(), row.getLabel() == null
                 ? row.getOriginalName() : row.getLabel());
     }

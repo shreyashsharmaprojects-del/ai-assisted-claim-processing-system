@@ -89,18 +89,62 @@
   margin-top: var(--space-1);
 }
 
-.photo-list {
+/* V17 claim timeline: the one sequential feed — full-width and first, never
+   another small card. Notes, documents, checks and milestones read oldest to
+   newest, Jira-activity style; the note composer + claim-files upload close it. */
+.timeline-panel {
+  grid-column: 1 / -1;
+  order: -1;
+}
+
+.timeline--feed {
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.timeline__item--feed {
+  background: transparent;
+}
+
+.timeline__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.timeline__actor {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.timeline__composer {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+/* Per-check evidence list + attach form inside each verification card. */
+.ver-docs {
   list-style: none;
   padding: 0;
+  margin: var(--space-2) 0 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  margin: 0 0 var(--space-3);
 }
 
-.photo-list svg {
+.ver-docs svg {
   width: 14px;
   height: 14px;
+}
+
+.ver-attach {
+  margin-top: var(--space-2);
+}
+
+.ver-attach__hint {
+  font-size: var(--text-xs);
 }
 
 /* Document upload form: stacked fields, never side-by-side overflow. */

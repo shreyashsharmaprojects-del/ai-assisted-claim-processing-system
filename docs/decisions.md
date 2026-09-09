@@ -5,6 +5,60 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — V17 claim timeline: one sequential feed replaces the scattered boxes
+
+**Context:** The adjuster workspace showed notes, documents, and audit rows in three
+separate small cards (+ a supervisor-only audit panel), and verification evidence was a
+free-text field — no solid record of which entity said/attached what and when, and the
+cards competed with the workflow action. Asked: a Jira-style main section where every
+comment and document from every entity is visible in order, verification documents
+attachable per check and visible in the same feed, persisting across all decisions.
+
+**What changed (backend, all additive — V1–V16 untouched):**
+- **V17 migration:** `attachment.uploaded_by_sub` (uploader identity) +
+  `attachment.verification_id` (FK → verification, ON DELETE SET NULL — the document
+  outlives the check) + `internal_note.author_sub` (the only identity on supervisor
+  notes, which have no app_user row). Pre-V17 rows keep NULLs and render un-attributed.
+- **`GET /api/claims/{n}/timeline`** (holder-or-supervisor, 404 otherwise): notes +
+  documents (claim-level and per-check) + verification opens/completions + workflow
+  milestones (filed, assigned, advanced, need-info sent/responded, assessed, proposals,
+  referred, escalated, reserve, decided) in one chronological feed with actor + time.
+  Rows derive from the authoritative tables, so referral/reassignment/closure never
+  rewrites them — the feed survives every decision by construction.
+- **Per-check attach:** `POST /attachments` accepts optional `verificationId`
+  (unknown/cross-claim ids are 404). Both upload paths stamp the uploader subject
+  (adjuster/supervisor/claimant).
+- **Actor resolution:** staff cache → policy-holder name + "(claimant)" suffix for
+  claimant rows → null (renders "Internal"). System rows (NULL actor, e.g.
+  auto-assignment) render "Internal".
+
+**What changed (frontend):** the Documents / Internal-notes / Audit cards are gone —
+one full-width **Claim timeline** section first in the rail (sequential, oldest first,
+each row kind + actor + timestamp + text + download button), closed by the single note
+composer and the single claim-files upload. Each open verification card gained an
+"Attach evidence to this check" file input (uses the timeline upload's document-name
+choice; the file lands on the check and on the timeline). Loss details / Reserve /
+Policy & coverage stay as the slim reference rail; refer stays beside the stage panel.
+New testids: `detail-timeline-panel/list/item/kind/actor/time/detail`,
+`detail-ver-file-{id}/upload`, `detail-ver-docs-{id}`. Removed: `detail-documents-panel`,
+`detail-note-list/item`, `detail-photos-empty`, `detail-notes-empty` (e2e updated:
+journey 4 asserts the timeline; `detail-reserve-value` testid added — the old spec
+asserted a testid the template never had).
+
+**Verified:** new `timelineUnifiesNotesDocumentsAndMilestonesAcrossReferral`
+integration test (feed shape + per-check link + 404-for-stranger + referral
+persistence); 50/50 in the four affected classes; frontend build green; live probe on
+the dev stack (note + document land with actor, full NEED_INFO history visible,
+0px overflow); V17 applied on the dev DB.
+
+**Deliberately not built:** claimant-side timeline (their tracker is unchanged — the
+feed is internal-only); timeline filters/search (single-digit entries per claim —
+revisit past ~50); editing/deleting notes or documents (history is append-only like
+audit); showing audit `before/after` JSON on the feed (milestone text only — the
+supervisor audit endpoint keeps the raw rows).
+
+---
+
 ### 2026-09-07 — Sale-readiness build (R1–R6 + E2E): what shipped, what bent, what's next
 
 **Context:** Autonomous sale-readiness pass executing `docs/sale-readiness-

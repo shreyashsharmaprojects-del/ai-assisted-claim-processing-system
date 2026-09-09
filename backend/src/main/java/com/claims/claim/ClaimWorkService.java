@@ -47,6 +47,7 @@ public class ClaimWorkService {
     private final PolicyRepository policies;
     private final AttachmentRepository attachments;
     private final InternalNoteRepository notes;
+    private final VerificationRepository verifications;
     private final AppUserRepository appUsers;
     private final ClaimAccess access;
     private final AuditLogWriter auditLog;
@@ -55,12 +56,14 @@ public class ClaimWorkService {
 
     public ClaimWorkService(ClaimRepository claims, PolicyRepository policies,
             AttachmentRepository attachments, InternalNoteRepository notes,
-            AppUserRepository appUsers, ClaimAccess access, AuditLogWriter auditLog,
+            VerificationRepository verifications, AppUserRepository appUsers,
+            ClaimAccess access, AuditLogWriter auditLog,
             JdbcTemplate jdbcTemplate, PhotoStorage photoStorage) {
         this.claims = claims;
         this.policies = policies;
         this.attachments = attachments;
         this.notes = notes;
+        this.verifications = verifications;
         this.appUsers = appUsers;
         this.access = access;
         this.auditLog = auditLog;
@@ -107,7 +110,8 @@ public class ClaimWorkService {
             throw new InvalidRequestException("Note text is required.");
         }
         Long authorId = appUsers.findByKeycloakSub(actorSub).map(AppUser::getId).orElse(null);
-        InternalNote note = notes.save(new InternalNote(claim.getId(), authorId, body.trim(), Instant.now()));
+        InternalNote note = notes.save(new InternalNote(claim.getId(), authorId, actorSub,
+                body.trim(), Instant.now()));
         return new InternalClaimView.NoteView(note.getId(), note.getBody(),
                 displayNameOf(authorId));
     }
@@ -118,17 +122,32 @@ public class ClaimWorkService {
      * NEED_INFO response upload share this path. The label is the dropdown choice
      * or the claimant/adjuster free-text name; blank labels are stored NULL and
      * the row lists by upload order. Closed claims take no new documents.
+     *
+     * <p>V17: stamps the uploader's subject (timeline attribution) and accepts
+     * an optional verification link (per-check evidence). Unknown verification
+     * ids and cross-claim links are a 404, never a leak.
      */
     @Transactional
     public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
             boolean supervisor, org.springframework.web.multipart.MultipartFile file,
             String label) {
+        return attach(claimNumber, actorSub, supervisor, file, label, null);
+    }
+
+    @Transactional
+    public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
+            boolean supervisor, org.springframework.web.multipart.MultipartFile file,
+            String label, Long verificationId) {
         Claim claim = requireVisible(claimNumber, actorSub, supervisor);
         if ("CLOSED".equals(claim.getStatus()) || claim.getDecision() != null) {
             throw new InvalidRequestException("This claim has already been decided.");
         }
         if (file == null || file.isEmpty()) {
             throw new InvalidRequestException("A file is required.");
+        }
+        if (verificationId != null) {
+            verifications.findByIdAndClaimId(verificationId, claim.getId())
+                    .orElseThrow(ClaimNotFoundException::new);
         }
         List<StoredPhoto> stored = photoStorage.store(List.of(file), claim.getId());
         StoredPhoto photo = stored.get(0);
@@ -138,9 +157,10 @@ public class ClaimWorkService {
                     "The document name may be at most 120 characters.");
         }
         Attachment row = attachments.save(new Attachment(claim.getId(),
-                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed));
+                photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
+                actorSub, verificationId));
         return new InternalClaimView.AttachmentView(row.getId(), row.getOriginalName(),
-                row.getLabel());
+                row.getLabel(), row.getVerificationId());
     }
 
     /** The photo binary for an attachment of a visible claim. */
@@ -193,7 +213,7 @@ public class ClaimWorkService {
         List<InternalClaimView.AttachmentView> attachmentViews = attachments
                 .findByClaimIdOrderById(claim.getId()).stream()
                 .map(a -> new InternalClaimView.AttachmentView(a.getId(),
-                        a.getOriginalName(), a.getLabel()))
+                        a.getOriginalName(), a.getLabel(), a.getVerificationId()))
                 .toList();
         List<InternalClaimView.NoteView> noteViews = notes
                 .findByClaimIdOrderByCreatedAtAscIdAsc(claim.getId()).stream()

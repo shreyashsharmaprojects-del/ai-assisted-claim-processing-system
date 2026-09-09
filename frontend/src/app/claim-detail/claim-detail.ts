@@ -12,6 +12,7 @@ interface AttachmentView {
   id: number;
   originalName: string;
   label: string | null;
+  verificationId?: number | null;
 }
 
 interface NoteView {
@@ -26,6 +27,17 @@ interface AuditEntry {
   actorSub: string | null;
   rationale: string | null;
   createdAt: string;
+}
+
+/** One row of the claim timeline (V17 unified feed). */
+interface TimelineEntry {
+  kind: string;
+  actor: string | null;
+  detail: string | null;
+  attachmentName: string | null;
+  attachmentId: number | null;
+  verificationId: number | null;
+  at: string | null;
 }
 
 /** One cover row on the staged view (internal: full money trail + proposals). */
@@ -134,9 +146,11 @@ const VER_META: Record<string, { title: string; hint: string }> = {
 /**
  * The adjuster's claim workspace. One next step per stage — Review (validity),
  * Verification (the default checklist, then assessment), Decision (per-cover
- * outcomes) — with the supporting tools (documents, refer, reserve, notes) in a
- * slim side rail that never competes with the action. Legacy single-figure
- * (cover-less) claims keep the exact V1 decision form.
+ * outcomes) — with the claim timeline underneath: one sequential feed of every
+ * note, document, check and decision on the claim, Jira-activity style. Loss
+ * details, reserve and policy/coverage ride a slim reference rail that never
+ * competes with the action. Legacy single-figure (cover-less) claims keep the
+ * exact V1 decision form.
  */
 @Component({
   imports: [FormsModule, RouterLink],
@@ -155,6 +169,8 @@ export class ClaimDetail {
   protected readonly loaded = signal(false);
   protected readonly auditTrail = signal<AuditEntry[]>([]);
   protected readonly auditError = signal<string | null>(null);
+  /** V17: the unified claim timeline (notes + documents + checks + milestones). */
+  protected readonly timeline = signal<TimelineEntry[]>([]);
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
@@ -465,6 +481,62 @@ export class ClaimDetail {
     return this.view()?.attachments ?? [];
   }
 
+  /** V17: documents linked to one verification check (per-check evidence). */
+  protected verAttachments(id: number): AttachmentView[] {
+    return this.attachmentViews().filter((a) => a.verificationId === id);
+  }
+
+  /** Timeline rows: the unified feed (empty until loaded — never null). */
+  protected timelineEntries(): TimelineEntry[] {
+    return this.timeline();
+  }
+
+  /** Friendly label for a timeline row kind. */
+  protected timelineKindLabel(kind: string): string {
+    switch (kind) {
+      case 'FILED':
+        return 'Filed';
+      case 'NOTE':
+        return 'Note';
+      case 'DOCUMENT':
+        return 'Document';
+      case 'VERIFICATION_OPENED':
+        return 'Check opened';
+      case 'VERIFICATION_COMPLETED':
+        return 'Check completed';
+      default:
+        return 'Update';
+    }
+  }
+
+  protected timelineKindClass(kind: string): string {
+    switch (kind) {
+      case 'FILED':
+        return 'badge badge--info';
+      case 'NOTE':
+        return 'badge badge--neutral';
+      case 'DOCUMENT':
+        return 'badge badge--special';
+      case 'VERIFICATION_OPENED':
+      case 'VERIFICATION_COMPLETED':
+        return 'badge badge--success';
+      default:
+        return 'badge badge--neutral';
+    }
+  }
+
+  protected timelineTime(value: string | null | undefined): string {
+    return formatDateTime(value);
+  }
+
+  /** Download a timeline document row by its attachment id. */
+  protected timelineDoc(entry: TimelineEntry): AttachmentView | null {
+    if (entry.attachmentId == null) {
+      return null;
+    }
+    return this.attachmentViews().find((a) => a.id === entry.attachmentId) ?? null;
+  }
+
   /** Display name: the human label when set, else the stored filename. */
   protected docName(attachment: AttachmentView): string {
     return attachment.label?.trim() ? attachment.label : attachment.originalName;
@@ -523,6 +595,9 @@ export class ClaimDetail {
         }
       }
       this.applyView(view);
+      // V17: the timeline loads with the claim (same auth, best-effort — the
+      // workspace works without it, milestones still show in the audit panel).
+      void this.loadTimeline(headers);
       if (this.isSupervisor()) {
         void this.loadAudit(headers);
       }
@@ -597,6 +672,20 @@ export class ClaimDetail {
       this.auditTrail.set(trail);
     } catch {
       this.auditError.set('The audit trail could not be loaded.');
+    }
+  }
+
+  /** V17: refreshes the unified timeline feed (called after every write). */
+  private async loadTimeline(headers: HttpHeaders): Promise<void> {
+    try {
+      const feed = await firstValueFrom(
+        this.http.get<TimelineEntry[]>(`/api/claims/${this.claimNumber}/timeline`, {
+          headers,
+        }),
+      );
+      this.timeline.set(feed ?? []);
+    } catch {
+      this.timeline.set([]);
     }
   }
 
@@ -954,9 +1043,10 @@ export class ClaimDetail {
   /**
    * Attaches a document to the open claim (multipart file + the chosen label).
    * The file input is passed straight from the template — ngModel cannot hold
-   * a File, so the element is the source of truth.
+   * a File, so the element is the source of truth. Pass a verification id to
+   * link the file to one check (per-check evidence on the timeline).
    */
-  async uploadDoc(fileInput: HTMLInputElement) {
+  async uploadDoc(fileInput: HTMLInputElement, verificationId?: number) {
     this.error.set(null);
     const file = fileInput.files?.[0];
     if (!file) {
@@ -976,6 +1066,9 @@ export class ClaimDetail {
       if (label) {
         form.append('label', label);
       }
+      if (verificationId != null) {
+        form.append('verificationId', String(verificationId));
+      }
       await firstValueFrom(
         this.http.post(`/api/claims/${this.claimNumber}/attachments`, form, {
           headers,
@@ -984,6 +1077,7 @@ export class ClaimDetail {
       fileInput.value = '';
       this.toasts.success('Document attached.');
       await this.mergeAttachments(headers);
+      await this.loadTimeline(headers);
     } catch (err) {
       this.error.set(serverMessage(err, 'Could not attach the document.'));
     } finally {

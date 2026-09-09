@@ -291,6 +291,25 @@
                     @if (ver.evidenceRefs) {
                       <p class="timeline__meta">Evidence: {{ ver.evidenceRefs }}</p>
                     }
+                    @if (verAttachments(ver.id).length > 0) {
+                      <ul class="ver-docs" [attr.data-testid]="'detail-ver-docs-' + ver.id">
+                        @for (doc of verAttachments(ver.id); track doc.id) {
+                          <li>
+                            <button
+                              type="button"
+                              class="btn btn--tertiary btn--sm"
+                              data-testid="detail-attachment"
+                              (click)="download(doc)"
+                            >
+                              <svg viewBox="0 0 16 16" aria-hidden="true">
+                                <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                              </svg>
+                              {{ docName(doc) }}
+                            </button>
+                          </li>
+                        }
+                      </ul>
+                    }
                     <p class="timeline__meta">
                       {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
                       @if (ver.completedAt) {
@@ -348,6 +367,32 @@
                         >
                           Complete {{ verTitle(ver.type).toLowerCase() }}
                         </button>
+                        <div class="field ver-attach">
+                          <label [for]="'ver-file-' + ver.id">Attach evidence to this check</label>
+                          <div class="inline-form">
+                            <input
+                              #verFile
+                              [id]="'ver-file-' + ver.id"
+                              type="file"
+                              accept="image/*,.pdf"
+                              class="input"
+                              [attr.data-testid]="'detail-ver-file-' + ver.id"
+                            />
+                            <button
+                              type="button"
+                              class="btn btn--secondary"
+                              [attr.data-testid]="'detail-ver-upload-' + ver.id"
+                              [disabled]="uploading()"
+                              (click)="uploadDoc(verFile, ver.id)"
+                            >
+                              Attach
+                            </button>
+                          </div>
+                          <p class="muted ver-attach__hint">
+                            Uses the document name chosen below in Claim files — the file
+                            lands on this check and on the timeline.
+                          </p>
+                        </div>
                       </div>
                     }
                   </li>
@@ -675,34 +720,83 @@
           </section>
         }
 
-        @if (canDecide()) {
-          <section class="panel support-card" data-testid="detail-documents-panel">
-            <div class="panel__header">
-              <h2>Documents</h2>
-              <span class="panel__count">{{ attachmentViews().length }}</span>
-            </div>
-            <div class="panel__body">
-              @if (attachmentViews().length === 0) {
-                <p class="muted" data-testid="detail-photos-empty">No documents yet.</p>
-              } @else {
-                <ul class="photo-list">
-                  @for (attachment of attachmentViews(); track attachment.id) {
-                    <li>
+        <!-- ======================= CLAIM TIMELINE ======================= -->
+        <!-- V17: one sequential feed — notes, documents, checks, milestones.
+             Replaces the scattered Documents / Internal-notes / Audit boxes. -->
+        <section class="panel timeline-panel" data-testid="detail-timeline-panel">
+          <div class="panel__header">
+            <h2>Claim timeline</h2>
+            @if (timelineEntries().length > 0) {
+              <span class="panel__count">{{ timelineEntries().length }}</span>
+            }
+          </div>
+          <div class="panel__body">
+            @if (timelineEntries().length === 0) {
+              <p class="muted" data-testid="detail-timeline-empty">
+                Nothing on the timeline yet — notes you add and documents you attach appear here.
+              </p>
+            } @else {
+              <ol class="timeline timeline--feed" data-testid="detail-timeline-list">
+                @for (entry of timelineEntries(); track $index) {
+                  <li class="timeline__item timeline__item--feed" data-testid="detail-timeline-item">
+                    <div class="timeline__head">
+                      <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
+                        {{ timelineKindLabel(entry.kind) }}
+                      </span>
+                      <span class="timeline__actor" data-testid="detail-timeline-actor">
+                        {{ entry.actor ?? 'Internal' }}
+                      </span>
+                      <span class="timeline__meta" data-testid="detail-timeline-time">
+                        {{ timelineTime(entry.at) }}
+                      </span>
+                    </div>
+                    @if (entry.detail) {
+                      <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                    }
+                    @if (timelineDoc(entry); as doc) {
                       <button
                         type="button"
                         class="btn btn--tertiary btn--sm"
                         data-testid="detail-attachment"
-                        (click)="download(attachment)"
+                        (click)="download(doc)"
                       >
                         <svg viewBox="0 0 16 16" aria-hidden="true">
                           <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
-                        {{ docName(attachment) }}
+                        {{ docName(doc) }}
                       </button>
-                    </li>
-                  }
-                </ul>
-              }
+                    }
+                  </li>
+                }
+              </ol>
+            }
+
+            @if (canDecide()) {
+              <!-- Add a note — lands on the timeline with your name and time. -->
+              <form (ngSubmit)="addNote()" class="field timeline__composer">
+                <label for="note">Add a note</label>
+                <textarea
+                  id="note"
+                  class="input"
+                  rows="2"
+                  placeholder="Observations, follow-ups, coverage checks…"
+                  data-testid="detail-note-input"
+                  [(ngModel)]="noteInput"
+                  name="note"
+                ></textarea>
+                <div class="form-actions note-form-actions">
+                  <button
+                    type="submit"
+                    class="btn btn--secondary"
+                    data-testid="detail-note-add"
+                    [disabled]="savingNote() || !noteInput.trim()"
+                  >
+                    Add note
+                  </button>
+                </div>
+              </form>
+
+              <!-- Claim files — the one upload form (per-check attach lives on each check). -->
               <div class="field doc-upload">
                 <label for="doc-choice">Attach a document</label>
                 <select
@@ -744,9 +838,9 @@
                   {{ uploading() ? 'Attaching…' : 'Attach' }}
                 </button>
               </div>
-            </div>
-          </section>
-        }
+            }
+          </div>
+        </section>
 
         <section class="panel support-card">
           <div class="panel__header">
@@ -785,7 +879,7 @@
               An internal estimate of what this claim may cost — never shown to the claimant.
             </p>
             @if (claim.reserveAmount != null) {
-              <p class="reserve-current">
+              <p class="reserve-current" data-testid="detail-reserve-value">
                 Current reserve <strong class="num">{{ reserveText() }}</strong>
               </p>
             }
@@ -812,49 +906,6 @@
               >
                 Save reserve
               </button>
-            </form>
-          </div>
-        </section>
-
-        <section class="panel support-card">
-          <div class="panel__header">
-            <h2>Internal notes</h2>
-            <span class="panel__count">{{ noteViews().length }}</span>
-          </div>
-          <div class="panel__body">
-            @if (noteViews().length === 0) {
-              <p class="muted" data-testid="detail-notes-empty">No notes yet.</p>
-            } @else {
-              <ol class="timeline" data-testid="detail-note-list">
-                @for (note of noteViews(); track note.id) {
-                  <li class="timeline__item timeline__item--note" data-testid="detail-note-item">
-                    <p class="timeline__body">{{ note.body }}</p>
-                    <p class="timeline__meta">{{ note.author ?? 'Internal' }}</p>
-                  </li>
-                }
-              </ol>
-            }
-            <form (ngSubmit)="addNote()" class="field" style="margin-top: var(--space-4)">
-              <label for="note">Add a note</label>
-              <textarea
-                id="note"
-                class="input"
-                rows="2"
-                placeholder="Observations, follow-ups, coverage checks…"
-                data-testid="detail-note-input"
-                [(ngModel)]="noteInput"
-                name="note"
-              ></textarea>
-              <div class="form-actions note-form-actions">
-                <button
-                  type="submit"
-                  class="btn btn--secondary"
-                  data-testid="detail-note-add"
-                  [disabled]="savingNote() || !noteInput.trim()"
-                >
-                  Add note
-                </button>
-              </div>
             </form>
           </div>
         </section>
