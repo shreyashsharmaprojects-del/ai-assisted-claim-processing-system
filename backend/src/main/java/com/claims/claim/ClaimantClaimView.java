@@ -34,12 +34,18 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * adjuster's requested items while the claim waits on the claimant (null at every
  * other state, still omitted from the wire when null). It is the claimant's own
  * request text — no internal fields travel with it.
+ *
+ * <p>V3 S3 grows the required-documents tracker: {@code documentsReceived} /
+ * {@code documentsTotal} counts plus the per-item labels ({@code requiredDocuments},
+ * each {@code {displayName, status)}}. Never internals: decided_by never enters
+ * this shape.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ClaimantClaimView(String claimNumber, String status, List<String> steps,
         String decision, BigDecimal indemnityAmount, String decisionRemarks,
         List<ClaimantCoverView> covers, BigDecimal claimedTotal, BigDecimal netPayableTotal,
-        String needInfoReason) {
+        String needInfoReason, Integer documentsReceived, Integer documentsTotal,
+        List<DocItem> requiredDocuments) {
 
     /** Legacy shape: no filed covers (pre-V2-2 rows and the no-covers filing path). */
     public static ClaimantClaimView from(Claim claim) {
@@ -53,6 +59,13 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
 
     public static ClaimantClaimView from(Claim claim, List<ClaimantCoverView> covers,
             BigDecimal claimedTotal, BigDecimal netPayableTotal) {
+        return from(claim, covers, claimedTotal, netPayableTotal, null, null, null);
+    }
+
+    public static ClaimantClaimView from(Claim claim, List<ClaimantCoverView> covers,
+            BigDecimal claimedTotal, BigDecimal netPayableTotal,
+            Integer documentsReceived, Integer documentsTotal,
+            List<DocItem> requiredDocuments) {
         String decision = claim.getDecision();
         boolean approvedLike = "APPROVED".equals(decision)
                 || "PARTIALLY_APPROVED".equals(decision);
@@ -66,7 +79,11 @@ public record ClaimantClaimView(String claimNumber, String status, List<String> 
                 "DENIED".equals(decision) ? claim.getDecisionRemarks() : null,
                 covers, claimedTotal,
                 approvedLike ? netPayableTotal : null,
-                needInfoReason);
+                needInfoReason, documentsReceived, documentsTotal, requiredDocuments);
+    }
+
+    /** S3: one claimant-safe checklist item — label + status, never internals. */
+    public record DocItem(String displayName, String status) {
     }
 
     /**

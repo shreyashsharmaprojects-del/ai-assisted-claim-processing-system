@@ -74,11 +74,14 @@ public class ClaimController {
             @RequestParam(value = "remarks", required = false) String remarks,
             @RequestParam(value = "covers", required = false) String coversJson,
             @RequestPart(value = "photos", required = false) MultipartFile[] photos,
+            @RequestParam(value = "docKey", required = false) String docKey,
+            @RequestParam(value = "docKeys", required = false) String docKeysJson,
             HttpServletRequest request) {
         List<MultipartFile> photoList = photos == null ? List.of() : List.of(photos);
+        List<String> photoDocKeys = parseDocKeys(docKey, docKeysJson, photoList.size());
         FnolResult result = claimService.fileFnol(new FnolInput(policyNumber, holderName,
                 holderEmail, lossDate, lossLocation, lossDescription, remarks,
-                jwt.getSubject(), photoList, parseCovers(coversJson)),
+                jwt.getSubject(), photoList, parseCovers(coversJson), photoDocKeys),
                 request.getRemoteAddr());
         // After the claim is committed: best-effort emails to the verified policy-holder
         // address; never blocks or rolls back (see docs/decisions.md).
@@ -104,6 +107,48 @@ public class ClaimController {
             @RequestParam("holderName") String holderName,
             @RequestParam("holderEmail") String holderEmail) {
         return filingCoversService.coversFor(policyNumber, holderName, holderEmail);
+    }
+
+    /**
+     * S3: aligns optional docKey labelling with the photo order — a single
+     * {@code docKey} applies to the first photo, a JSON {@code docKeys} array
+     * aligns positionally (entries may be null). Longer arrays are trimmed,
+     * shorter ones padded with nulls.
+     */
+    static List<String> parseDocKeys(String docKey, String docKeysJson, int photoCount) {
+        if (photoCount <= 0) {
+            return null;
+        }
+        if (docKeysJson != null && !docKeysJson.isBlank()) {
+            JsonNode root;
+            try {
+                root = JSON.readTree(docKeysJson);
+            } catch (tools.jackson.core.JacksonException ex) {
+                throw new FnolValidationException(
+                        "The document keys could not be read — send them again.");
+            }
+            if (!root.isArray()) {
+                throw new FnolValidationException(
+                        "The document keys could not be read — send them again.");
+            }
+            List<String> aligned = new ArrayList<>();
+            for (JsonNode entry : root) {
+                aligned.add(entry == null || entry.isNull() ? null : entry.asString());
+            }
+            while (aligned.size() < photoCount) {
+                aligned.add(null);
+            }
+            return aligned.size() > photoCount ? aligned.subList(0, photoCount) : aligned;
+        }
+        if (docKey != null && !docKey.isBlank()) {
+            List<String> aligned = new ArrayList<>();
+            aligned.add(docKey);
+            for (int i = 1; i < photoCount; i++) {
+                aligned.add(null);
+            }
+            return aligned;
+        }
+        return null;
     }
 
     /**

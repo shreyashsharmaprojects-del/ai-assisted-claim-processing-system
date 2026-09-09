@@ -19,6 +19,12 @@ interface FiledCover {
   decisionRemarks?: string | null;
 }
 
+/** One claimant-safe checklist item — label + status, never internals. */
+interface RequiredDocItem {
+  displayName: string;
+  status: string;
+}
+
 interface ClaimantClaimView {
   claimNumber: string;
   status: string;
@@ -33,6 +39,10 @@ interface ClaimantClaimView {
   netPayableTotal?: number | null;
   /** The adjuster's requested items while the claim waits on the claimant. */
   needInfoReason?: string | null;
+  /** S3: required-documents tracker — counts + per-item labels, never internals. */
+  documentsReceived?: number | null;
+  documentsTotal?: number | null;
+  requiredDocuments?: RequiredDocItem[] | null;
 }
 
 /** Mirrors the server evidence allowlist: images + PDF (10MB per file). */
@@ -114,6 +124,30 @@ export class ClaimStatus {
   /** True while the claim waits on the claimant (the action panel shows). */
   protected needsInfo(): boolean {
     return this.view()?.status === 'NEED_INFO';
+  }
+
+  /** S3: true when the backend ships the required-documents tracker. */
+  protected hasReqDocs(): boolean {
+    const claim = this.view();
+    return claim?.documentsTotal != null && (claim.requiredDocuments?.length ?? 0) > 0;
+  }
+
+  /** "N of M received" line for the tracker (empty when the backend omits it). */
+  protected reqDocsCountText(): string {
+    const claim = this.view();
+    const received = claim?.documentsReceived ?? 0;
+    const total = claim?.documentsTotal ?? 0;
+    return `Documents: ${received} of ${total} received`;
+  }
+
+  /** Per-item labels for the tracker (never internals — displayName + status). */
+  protected reqDocItems(): RequiredDocItem[] {
+    return this.view()?.requiredDocuments ?? [];
+  }
+
+  /** Friendly status word for one checklist item. */
+  protected reqDocStatus(item: RequiredDocItem): string {
+    return item.status === 'RECEIVED' ? 'Received' : item.status === 'WAIVED' ? 'Waived' : 'Pending';
   }
 
   /** The adjuster's requested items (their own round-trip text, wall-safe). */

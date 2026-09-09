@@ -14,13 +14,29 @@ import org.springframework.web.multipart.MultipartFile;
  */
 public record FnolInput(String policyNumber, String holderName, String holderEmail,
         String lossDate, String lossLocation, String lossDescription, String remarks,
-        String claimantSub, List<MultipartFile> photos, List<CoverSelection> covers) {
+        String claimantSub, List<MultipartFile> photos, List<CoverSelection> covers,
+        List<String> photoDocKeys) {
 
     /** Backwards-compatible constructor for the legacy no-covers path (tests, old callers). */
     public FnolInput(String policyNumber, String holderName, String holderEmail,
             String lossDate, String lossLocation, String lossDescription, String remarks,
             String claimantSub, List<MultipartFile> photos) {
         this(policyNumber, holderName, holderEmail, lossDate, lossLocation, lossDescription,
-                remarks, claimantSub, photos, null);
+                remarks, claimantSub, photos, null, null);
+    }
+
+    public FnolInput(String policyNumber, String holderName, String holderEmail,
+            String lossDate, String lossLocation, String lossDescription, String remarks,
+            String claimantSub, List<MultipartFile> photos, List<CoverSelection> covers) {
+        this(policyNumber, holderName, holderEmail, lossDate, lossLocation, lossDescription,
+                remarks, claimantSub, photos, covers, null);
+    }
+
+    /** The docKey aligned with the photo at the same index, or null. */
+    public String docKeyFor(int photoIndex) {
+        if (photoDocKeys == null || photoIndex < 0 || photoIndex >= photoDocKeys.size()) {
+            return null;
+        }
+        return photoDocKeys.get(photoIndex);
     }
 }

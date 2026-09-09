@@ -19,8 +19,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.claims.api.ClaimNotFoundException;
 import com.claims.api.InvalidRequestException;
+import com.claims.policy.Policy;
 import com.claims.policy.PolicyCover;
 import com.claims.policy.PolicyCoverRepository;
+import com.claims.policy.PolicyRepository;
 
 /**
  * Claimant status surface (slice 3, E2E journey 2): a claimant opens their own claim by
@@ -38,17 +40,22 @@ public class ClaimantStatusController {
     private final ClaimRepository claims;
     private final ClaimCoverRepository claimCovers;
     private final PolicyCoverRepository policyCovers;
+    private final PolicyRepository policies;
     private final AttachmentRepository attachments;
     private final PhotoStorage photoStorage;
+    private final RequiredDocumentService requiredDocuments;
 
     public ClaimantStatusController(ClaimRepository claims,
             ClaimCoverRepository claimCovers, PolicyCoverRepository policyCovers,
-            AttachmentRepository attachments, PhotoStorage photoStorage) {
+            PolicyRepository policies, AttachmentRepository attachments,
+            PhotoStorage photoStorage, RequiredDocumentService requiredDocuments) {
         this.claims = claims;
         this.claimCovers = claimCovers;
         this.policyCovers = policyCovers;
+        this.policies = policies;
         this.attachments = attachments;
         this.photoStorage = photoStorage;
+        this.requiredDocuments = requiredDocuments;
     }
 
     @GetMapping("/{claimNumber}")
@@ -60,8 +67,11 @@ public class ClaimantStatusController {
             throw new ClaimNotFoundException();
         }
         List<ClaimCover> rows = claimCovers.findByClaimIdOrderByIdAsc(claim.getId());
+        RequiredDocumentService.ClaimantDocs docs =
+                requiredDocuments.claimantDocs(claim.getId());
         if (rows.isEmpty()) {
-            return ClaimantClaimView.from(claim);
+            return ClaimantClaimView.from(claim, null, null, null,
+                    docs.received(), docs.total(), docs.items());
         }
         Map<String, PolicyCover> byCode = new HashMap<>();
         for (PolicyCover cover : policyCovers
@@ -83,7 +93,8 @@ public class ClaimantStatusController {
                     row.getDecisionRemarks()));
         }
         return ClaimantClaimView.from(claim, covers, claim.getClaimedTotal(),
-                "CLOSED".equals(claim.getStatus()) ? netPayableTotal(rows) : null);
+                "CLOSED".equals(claim.getStatus()) ? netPayableTotal(rows) : null,
+                docs.received(), docs.total(), docs.items());
     }
 
     /**
@@ -98,7 +109,8 @@ public class ClaimantStatusController {
     public DocumentView uploadDocument(@AuthenticationPrincipal Jwt jwt,
             @PathVariable String claimNumber,
             @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "label", required = false) String label) {
+            @RequestParam(value = "label", required = false) String label,
+            @RequestParam(value = "docKey", required = false) String docKey) {
         Claim claim = claims.findByClaimNumber(claimNumber)
                 .orElseThrow(ClaimNotFoundException::new);
         if (!claim.getClaimantSub().equals(jwt.getSubject())) {
@@ -111,6 +123,14 @@ public class ClaimantStatusController {
         if (file == null || file.isEmpty()) {
             throw new InvalidRequestException("A file is required.");
         }
+        // S3: validate the docKey before storing bytes — unknown keys are a 400
+        // naming the valid keys, and no file is persisted on rejection.
+        Policy policy = policies.findById(claim.getPolicyId()).orElseThrow(
+                () -> new IllegalStateException("Claim " + claimNumber
+                        + " references a missing policy " + claim.getPolicyId()));
+        if (docKey != null && !docKey.isBlank()) {
+            requiredDocuments.validateDocKey(policy.getProductCode(), docKey);
+        }
         List<StoredPhoto> stored = photoStorage.store(List.of(file), claim.getId());
         StoredPhoto photo = stored.get(0);
         String trimmed = label == null || label.isBlank() ? null : label.trim();
@@ -121,6 +141,9 @@ public class ClaimantStatusController {
         Attachment row = attachments.save(new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
                 jwt.getSubject(), null, photo.sha256(), photo.sizeBytes()));
+        // S3 auto-link runs in the request transaction via the service's
+        // @Transactional method (self-call through the injected bean, not this).
+        requiredDocuments.tryAutoLink(claim, docKey, row.getId(), jwt.getSubject());
         return new DocumentView(row.getId(), row.getLabel() == null
                 ? row.getOriginalName() : row.getLabel());
     }

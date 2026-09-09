@@ -5,6 +5,52 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S3 required-documents checklist per product (V19 tables + seeds)
+
+**Context:** "What's missing" lived in free-text NEED_INFO notes, so claimants
+played ping-pong with adjusters. V19 adds `required_document` (per-product
+expectations) + `claim_document_check` (per-claim PENDING/RECEIVED/WAIVED rows),
+seeded 3-per-family — HEALTH rows duplicated per HEALTH code (HLTH-BASIC /
+HLTH-PLUS / HLTH-CRIT: DISCHARGE_SUMMARY, FINAL_BILL, ID_PROOF), AUTO rows per
+AUTO code (AUTO-STD / AUTO-COM + legacy V1 AUTO: PHOTOS, ESTIMATE, RC_COPY),
+PROPERTY rows per PROPERTY code (PROP-HOME / PROP-FIRE + legacy V1 HOME:
+PHOTOS, ESTIMATE, OWNERSHIP_PROOF). HLTH-ORPHAN is deliberately unmapped
+(empty checklist). Seeds are claim-level (`cover_code` NULL throughout).
+
+**What changed (all additive):**
+- **FNOL auto-seed:** `ClaimService` inserts PENDING `claim_document_check`
+  rows for the policy product's required docs in the filing transaction.
+- **GET `/api/claims/{n}/required-documents`:** assignee/supervisor get full
+  rows (`checkId/docKey/displayName/status/attachmentId/decidedBy/decidedAt`);
+  the owning claimant gets `{displayName, status}` only (`decided_by` walled —
+  string-absence asserted); anyone else gets 404 (never 403).
+- **`POST …/{checkId}/link {attachmentId}` / `/waive {rationale}`:**
+  assignee-or-supervisor only (404 otherwise); the attachment must belong to
+  the claim (else 404); waive needs a rationale (else 400). Each writes an
+  audit row (`DOC_LINKED` / `DOC_WAIVED` with claimNumber/docKey/checkId).
+- **`docKey` auto-link on uploads:** FNOL + adjuster attach
+  (`ClaimWorkController`) + claimant NEED_INFO upload
+  (`ClaimantStatusController`) accept an optional `docKey`; a matching PENDING
+  check flips to RECEIVED (audited, first evidence wins); unknown keys are 400
+  naming the valid keys.
+- **Counts:** `StagedClaimView` / `InternalClaimView` embed
+  `documentsReceived/documentsTotal`; the claimant tracker shows the same
+  counts + per-item labels, never internals.
+- **Frontend:** adjuster claim-detail "Required documents" panel (checklist
+  with link/waive actions, testids `detail-reqdoc-{key}/link/waive`);
+  claimant tracker "Documents: N of M received" + item list (testids
+  `claim-reqdocs/count/item`). Existing panels only — no new routes.
+
+**Verified:** `RequiredDocumentsIntegrationTest` 14/14 (seeds per family +
+orphan-empty, auth matrix, audit rows, walled claimant shape, counts,
+docKey auto-link incl. 400-on-unknown), full backend suite 260/260 (per
+`git log --oneline -1` — docs-only session, tests not re-run), frontend
+build green, `need-info-docs.spec` 1/1.
+
+**Deliberately not built (Non-goals):** OCR auto-detection of doc type
+(human links), blocking decision on an incomplete checklist (advisory only —
+the gate stays money-based).
+
 ### 2026-09-09 — S2 S3-compatible object storage behind the seam (MinIO dev, filesystem default)
 
 **Context:** Evidence must survive re-images and multi-host deploys, but local-disk

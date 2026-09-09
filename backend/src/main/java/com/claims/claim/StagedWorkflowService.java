@@ -80,6 +80,7 @@ public class StagedWorkflowService {
     private final EmailOutboxWriter outboxWriter;
     private final JdbcTemplate jdbcTemplate;
     private final EscalationDecisionService escalationDecisions;
+    private final RequiredDocumentService requiredDocuments;
 
     public StagedWorkflowService(ClaimRepository claims, PolicyRepository policies,
             PolicyCoverRepository policyCovers, ClaimCoverRepository claimCovers,
@@ -88,7 +89,8 @@ public class StagedWorkflowService {
             AdjusterSkillRepository skills, ClaimAccess access, ClaimAssigner assigner,
             ClaimDecisionService legacyDecisions, PaymentRepository payments,
             AuditLogWriter auditLog, ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
-            JdbcTemplate jdbcTemplate, EscalationDecisionService escalationDecisions) {
+            JdbcTemplate jdbcTemplate, EscalationDecisionService escalationDecisions,
+            RequiredDocumentService requiredDocuments) {
         this.claims = claims;
         this.policies = policies;
         this.policyCovers = policyCovers;
@@ -106,6 +108,7 @@ public class StagedWorkflowService {
         this.outboxWriter = outboxWriter;
         this.jdbcTemplate = jdbcTemplate;
         this.escalationDecisions = escalationDecisions;
+        this.requiredDocuments = requiredDocuments;
     }
 
     // --- staged full view ------------------------------------------------------
@@ -1074,6 +1077,7 @@ public class StagedWorkflowService {
         boolean anyProposal = covers.stream().anyMatch(StagedClaimView.StagedCoverView::proposal);
         BigDecimal proposedTotal = anyProposal
                 ? proposalsViewTotal(claim.getId(), config.getAuthorityBasis()) : null;
+        int[] docCounts = requiredDocuments.counts(claim.getId());
         return new StagedClaimView(claim.getClaimNumber(), claim.getStatus(),
                 stageOf(claim), claim.getLevel(), policy.getPolicyNumber(),
                 policy.getProductCode(), coverageOf(policy.getId()), policy.getHolderName(),
@@ -1083,7 +1087,7 @@ public class StagedWorkflowService {
                 claim.getNeedInfoPriorStage(), covers.isEmpty() ? null : covers,
                 claim.getClaimedTotal(), history.isEmpty() ? null : history, limit,
                 config.getAuthorityBasis(), anyProposal ? Boolean.TRUE : null,
-                proposedTotal);
+                proposedTotal, docCounts[0], docCounts[1]);
     }
 
     private StagedClaimView.VerificationView verificationView(Verification row) {
@@ -1095,8 +1099,11 @@ public class StagedWorkflowService {
     private ClaimantClaimView claimantViewOf(Claim claim) {
         Map<String, PolicyCover> byCode = optedByCode(claim.getPolicyId());
         List<ClaimCover> rows = claimCovers.findByClaimIdOrderByIdAsc(claim.getId());
+        RequiredDocumentService.ClaimantDocs docs =
+                requiredDocuments.claimantDocs(claim.getId());
         if (rows.isEmpty()) {
-            return ClaimantClaimView.from(claim);
+            return ClaimantClaimView.from(claim, null, null, null,
+                    docs.received(), docs.total(), docs.items());
         }
         List<ClaimantCoverView> covers = new ArrayList<>();
         BigDecimal netTotal = BigDecimal.ZERO;
@@ -1124,7 +1131,8 @@ public class StagedWorkflowService {
             paymentFigure = anyNet ? netTotal : claim.getIndemnityAmount();
         }
         return ClaimantClaimView.from(claim, covers, claim.getClaimedTotal(),
-                "CLOSED".equals(claim.getStatus()) ? paymentFigure : null);
+                "CLOSED".equals(claim.getStatus()) ? paymentFigure : null,
+                docs.received(), docs.total(), docs.items());
     }
 
     // --- guards + lookups ---------------------------------------------------------------

@@ -45,6 +45,19 @@ public class SecurityConfig {
                         // NEED_INFO only inside the service; 404 otherwise).
                         .requestMatchers(HttpMethod.POST, "/api/claims/*/documents")
                                 .hasRole("CLAIMANT")
+                        // S3: the required-documents checklist — the GET admits both
+                        // internal staff and the claimant (own-claim enforced inside
+                        // the service: non-holder/non-assignee is 404); link/waive
+                        // are the assignee's (supervisor via the same visibility;
+                        // 404 otherwise).
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/required-documents")
+                                .hasAnyRole("CLAIMANT", "ADJUSTER_L1", "ADJUSTER_L2",
+                                        "ADJUSTER_L3", "SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/claims/*/required-documents/*/link",
+                                "/api/claims/*/required-documents/*/waive")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/full",
                                 "/api/claims/*/attachments/*", "/api/claims/*/timeline")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",

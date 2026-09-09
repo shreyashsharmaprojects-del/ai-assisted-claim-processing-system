@@ -485,3 +485,60 @@ Authorization: Bearer {{token}}
 # preserved); retrying a SENT/PENDING row -> 400, unknown id -> 400.
 POST {{host}}/api/outbox/1/retry
 Authorization: Bearer {{token}}
+
+### Required documents — list (staff: assignee or SUPERVISOR gets full rows)
+# Full rows [{checkId, docKey, displayName, status, attachmentId, decidedBy,
+# decidedAt}]; FNOL auto-seeds one PENDING row per required doc of the policy
+# product (HEALTH: DISCHARGE_SUMMARY/FINAL_BILL/ID_PROOF; AUTO: PHOTOS/ESTIMATE/
+# RC_COPY; PROPERTY: PHOTOS/ESTIMATE/OWNERSHIP_PROOF). Stranger -> 404, never 403.
+# Find a checkId here for the link/waive examples below.
+GET {{host}}/api/claims/CLM-000001/required-documents
+Authorization: Bearer {{token}}
+
+### Required documents — list (CLAIMANT: own claim, walled shape)
+# Returns [{displayName, status}] only — no decided_by/attachmentId/checkId/audit
+# internals (asserted by string-absence). Someone else's claim -> 404.
+GET {{host}}/api/claims/CLM-000001/required-documents
+Authorization: Bearer {{token}}
+
+### Required documents — link an attachment (assignee or SUPERVISOR; 404 otherwise)
+# The attachment must belong to the claim (else 404). Writes a DOC_LINKED audit
+# row; the claimant tracker then shows the item RECEIVED. Find checkId/attachmentId
+# via the staff GET above and the full view (attachments array).
+POST {{host}}/api/claims/CLM-000001/required-documents/1/link
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "attachmentId": 1
+}
+
+### Required documents — waive a check (assignee or SUPERVISOR; rationale required)
+# Rationale missing/blank -> 400. Writes a DOC_WAIVED audit row with the rationale.
+# Claimants get 403 on waive (strangers 404).
+POST {{host}}/api/claims/CLM-000001/required-documents/1/waive
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rationale": "ID already verified against the policy record."
+}
+
+### Adjuster attach — upload with docKey auto-link (assignee or SUPERVISOR)
+# Optional `docKey` part (case-insensitive, e.g. FINAL_BILL) flips the matching
+# PENDING check to RECEIVED (audited DOC_LINKED, first evidence wins). Unknown
+# keys -> 400 naming the valid keys for the product. Create final-bill.pdf first.
+POST {{host}}/api/claims/CLM-000001/attachments?label=Final%20bill
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----AttachDocKeyBoundary
+
+------AttachDocKeyBoundary\r
+Content-Disposition: form-data; name="file"; filename="final-bill.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./final-bill.pdf
+------AttachDocKeyBoundary\r
+Content-Disposition: form-data; name="docKey"\r
+\r
+FINAL_BILL
+------AttachDocKeyBoundary--\r

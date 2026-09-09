@@ -51,12 +51,14 @@ public class ClaimWorkService {
     private final AuditLogWriter auditLog;
     private final JdbcTemplate jdbcTemplate;
     private final PhotoStorage photoStorage;
+    private final RequiredDocumentService requiredDocuments;
 
     public ClaimWorkService(ClaimRepository claims, PolicyRepository policies,
             AttachmentRepository attachments, InternalNoteRepository notes,
             VerificationRepository verifications, AppUserRepository appUsers,
             ClaimAccess access, AuditLogWriter auditLog,
-            JdbcTemplate jdbcTemplate, PhotoStorage photoStorage) {
+            JdbcTemplate jdbcTemplate, PhotoStorage photoStorage,
+            RequiredDocumentService requiredDocuments) {
         this.claims = claims;
         this.policies = policies;
         this.attachments = attachments;
@@ -67,6 +69,7 @@ public class ClaimWorkService {
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
         this.photoStorage = photoStorage;
+        this.requiredDocuments = requiredDocuments;
     }
 
     public InternalClaimView fullView(String claimNumber, String actorSub, boolean supervisor) {
@@ -136,12 +139,31 @@ public class ClaimWorkService {
     public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
             boolean supervisor, org.springframework.web.multipart.MultipartFile file,
             String label, Long verificationId) {
+        return attach(claimNumber, actorSub, supervisor, file, label, verificationId, null);
+    }
+
+    /**
+     * S3: optional {@code docKey} auto-links the upload to the matching PENDING
+     * required-doc check (RECEIVED + attachment id, audited). The key is
+     * validated before any side effect: unknown keys are a 400 naming the
+     * valid keys.
+     */
+    @Transactional
+    public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
+            boolean supervisor, org.springframework.web.multipart.MultipartFile file,
+            String label, Long verificationId, String docKey) {
         Claim claim = requireVisible(claimNumber, actorSub, supervisor);
         if ("CLOSED".equals(claim.getStatus()) || claim.getDecision() != null) {
             throw new InvalidRequestException("This claim has already been decided.");
         }
         if (file == null || file.isEmpty()) {
             throw new InvalidRequestException("A file is required.");
+        }
+        if (docKey != null && !docKey.isBlank()) {
+            Policy policy = policies.findById(claim.getPolicyId())
+                    .orElseThrow(() -> new IllegalStateException("Claim " + claimNumber
+                            + " references a missing policy " + claim.getPolicyId()));
+            requiredDocuments.validateDocKey(policy.getProductCode(), docKey);
         }
         if (verificationId != null) {
             verifications.findByIdAndClaimId(verificationId, claim.getId())
@@ -157,6 +179,7 @@ public class ClaimWorkService {
         Attachment row = attachments.save(new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
                 actorSub, verificationId, photo.sha256(), photo.sizeBytes()));
+        requiredDocuments.tryAutoLink(claim, docKey, row.getId(), actorSub);
         return new InternalClaimView.AttachmentView(row.getId(), row.getOriginalName(),
                 row.getLabel(), row.getVerificationId());
     }
@@ -221,6 +244,7 @@ public class ClaimWorkService {
                 .map(n -> new InternalClaimView.NoteView(n.getId(), n.getBody(),
                         displayNameOf(n.getAuthorId())))
                 .toList();
+        int[] docCounts = requiredDocuments.counts(claim.getId());
         return new InternalClaimView(
                 claim.getClaimNumber(),
                 claim.getStatus(),
@@ -236,7 +260,8 @@ public class ClaimWorkService {
                 claim.getReserveAmount(),
                 displayNameOf(claim.getAssignedAdjusterId()),
                 attachmentViews,
-                noteViews);
+                noteViews,
+                docCounts[0], docCounts[1]);
     }
 
     private String displayNameOf(Long appUserId) {

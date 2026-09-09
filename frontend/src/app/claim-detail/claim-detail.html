@@ -1159,6 +1159,91 @@
           <pre class="code-block code-block--hidden" data-testid="detail-coverage">{{ coverageText() }}</pre>
         </section>
 
+        <!-- S3: required-documents checklist — what this product expects,
+             with link/waive actions for the adjuster. Advisory only: the
+             money gate stays untouched. -->
+        @if (requiredDocs().length > 0) {
+          <section class="panel support-card" aria-label="Required documents">
+            <div class="panel__header">
+              <h2>Required documents</h2>
+              <span class="panel__count num">{{ reqDocsReceived() }} of {{ reqDocsTotal() }} received</span>
+            </div>
+            <div class="panel__body">
+              @if (reqDocsError(); as reqMessage) {
+                <p class="muted">{{ reqMessage }}</p>
+              }
+              <ol class="ver-list">
+                @for (doc of requiredDocs(); track doc.checkId) {
+                  <li
+                    class="ver-row ver-row--{{ doc.status === 'RECEIVED' ? 'done' : 'todo' }}"
+                    [attr.data-testid]="'detail-reqdoc-' + doc.docKey"
+                  >
+                    <div class="ver-row__main ver-row__main--static">
+                      <span class="ver-state ver-state--{{ doc.status === 'RECEIVED' ? 'done' : 'todo' }}">
+                        {{ doc.status === 'RECEIVED' ? 'Received' : doc.status === 'WAIVED' ? 'Waived' : 'To do' }}
+                      </span>
+                      <span class="ver-row__title">{{ doc.displayName }}</span>
+                      @if (doc.decidedBy) {
+                        <span class="ver-row__meta">{{ doc.decidedBy }}</span>
+                      }
+                    </div>
+                    @if (canDecide() && doc.status === 'PENDING') {
+                      <div class="ver-row__detail ver-row__detail--static">
+                        <div class="inline-form">
+                          <div class="field">
+                            <label [for]="'reqdoc-link-' + doc.checkId">Link a claim file</label>
+                            <select
+                              [id]="'reqdoc-link-' + doc.checkId"
+                              class="input"
+                              [(ngModel)]="reqLinkFor[doc.checkId]"
+                              [name]="'reqLink' + doc.checkId"
+                            >
+                              <option value="">Choose a file…</option>
+                              @for (file of reqDocCandidates(); track file.id) {
+                                <option [value]="file.id">{{ reqDocOptionName(file) }}</option>
+                              }
+                            </select>
+                          </div>
+                          <button
+                            type="button"
+                            class="btn btn--secondary btn--sm"
+                            [attr.data-testid]="'detail-reqdoc-' + doc.docKey + '/link'"
+                            [disabled]="reqDocsBusy()"
+                            (click)="linkRequiredDoc(doc.checkId)"
+                          >
+                            Link
+                          </button>
+                        </div>
+                        <div class="inline-form">
+                          <div class="field">
+                            <label [for]="'reqdoc-waive-' + doc.checkId">Waive with a rationale</label>
+                            <input
+                              [id]="'reqdoc-waive-' + doc.checkId"
+                              class="input"
+                              placeholder="Why is this not needed?"
+                              [(ngModel)]="reqWaiveFor[doc.checkId]"
+                              [name]="'reqWaive' + doc.checkId"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            class="btn btn--secondary btn--sm"
+                            [attr.data-testid]="'detail-reqdoc-' + doc.docKey + '/waive'"
+                            [disabled]="reqDocsBusy()"
+                            (click)="waiveRequiredDoc(doc.checkId)"
+                          >
+                            Waive
+                          </button>
+                        </div>
+                      </div>
+                    }
+                  </li>
+                }
+              </ol>
+            </div>
+          </section>
+        }
+
         <!-- Legacy single-figure claims carry no stage panels, so the reserve
              editor lives here in the rail (staged claims edit it inside their
              verification/decision panels). Internal only, never claimant-visible. -->

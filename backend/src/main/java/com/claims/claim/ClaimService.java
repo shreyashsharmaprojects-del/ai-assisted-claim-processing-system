@@ -75,6 +75,7 @@ public class ClaimService {
     private final FnolSubmissionRepository submissions;
     private final ClaimsMetrics metrics;
     private final EmailOutboxWriter outboxWriter;
+    private final RequiredDocumentService requiredDocuments;
     private final int fnolPerDay;
 
     public ClaimService(ClaimRepository claims, PolicyRepository policies,
@@ -83,6 +84,7 @@ public class ClaimService {
             PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
             JdbcTemplate jdbcTemplate, FnolSubmissionRepository submissions,
             ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
+            RequiredDocumentService requiredDocuments,
             @Value("${claims.fnol.rate-limit-per-day:20}") int fnolPerDay) {
         this.claims = claims;
         this.policies = policies;
@@ -97,6 +99,7 @@ public class ClaimService {
         this.submissions = submissions;
         this.metrics = metrics;
         this.outboxWriter = outboxWriter;
+        this.requiredDocuments = requiredDocuments;
         this.fnolPerDay = fnolPerDay;
     }
 
@@ -163,6 +166,10 @@ public class ClaimService {
                 blankToNull(input.remarks())));
         Long claimId = claim.getId();
 
+        // S3: the policy product's required-doc checklist — PENDING rows in the
+        // same transaction (products without seeds get an empty checklist).
+        requiredDocuments.seedForClaim(claimId, policy.getProductCode());
+
         // If anything after this point rolls back, remove the photos we wrote to disk.
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -175,9 +182,13 @@ public class ClaimService {
 
         List<StoredPhoto> storedPhotos = photoStorage.store(input.photos(), claimId);
         for (StoredPhoto photo : storedPhotos) {
-            attachments.save(new Attachment(claimId, photo.storagePath(),
+            Attachment savedAttachment = attachments.save(new Attachment(claimId, photo.storagePath(),
                     photo.contentType(), photo.originalName(), null, null, null,
                     photo.sha256(), photo.sizeBytes()));
+            // S3: FNOL uploads may carry a docKey (multipart part or aligned input
+            // order); auto-link matching PENDING checks.
+            requiredDocuments.tryAutoLink(claim, input.docKeyFor(storedPhotos.indexOf(photo)),
+                    savedAttachment.getId(), input.claimantSub());
         }
 
         submissions.save(new FnolSubmission(input.claimantSub(), claimId, clientIp, Instant.now()));
@@ -244,9 +255,16 @@ public class ClaimService {
                     claim.getClaimNumber(), policy.getHolderName(), adjuster.getDisplayName(),
                     adjuster.getEmail());
         }
-        return new FnolResult(ClaimantClaimView.from(claim, coverViews, claimedTotal),
+        return new FnolResult(ClaimantClaimView.from(claim, coverViews, claimedTotal,
+                null, docsOf(claimId).received(), docsOf(claimId).total(),
+                docsOf(claimId).items()),
                 adjuster == null ? null : adjuster.getDisplayName(),
                 adjuster == null ? null : adjuster.getEmail());
+    }
+
+    /** S3: the freshly seeded checklist for the FNOL response tracker. */
+    private RequiredDocumentService.ClaimantDocs docsOf(Long claimId) {
+        return requiredDocuments.claimantDocs(claimId);
     }
 
     /**

@@ -74,9 +74,11 @@ public class ClaimWorkController {
             Authentication authentication, @PathVariable String claimNumber,
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "label", required = false) String label,
-            @RequestParam(value = "verificationId", required = false) Long verificationId) {
+            @RequestParam(value = "verificationId", required = false) Long verificationId,
+            @RequestParam(value = "docKey", required = false) String docKey) {
         return claimWorkService.attach(claimNumber, jwt.getSubject(),
-                Authorities.isSupervisor(authentication), file, label, verificationId);
+                Authorities.isSupervisor(authentication), file, label, verificationId,
+                docKey);
     }
 
     /**

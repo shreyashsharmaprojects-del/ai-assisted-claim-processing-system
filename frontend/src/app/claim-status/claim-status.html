@@ -115,6 +115,24 @@
       </section>
     }
 
+    @if (hasReqDocs()) {
+      <section class="panel" aria-label="Required documents" data-testid="claim-reqdocs">
+        <div class="panel__header">
+          <h2>Documents</h2>
+        </div>
+        <div class="panel__body">
+          <p class="cover-total" data-testid="claim-reqdocs-count">{{ reqDocsCountText() }}</p>
+          <ul class="cover-list">
+            @for (item of reqDocItems(); track item.displayName) {
+              <li data-testid="claim-reqdocs-item">
+                {{ item.displayName }} — {{ reqDocStatus(item) }}
+              </li>
+            }
+          </ul>
+        </div>
+      </section>
+    }
+
     @if (claim.covers && claim.covers.length > 0) {
       <section class="panel" aria-label="Covers claimed">
         <div class="panel__header">

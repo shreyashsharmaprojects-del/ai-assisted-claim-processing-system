@@ -27,7 +27,10 @@ import org.junit.jupiter.api.Test;
  * decision, and netPayableTotal — the payable figure on closure. Assessed,
  * deductible, adjustment, verifier and proposals stay off the wire. V16 deliberately
  * adds needInfoReason — the adjuster's requested items, visible only while the claim
- * waits on the claimant (null everywhere else).
+ * waits on the claimant (null everywhere else). V3 S3 deliberately adds the
+ * required-documents tracker (documentsReceived/documentsTotal counts plus the
+ * per-item requiredDocuments labels) — counts and labels only, never decided_by,
+ * attachment ids, or any other internal field.
  */
 class ClaimantClaimViewTest {
 
@@ -38,7 +41,8 @@ class ClaimantClaimViewTest {
                 .toList();
         assertEquals(List.of("claimNumber", "status", "steps", "decision", "indemnityAmount",
                 "decisionRemarks", "covers", "claimedTotal", "netPayableTotal",
-                "needInfoReason"), components,
+                "needInfoReason", "documentsReceived", "documentsTotal",
+                "requiredDocuments"), components,
                 "adding an internal field to the claimant view is a deliberate act");
     }
 

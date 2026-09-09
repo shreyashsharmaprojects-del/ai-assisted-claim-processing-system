@@ -21,7 +21,8 @@ public record StagedClaimView(String claimNumber, String status, String stage, S
         String needInfoReason, String needInfoPriorStage,
         List<StagedCoverView> covers, BigDecimal claimedTotal,
         List<VerificationView> verifications, BigDecimal authorityLimit,
-        String authorityBasis, Boolean proposalsSaved, BigDecimal proposedTotal) {
+        String authorityBasis, Boolean proposalsSaved, BigDecimal proposedTotal,
+        Integer documentsReceived, Integer documentsTotal) {
 
     public record StagedCoverView(String coverCode, String displayName,
             BigDecimal claimedAmount, BigDecimal subLimit, boolean aboveLimit,

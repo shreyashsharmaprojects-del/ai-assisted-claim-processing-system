@@ -15,7 +15,7 @@ public record InternalClaimView(String claimNumber, String status, String level,
         String policyNumber, String productCode, Object coverage, String holderName,
         LocalDate lossDate, String lossLocation, String lossDescription, String claimantRemarks,
         BigDecimal reserveAmount, String assignedTo, List<AttachmentView> attachments,
-        List<NoteView> notes) {
+        List<NoteView> notes, Integer documentsReceived, Integer documentsTotal) {
 
     public record AttachmentView(Long id, String originalName, String label,
             Long verificationId) {

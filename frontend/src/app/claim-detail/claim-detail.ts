@@ -21,6 +21,17 @@ interface NoteView {
   author: string | null;
 }
 
+/** One required-document checklist row (staff shape: full row incl. decidedBy). */
+interface RequiredDocRow {
+  checkId: number;
+  docKey: string;
+  displayName: string;
+  status: string;
+  attachmentId: number | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+
 interface AuditEntry {
   id: number;
   action: string;
@@ -178,6 +189,13 @@ export class ClaimDetail {
   protected readonly auditError = signal<string | null>(null);
   /** V17: the unified claim timeline (notes + documents + checks + milestones). */
   protected readonly timeline = signal<TimelineEntry[]>([]);
+  /** S3: the required-documents checklist (staff rows; empty until loaded). */
+  protected readonly requiredDocs = signal<RequiredDocRow[]>([]);
+  protected readonly reqDocsError = signal<string | null>(null);
+  protected readonly reqDocsBusy = signal(false);
+  protected reqLinkFor: Record<number, string> = {};
+  protected reqWaiveFor: Record<number, string> = {};
+  protected showWaiveFor: Record<number, boolean> = {};
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
@@ -794,6 +812,9 @@ export class ClaimDetail {
       // V17: the timeline loads with the claim (same auth, best-effort — the
       // workspace works without it, milestones still show in the audit panel).
       void this.loadTimeline(headers);
+      // S3: the required-documents checklist (same auth, best-effort — the
+      // workspace works without it).
+      void this.loadRequiredDocs(headers);
       if (this.isSupervisor()) {
         void this.loadAudit(headers);
       }
@@ -882,6 +903,111 @@ export class ClaimDetail {
       this.timeline.set(feed ?? []);
     } catch {
       this.timeline.set([]);
+    }
+  }
+
+  // --- required documents (S3) -------------------------------------------------
+
+  /** Received over total on the staff checklist (WAIVED counts as decided, not received). */
+  protected reqDocsReceived(): number {
+    return this.requiredDocs().filter((d) => d.status === 'RECEIVED').length;
+  }
+
+  protected reqDocsTotal(): number {
+    return this.requiredDocs().length;
+  }
+
+  /** Link-target attachments for one row: claim files not verification-bound. */
+  protected reqDocCandidates(): AttachmentView[] {
+    return this.attachmentViews().filter((a) => a.verificationId == null);
+  }
+
+  /** Label for the link picker option (human label, else filename). */
+  protected reqDocOptionName(attachment: AttachmentView): string {
+    return this.docName(attachment);
+  }
+
+  private async loadRequiredDocs(headers: HttpHeaders): Promise<void> {
+    this.reqDocsError.set(null);
+    try {
+      const res = await firstValueFrom(
+        this.http.get<{
+          documentsReceived: number;
+          documentsTotal: number;
+          items: RequiredDocRow[];
+        }>(`/api/claims/${this.claimNumber}/required-documents`, { headers }),
+      );
+      this.requiredDocs.set(res?.items ?? []);
+    } catch {
+      this.requiredDocs.set([]);
+      this.reqDocsError.set('The required-documents checklist could not be loaded.');
+    }
+  }
+
+  /** Assignee-only: link a claim file as the evidence for one checklist row. */
+  async linkRequiredDoc(checkId: number) {
+    const raw = (this.reqLinkFor[checkId] ?? '').trim();
+    if (!raw) {
+      this.error.set('Choose a document to link.');
+      return;
+    }
+    this.error.set(null);
+    this.reqDocsBusy.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.reqDocsBusy.set(false);
+      return;
+    }
+    try {
+      await firstValueFrom(
+        this.http.post(
+          `/api/claims/${this.claimNumber}/required-documents/${checkId}/link`,
+          { attachmentId: Number(raw) },
+          { headers },
+        ),
+      );
+      this.reqLinkFor[checkId] = '';
+      this.toasts.success('Document linked.');
+      await this.loadRequiredDocs(headers);
+      await this.loadTimeline(headers);
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not link the document.'));
+    } finally {
+      this.reqDocsBusy.set(false);
+    }
+  }
+
+  /** Assignee-only: waive one checklist row with a rationale. */
+  async waiveRequiredDoc(checkId: number) {
+    const rationale = (this.reqWaiveFor[checkId] ?? '').trim();
+    if (!rationale) {
+      this.error.set('A rationale is required to waive a required document.');
+      return;
+    }
+    this.error.set(null);
+    this.reqDocsBusy.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.reqDocsBusy.set(false);
+      return;
+    }
+    try {
+      await firstValueFrom(
+        this.http.post(
+          `/api/claims/${this.claimNumber}/required-documents/${checkId}/waive`,
+          { rationale },
+          { headers },
+        ),
+      );
+      this.reqWaiveFor[checkId] = '';
+      this.showWaiveFor[checkId] = false;
+      this.toasts.success('Document waived.');
+      await this.loadRequiredDocs(headers);
+      await this.loadTimeline(headers);
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not waive the document.'));
+    } finally {
+      this.reqDocsBusy.set(false);
     }
   }
 
