@@ -542,3 +542,49 @@ Content-Disposition: form-data; name="docKey"\r
 \r
 FINAL_BILL
 ------AttachDocKeyBoundary--\r
+
+### Adjuster attach — upload v2 that supersedes v1 (assignee or SUPERVISOR)
+# Optional advisory `docType` part (<=60 chars, else 400) + `replacesId` part
+# (id of the prior attachment on the SAME claim; cross-claim or unknown id ->
+# 404, never a leak). CLOSED claims still 400. The timeline entry for v2 gains
+# " (supersedes: <v1 file name>)" text; AttachmentView carries docType +
+# replacesId. docType is advisory — it does not drive the S3 docKey auto-link
+# (pass both when the v2 is also the evidence for a required doc).
+# Find v1's id via the full/staged view (attachments array).
+POST {{host}}/api/claims/CLM-000001/attachments?label=Final%20bill%20(corrected)
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----AttachSupersedeBoundary
+
+------AttachSupersedeBoundary\r
+Content-Disposition: form-data; name="file"; filename="final-bill-v2.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./final-bill-v2.pdf
+------AttachSupersedeBoundary\r
+Content-Disposition: form-data; name="docType"\r
+\r
+FINAL_BILL
+------AttachSupersedeBoundary\r
+Content-Disposition: form-data; name="replacesId"\r
+\r
+1
+------AttachSupersedeBoundary--\r
+
+### Claimant documents — upload with docType (own claim in NEED_INFO; 404 otherwise)
+# Same advisory `docType` part as the adjuster attach above (<=60 chars, else
+# 400) + optional `replacesId` for a same-claim row. CLOSED claims still 400.
+# Create corrected-bill.pdf next to this file first.
+POST {{host}}/api/claims/CLM-000001/documents?label=Corrected%20bill
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=----ClaimantDocTypeBoundary
+
+------ClaimantDocTypeBoundary\r
+Content-Disposition: form-data; name="file"; filename="corrected-bill.pdf"\r
+Content-Type: application/pdf\r
+\r
+< ./corrected-bill.pdf
+------ClaimantDocTypeBoundary\r
+Content-Disposition: form-data; name="docType"\r
+\r
+FINAL_BILL
+------ClaimantDocTypeBoundary--\r

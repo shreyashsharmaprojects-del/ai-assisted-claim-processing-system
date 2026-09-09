@@ -18,16 +18,22 @@ public record InternalClaimView(String claimNumber, String status, String level,
         List<NoteView> notes, Integer documentsReceived, Integer documentsTotal) {
 
     public record AttachmentView(Long id, String originalName, String label,
-            Long verificationId) {
+            Long verificationId, String docType, Long replacesId) {
 
         /** Pre-V16 convenience: rows without a label. */
         public AttachmentView(Long id, String originalName) {
-            this(id, originalName, null, null);
+            this(id, originalName, null, null, null, null);
         }
 
         /** Pre-V17 convenience: rows without a verification link. */
         public AttachmentView(Long id, String originalName, String label) {
-            this(id, originalName, label, null);
+            this(id, originalName, label, null, null, null);
+        }
+
+        /** Pre-V20 convenience: rows without supersede metadata. */
+        public AttachmentView(Long id, String originalName, String label,
+                Long verificationId) {
+            this(id, originalName, label, verificationId, null, null);
         }
     }
 

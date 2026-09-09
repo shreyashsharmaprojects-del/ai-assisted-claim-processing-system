@@ -67,6 +67,10 @@ public class ClaimWorkController {
      *
      * <p>V17: accepts an optional {@code verificationId} part linking the file
      * to one verification check (per-check evidence, shown on the timeline).
+     *
+     * <p>V20 (S4): accepts an optional advisory {@code docType} (≤60 chars,
+     * else 400) and {@code replacesId} (the prior attachment this upload
+     * supersedes — same claim only, else 404).
      */
     @PostMapping(value = "/{claimNumber}/attachments",
             consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -75,10 +79,12 @@ public class ClaimWorkController {
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "label", required = false) String label,
             @RequestParam(value = "verificationId", required = false) Long verificationId,
-            @RequestParam(value = "docKey", required = false) String docKey) {
+            @RequestParam(value = "docKey", required = false) String docKey,
+            @RequestParam(value = "docType", required = false) String docType,
+            @RequestParam(value = "replacesId", required = false) Long replacesId) {
         return claimWorkService.attach(claimNumber, jwt.getSubject(),
                 Authorities.isSupervisor(authentication), file, label, verificationId,
-                docKey);
+                docKey, docType, replacesId);
     }
 
     /**

@@ -285,6 +285,10 @@ export class ClaimDetail {
   ];
   protected docChoice = 'Hospital bill';
   protected docCustom = '';
+  /** S4: advisory doc-type for the upload (a required-doc docKey, or 'Other'). */
+  protected attachDocType = 'Other';
+  /** S4: id (as string) of the existing attachment this upload supersedes. */
+  protected attachReplaces = '';
 
   constructor() {
     void this.load();
@@ -754,6 +758,38 @@ export class ClaimDetail {
   /** Display name: the human label when set, else the stored filename. */
   protected docName(attachment: AttachmentView): string {
     return attachment.label?.trim() ? attachment.label : attachment.originalName;
+  }
+
+  /** S4: doc-type options = the claim's required docs (docKey value) + "Other". */
+  protected attachDocTypeOptions(): Array<{ value: string; label: string }> {
+    const options = this.requiredDocs().map((row) => ({
+      value: row.docKey,
+      label: row.displayName,
+    }));
+    options.push({ value: 'Other', label: 'Other' });
+    return options;
+  }
+
+  /** S4: existing attachments on the claim, offered as "replaces" targets. */
+  protected attachReplacesOptions(): AttachmentView[] {
+    return this.attachmentViews();
+  }
+
+  /** S4: name shown for one "replaces" option (filename, never blank). */
+  protected attachReplacesName(attachment: AttachmentView): string {
+    return attachment.originalName?.trim()
+      ? attachment.originalName
+      : (attachment.label?.trim() ? attachment.label : `Attachment #${attachment.id}`);
+  }
+
+  /** S4: parses "(supersedes: <originalName>)" from backend timeline text. */
+  protected supersedesName(detail: string | null | undefined): string | null {
+    if (!detail) {
+      return null;
+    }
+    const match = /\(supersedes:\s*([^)]+)\)/.exec(detail);
+    const name = match?.[1]?.trim();
+    return name ? name : null;
   }
 
   /** The label the upload form will store (dropdown choice or the custom name). */
@@ -1438,12 +1474,21 @@ export class ClaimDetail {
       if (verificationId != null) {
         form.append('verificationId', String(verificationId));
       }
+      // S4: advisory docType + supersede link (backend param names: docType, replacesId).
+      if (this.attachDocType && this.attachDocType !== 'Other') {
+        form.append('docType', this.attachDocType);
+      }
+      const replacesId = Number(this.attachReplaces);
+      if (this.attachReplaces.trim() && Number.isFinite(replacesId)) {
+        form.append('replacesId', String(replacesId));
+      }
       await firstValueFrom(
         this.http.post(`/api/claims/${this.claimNumber}/attachments`, form, {
           headers,
         }),
       );
       fileInput.value = '';
+      this.attachReplaces = '';
       this.toasts.success('Document attached.');
       await this.mergeAttachments(headers);
       await this.loadTimeline(headers);

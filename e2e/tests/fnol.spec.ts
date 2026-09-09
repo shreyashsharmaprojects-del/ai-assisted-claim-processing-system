@@ -236,3 +236,62 @@ test('claimant status screen shows no reserve or internal notes, on screen or wi
 
   expect(leaked, `internal fields leaked on the claimant wire: ${leaked.join(', ')}`).toEqual([]);
 });
+
+/**
+ * S4 supersede journey: the holding adjuster attaches a bill (v1), then uploads
+ * a corrected bill (v2) with detail-attach-replaces pointing at v1 and an
+ * explicit detail-attach-doctype. The timeline renders a
+ * detail-timeline-supersedes chip naming the v1 file.
+ */
+test('adjuster uploads a bill v2 that supersedes v1 and the timeline shows the chip', async ({
+  browser,
+}: {
+  browser: Browser;
+}) => {
+  test.setTimeout(240_000);
+  const claimantContext = await browser.newContext();
+  const claimantPage = await claimantContext.newPage();
+  await registerClaimant(claimantPage);
+  await completeFnolStep1(claimantPage);
+  await claimantPage.getByTestId('fnol-loss-date').fill(lossDate);
+  await claimantPage.getByTestId('fnol-loss-location').fill('London');
+  await claimantPage.getByTestId('fnol-loss-description').fill('Kitchen flooded after a pipe burst.');
+  await claimantPage.getByTestId('fnol-submit').click();
+  await expect(claimantPage.getByTestId('claim-number')).toBeVisible();
+  const claimNumber = ((await claimantPage.getByTestId('claim-number').textContent()) ?? '').trim();
+  await claimantContext.close();
+
+  const holder = await openClaimAsHolder(browser, claimNumber);
+
+  // v1: attach the first bill; the upload button re-enables when the round-trip finishes.
+  await holder.getByTestId('detail-doc-file').setInputFiles({
+    name: 'bill-v1.png',
+    mimeType: 'image/png',
+    buffer: PHOTO,
+  });
+  const uploadButton = holder.getByTestId('detail-doc-upload');
+  await uploadButton.click();
+  await expect(uploadButton).toBeEnabled();
+  // The v1 attachment is now offered as a "replaces" target (default "No" + v1).
+  const replaces = holder.getByTestId('detail-attach-replaces');
+  await expect(replaces.locator('option')).toHaveCount(2);
+  await expect(replaces.locator('option', { hasText: 'bill-v1.png' })).toHaveCount(1);
+
+  // v2: corrected bill superseding v1, with an explicit document type.
+  await holder.getByTestId('detail-doc-file').setInputFiles({
+    name: 'bill-v2.png',
+    mimeType: 'image/png',
+    buffer: PHOTO,
+  });
+  await holder.getByTestId('detail-attach-doctype').selectOption({ index: 0 });
+  await replaces.selectOption({ label: 'bill-v1.png' });
+  await uploadButton.click();
+  await expect(uploadButton).toBeEnabled();
+
+  // The timeline shows exactly one supersedes chip naming the v1 file.
+  const chip = holder.getByTestId('detail-timeline-supersedes');
+  await expect(chip).toHaveCount(1);
+  await expect(chip).toContainText('bill-v1.png');
+
+  await holder.context().close();
+});

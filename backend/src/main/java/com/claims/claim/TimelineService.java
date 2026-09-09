@@ -90,6 +90,8 @@ public class TimelineService {
         }
 
         // Documents: who attached what (claim-level + per-check).
+        // V20 (S4): superseding uploads name the replaced document inline
+        // ("supersedes: <originalName>"); missing replaced rows leave plain text.
         for (Attachment attachment : attachments
                 .findByClaimIdOrderById(claim.getId())) {
             String name = attachment.getLabel() == null
@@ -98,9 +100,18 @@ public class TimelineService {
                             : attachment.getLabel();
             String scope = attachment.getVerificationId() == null ? "Attached"
                     : "Verification evidence";
+            String detail = scope + ": " + name;
+            if (attachment.getReplacesAttachmentId() != null) {
+                String superseded = attachments.findById(
+                        attachment.getReplacesAttachmentId())
+                        .map(Attachment::getOriginalName).orElse(null);
+                if (superseded != null) {
+                    detail = detail + " (supersedes: " + superseded + ")";
+                }
+            }
             feed.add(new TimelineEntry("DOCUMENT",
                     displayNameOfSub(attachment.getUploadedBySub()),
-                    scope + ": " + name, name, attachment.getId(),
+                    detail, name, attachment.getId(),
                     attachment.getVerificationId(),
                     atOf(attachment.getId(), "attachment", "created_at")));
         }

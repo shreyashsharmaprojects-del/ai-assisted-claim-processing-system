@@ -61,6 +61,23 @@ public class Attachment {
     @Column(name = "size_bytes")
     private Long sizeBytes;
 
+    /**
+     * V20: advisory document type (mirrors required_document.doc_key for
+     * checklist evidence, free for ad-hoc uploads). Independent of the S3
+     * docKey auto-link — a non-sensitive display hint, never a linkage key.
+     * Null on pre-V20 rows.
+     */
+    @Column(name = "doc_type")
+    private String docType;
+
+    /**
+     * V20: the prior attachment this upload supersedes (re-upload chains).
+     * Null = original. The replaced row must belong to the same claim
+     * (guarded in the services, not by the schema).
+     */
+    @Column(name = "replaces_attachment_id")
+    private Long replacesAttachmentId;
+
     protected Attachment() {
         // for JPA
     }
@@ -160,5 +177,21 @@ public class Attachment {
 
     public void setSizeBytes(Long sizeBytes) {
         this.sizeBytes = sizeBytes;
+    }
+
+    public String getDocType() {
+        return docType;
+    }
+
+    public void setDocType(String docType) {
+        this.docType = docType;
+    }
+
+    public Long getReplacesAttachmentId() {
+        return replacesAttachmentId;
+    }
+
+    public void setReplacesAttachmentId(Long replacesAttachmentId) {
+        this.replacesAttachmentId = replacesAttachmentId;
     }
 }

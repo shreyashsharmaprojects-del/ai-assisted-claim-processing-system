@@ -147,17 +147,41 @@ public class ClaimWorkService {
      * required-doc check (RECEIVED + attachment id, audited). The key is
      * validated before any side effect: unknown keys are a 400 naming the
      * valid keys.
+     *
+     * <p>V20 (S4): optional advisory {@code docType} (≤60 chars, else 400) and
+     * {@code replacesId} (the prior attachment this upload supersedes; the
+     * replaced row must belong to the same claim, else 404). Independent of
+     * the docKey auto-link, which keeps working as before.
      */
     @Transactional
     public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
             boolean supervisor, org.springframework.web.multipart.MultipartFile file,
             String label, Long verificationId, String docKey) {
+        return attach(claimNumber, actorSub, supervisor, file, label, verificationId,
+                docKey, null, null);
+    }
+
+    @Transactional
+    public InternalClaimView.AttachmentView attach(String claimNumber, String actorSub,
+            boolean supervisor, org.springframework.web.multipart.MultipartFile file,
+            String label, Long verificationId, String docKey, String docType,
+            Long replacesId) {
         Claim claim = requireVisible(claimNumber, actorSub, supervisor);
         if ("CLOSED".equals(claim.getStatus()) || claim.getDecision() != null) {
             throw new InvalidRequestException("This claim has already been decided.");
         }
         if (file == null || file.isEmpty()) {
             throw new InvalidRequestException("A file is required.");
+        }
+        String trimmedDocType = docType == null || docType.isBlank() ? null : docType.trim();
+        if (trimmedDocType != null && trimmedDocType.length() > 60) {
+            throw new InvalidRequestException(
+                    "The document type may be at most 60 characters.");
+        }
+        if (replacesId != null) {
+            attachments.findById(replacesId)
+                    .filter(a -> a.getClaimId().equals(claim.getId()))
+                    .orElseThrow(ClaimNotFoundException::new);
         }
         if (docKey != null && !docKey.isBlank()) {
             Policy policy = policies.findById(claim.getPolicyId())
@@ -176,12 +200,16 @@ public class ClaimWorkService {
             throw new InvalidRequestException(
                     "The document name may be at most 120 characters.");
         }
-        Attachment row = attachments.save(new Attachment(claim.getId(),
+        Attachment row = new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
-                actorSub, verificationId, photo.sha256(), photo.sizeBytes()));
+                actorSub, verificationId, photo.sha256(), photo.sizeBytes());
+        row.setDocType(trimmedDocType);
+        row.setReplacesAttachmentId(replacesId);
+        row = attachments.save(row);
         requiredDocuments.tryAutoLink(claim, docKey, row.getId(), actorSub);
         return new InternalClaimView.AttachmentView(row.getId(), row.getOriginalName(),
-                row.getLabel(), row.getVerificationId());
+                row.getLabel(), row.getVerificationId(), row.getDocType(),
+                row.getReplacesAttachmentId());
     }
 
     /**
@@ -237,7 +265,8 @@ public class ClaimWorkService {
         List<InternalClaimView.AttachmentView> attachmentViews = attachments
                 .findByClaimIdOrderById(claim.getId()).stream()
                 .map(a -> new InternalClaimView.AttachmentView(a.getId(),
-                        a.getOriginalName(), a.getLabel(), a.getVerificationId()))
+                        a.getOriginalName(), a.getLabel(), a.getVerificationId(),
+                        a.getDocType(), a.getReplacesAttachmentId()))
                 .toList();
         List<InternalClaimView.NoteView> noteViews = notes
                 .findByClaimIdOrderByCreatedAtAscIdAsc(claim.getId()).stream()

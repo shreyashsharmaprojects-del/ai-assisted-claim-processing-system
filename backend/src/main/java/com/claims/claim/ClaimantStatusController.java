@@ -103,6 +103,10 @@ public class ClaimantStatusController {
      * as a labelled attachment the adjuster sees on the documents panel; the
      * claimant stays on NEED_INFO until they send the text response — upload
      * and response are separate steps so either order works.
+     *
+     * <p>V20 (S4): accepts an optional advisory {@code docType} (≤60 chars,
+     * else 400) and {@code replacesId} (the prior attachment this upload
+     * supersedes — same claim only, else 404).
      */
     @PostMapping(value = "/{claimNumber}/documents",
             consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -110,7 +114,9 @@ public class ClaimantStatusController {
             @PathVariable String claimNumber,
             @RequestPart("file") MultipartFile file,
             @RequestParam(value = "label", required = false) String label,
-            @RequestParam(value = "docKey", required = false) String docKey) {
+            @RequestParam(value = "docKey", required = false) String docKey,
+            @RequestParam(value = "docType", required = false) String docType,
+            @RequestParam(value = "replacesId", required = false) Long replacesId) {
         Claim claim = claims.findByClaimNumber(claimNumber)
                 .orElseThrow(ClaimNotFoundException::new);
         if (!claim.getClaimantSub().equals(jwt.getSubject())) {
@@ -122,6 +128,16 @@ public class ClaimantStatusController {
         }
         if (file == null || file.isEmpty()) {
             throw new InvalidRequestException("A file is required.");
+        }
+        String trimmedDocType = docType == null || docType.isBlank() ? null : docType.trim();
+        if (trimmedDocType != null && trimmedDocType.length() > 60) {
+            throw new InvalidRequestException(
+                    "The document type may be at most 60 characters.");
+        }
+        if (replacesId != null) {
+            attachments.findById(replacesId)
+                    .filter(a -> a.getClaimId().equals(claim.getId()))
+                    .orElseThrow(ClaimNotFoundException::new);
         }
         // S3: validate the docKey before storing bytes — unknown keys are a 400
         // naming the valid keys, and no file is persisted on rejection.
@@ -138,9 +154,12 @@ public class ClaimantStatusController {
             throw new InvalidRequestException(
                     "The document name may be at most 120 characters.");
         }
-        Attachment row = attachments.save(new Attachment(claim.getId(),
+        Attachment row = new Attachment(claim.getId(),
                 photo.storagePath(), photo.contentType(), photo.originalName(), trimmed,
-                jwt.getSubject(), null, photo.sha256(), photo.sizeBytes()));
+                jwt.getSubject(), null, photo.sha256(), photo.sizeBytes());
+        row.setDocType(trimmedDocType);
+        row.setReplacesAttachmentId(replacesId);
+        row = attachments.save(row);
         // S3 auto-link runs in the request transaction via the service's
         // @Transactional method (self-call through the injected bean, not this).
         requiredDocuments.tryAutoLink(claim, docKey, row.getId(), jwt.getSubject());

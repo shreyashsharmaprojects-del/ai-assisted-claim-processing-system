@@ -1509,11 +1509,20 @@
                                   </svg>
                                 </span>
                               </button>
+                              @if (supersedesName(entry.detail); as superseded) {
+                                <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                              }
                             } @else if (entry.detail) {
                               <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                              @if (supersedesName(entry.detail); as superseded) {
+                                <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                              }
                             }
                           } @else if (entry.detail) {
                             <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                            @if (supersedesName(entry.detail); as superseded) {
+                              <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                            }
                           }
                         </div>
                       }
@@ -1582,6 +1591,31 @@
                       class="input"
                       data-testid="detail-doc-file"
                     />
+                    <label for="doc-doctype">Document type</label>
+                    <select
+                      id="doc-doctype"
+                      class="input"
+                      data-testid="detail-attach-doctype"
+                      [(ngModel)]="attachDocType"
+                      name="attachDocType"
+                    >
+                      @for (option of attachDocTypeOptions(); track option.value) {
+                        <option [value]="option.value">{{ option.label }}</option>
+                      }
+                    </select>
+                    <label for="doc-replaces">Replaces (optional)</label>
+                    <select
+                      id="doc-replaces"
+                      class="input"
+                      data-testid="detail-attach-replaces"
+                      [(ngModel)]="attachReplaces"
+                      name="attachReplaces"
+                    >
+                      <option value="">No — a new document</option>
+                      @for (attachment of attachReplacesOptions(); track attachment.id) {
+                        <option [value]="attachment.id">{{ attachReplacesName(attachment) }}</option>
+                      }
+                    </select>
                     <button
                       type="button"
                       class="btn btn--secondary"

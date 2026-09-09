@@ -5,6 +5,43 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S4 document metadata + supersede (V20 doc_type + replaces_attachment_id)
+
+**Context:** Duplicate uploads had no chain: a corrected bill was just another
+row, so adjusters could not tell v2 superseded v1. V20 adds advisory
+`attachment.doc_type VARCHAR(60)` (mirrors `required_document.doc_key`, free
+for ad-hoc) + `replaces_attachment_id` (FK → attachment, ON DELETE SET NULL)
+with `idx_attachment_replaces`. History stays append-only — old bytes stay.
+
+**What changed (all additive):**
+- **Both uploads accept `docType` (≤60 chars, else 400) + `replacesId`:**
+  adjuster attach (`ClaimWorkController`) + claimant NEED_INFO documents
+  (`ClaimantStatusController`, multipart part names `docType`/`replacesId`).
+  Guards: the replaced row must belong to the same claim (cross-claim or
+  unknown `replacesId` → 404, never a leak); CLOSED claims still 400.
+- **Timeline:** the new upload's entry gains ` (supersedes: <originalName>)`
+  text; a chain of 3 renders in order. `AttachmentView` carries `docType` +
+  `replacesId` (both nullable).
+- **Frontend (adjuster-only):** the claim-detail attach form gains a doc-type
+  `<select>` (required-doc options + "Other", testid `detail-attach-doctype`)
+  and a "replaces" picker over the claim's existing attachments (testid
+  `detail-attach-replaces`); timeline rows show a "supersedes X" chip (testid
+  `detail-timeline-supersedes`). The claimant side was deliberately left alone
+  — claimants have no attachments list/timeline to pick from or render into.
+- **docType is advisory** and independent of the S3 `docKey` auto-link:
+  `docKey` still drives PENDING→RECEIVED flips; `docType` rides along without
+  affecting it.
+
+**Verified:** `AttachmentSupersedeIntegrationTest` 6/6 (same-claim link +
+timeline text, cross-claim/unknown replacesId 404, docType >60 → 400,
+docKey auto-link unaffected, chain of 3, CLOSED 400 kept), full backend
+suite 266/266 (260/260 at S3 per `git log` + 6 new — docs-only session,
+tests not re-run), frontend build green, `fnol.spec` 4/4 (3 existing + 1
+new S4 supersede journey: v2 upload with replaces picker → timeline chip).
+
+**Deliberately not built (Non-goals):** full version-history UI, diffing
+between versions, delete-old-on-replace (append-only history).
+
 ### 2026-09-09 — S3 required-documents checklist per product (V19 tables + seeds)
 
 **Context:** "What's missing" lived in free-text NEED_INFO notes, so claimants
