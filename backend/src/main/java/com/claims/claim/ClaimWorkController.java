@@ -50,7 +50,8 @@ public class ClaimWorkController {
     public InternalClaimView reserve(@AuthenticationPrincipal Jwt jwt, Authentication authentication,
             @PathVariable String claimNumber, @RequestBody ReserveRequest request) {
         return claimWorkService.updateReserve(claimNumber, jwt.getSubject(),
-                Authorities.isSupervisor(authentication), request.amount());
+                Authorities.isSupervisor(authentication), request.amount(),
+                request.expectedVersion());
     }
 
     @PostMapping("/{claimNumber}/notes")
@@ -137,7 +138,11 @@ public class ClaimWorkController {
         }
     }
 
-    public record ReserveRequest(BigDecimal amount) {
+    /**
+     * V21 (V3 S5): {@code expectedVersion} is the claim version the caller loaded —
+     * a stale value is a 409, never a silent overwrite.
+     */
+    public record ReserveRequest(BigDecimal amount, Long expectedVersion) {
     }
 
     public record NoteRequest(String body) {

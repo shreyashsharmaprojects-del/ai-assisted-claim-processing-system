@@ -62,6 +62,13 @@ public class EscalationDecisionService {
             ClaimDecisionInput input) {
         Claim claim = claims.findByClaimNumberForUpdate(claimNumber)
                 .orElseThrow(ClaimNotFoundException::new);
+        // V21 (V3 S5): compare-and-swap — a stale caller is a 409 BEFORE any guard,
+        // so a conflict never masks a guard 400.
+        if (input == null || input.expectedVersion() == null
+                || !input.expectedVersion().equals(claim.getVersion())) {
+            throw new jakarta.persistence.OptimisticLockException(
+                    "This claim changed since you opened it. Reload and retry.");
+        }
         if (!"ESCALATED_SUPERVISOR".equals(claim.getStatus())) {
             if (claim.getDecision() != null) {
                 throw new InvalidRequestException("This claim has already been decided.");
@@ -95,7 +102,8 @@ public class EscalationDecisionService {
     private ClaimDecisionOutcome deny(Claim claim, Policy policy, String actorSub,
             String rationale, Instant now) {
         claim.deny(rationale, now);
-        claims.save(claim);
+        // Flush: see ClaimDecisionService.deny.
+        claims.saveAndFlush(claim);
         metrics.decision("DENIED");
         auditLog.append(actorSub, "DECISION", "CLAIM", claim.getId(),
                 AuditJson.of(Map.of("status", "ESCALATED_SUPERVISOR", "level", claim.getLevel())),
@@ -114,7 +122,8 @@ public class EscalationDecisionService {
     private ClaimDecisionOutcome approve(Claim claim, Policy policy, String actorSub,
             BigDecimal amount, String rationale, Instant now) {
         claim.approve(amount, now);
-        claims.save(claim);
+        // Flush: see ClaimDecisionService.deny.
+        claims.saveAndFlush(claim);
         metrics.decision("APPROVED");
         // authorized_by is NULL on purpose: a supervisor token has no app_user row (the
         // staff cache is L1/L2 adjusters only); the DECISION audit row below carries their

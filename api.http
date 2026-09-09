@@ -144,6 +144,15 @@ Content-Type: application/json
 
 { "amount": 1500.00 }
 
+### Set/update the reserve with optimistic concurrency (S5: send the loaded version)
+# 409 shape on a stale version: {"error":"CONFLICT","message":"This claim changed
+# since you opened it. Reload and retry."} — refetch the claim and retry with the new version.
+PUT {{host}}/api/claims/CLM-000001/reserve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "amount": 1500.00, "expectedVersion": 0 }
+
 ### Add an internal note (assigned adjuster or SUPERVISOR)
 POST {{host}}/api/claims/CLM-000001/notes
 Authorization: Bearer {{token}}

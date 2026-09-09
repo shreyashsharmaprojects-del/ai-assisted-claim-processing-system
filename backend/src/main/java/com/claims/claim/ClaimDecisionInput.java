@@ -8,5 +8,10 @@ import java.math.BigDecimal;
  * required for both, and an indemnity amount is required (and only meaningful) for an
  * approval.
  */
-public record ClaimDecisionInput(String decision, BigDecimal indemnityAmount, String rationale) {
+public record ClaimDecisionInput(String decision, BigDecimal indemnityAmount, String rationale,
+        Long expectedVersion) {
+    /** Pre-V21 convenience: requests without a version (kept for service-internal callers). */
+    public ClaimDecisionInput(String decision, BigDecimal indemnityAmount, String rationale) {
+        this(decision, indemnityAmount, rationale, null);
+    }
 }

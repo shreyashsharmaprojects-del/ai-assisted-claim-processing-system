@@ -79,8 +79,14 @@ public class ClaimWorkService {
     /** Sets/updates the reserve (never authority-gated — an internal estimate). */
     @Transactional
     public InternalClaimView updateReserve(String claimNumber, String actorSub,
-            boolean supervisor, BigDecimal amount) {
+            boolean supervisor, BigDecimal amount, Long expectedVersion) {
         Claim claim = requireVisible(claimNumber, actorSub, supervisor);
+        // V21 (V3 S5): compare-and-swap — a stale caller is a 409 BEFORE any guard,
+        // so a conflict never masks a guard 400.
+        if (expectedVersion == null || !expectedVersion.equals(claim.getVersion())) {
+            throw new jakarta.persistence.OptimisticLockException(
+                    "This claim changed since you opened it. Reload and retry.");
+        }
         if (amount == null || amount.signum() < 0) {
             throw new InvalidRequestException("Reserve amount must be zero or more.");
         }
@@ -94,7 +100,9 @@ public class ClaimWorkService {
         }
         BigDecimal before = claim.getReserveAmount();
         claim.setReserveAmount(amount);
-        claims.save(claim);
+        // Flush so the returned view carries the bumped version the SPA's next
+        // write must echo (the in-memory @Version only moves on flush).
+        claims.saveAndFlush(claim);
         auditLog.append(actorSub, "RESERVE_SET", "CLAIM", claim.getId(),
                 AuditJson.of(before == null ? Map.of() : Map.of("reserveAmount", before)),
                 AuditJson.of(Map.of("claimNumber", claimNumber, "reserveAmount", amount)),
@@ -290,7 +298,7 @@ public class ClaimWorkService {
                 displayNameOf(claim.getAssignedAdjusterId()),
                 attachmentViews,
                 noteViews,
-                docCounts[0], docCounts[1]);
+                docCounts[0], docCounts[1], claim.getVersion());
     }
 
     private String displayNameOf(Long appUserId) {

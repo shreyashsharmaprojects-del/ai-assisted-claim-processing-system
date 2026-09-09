@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 
 /**
  * A claim as filed at FNOL. Sliced vertically: columns the current slice writes are mapped
@@ -37,6 +38,10 @@ public class Claim {
 
     @Column(name = "status", nullable = false)
     private String status;
+
+    /** V21 (V3 S5): optimistic-concurrency counter for the money-path writers. */
+    @Version
+    private Long version;
 
     @Column(name = "loss_date", nullable = false)
     private LocalDate lossDate;
@@ -133,6 +138,10 @@ public class Claim {
 
     public String getStatus() {
         return status;
+    }
+
+    public Long getVersion() {
+        return version;
     }
 
     public LocalDate getLossDate() {

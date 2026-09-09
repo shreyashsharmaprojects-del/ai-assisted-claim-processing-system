@@ -86,6 +86,13 @@ public class ClaimDecisionService {
             // surface (slice 5); this endpoint is never theirs.
             throw new ClaimNotFoundException();
         }
+        // V21 (V3 S5): compare-and-swap — a stale caller is a 409 BEFORE any guard,
+        // so a conflict never masks a guard 400.
+        if (input == null || input.expectedVersion() == null
+                || !input.expectedVersion().equals(claim.getVersion())) {
+            throw new jakarta.persistence.OptimisticLockException(
+                    "This claim changed since you opened it. Reload and retry.");
+        }
         if ("CLOSED".equals(claim.getStatus()) || claim.getDecision() != null) {
             throw new InvalidRequestException("This claim has already been decided.");
         }
@@ -122,7 +129,9 @@ public class ClaimDecisionService {
     private ClaimDecisionOutcome deny(Claim claim, AppUser actor, Policy policy,
             String rationale, Instant now) {
         claim.deny(rationale, now);
-        claims.save(claim);
+        // Flush: the caller's ClaimDecisionView doesn't carry a version, but a
+        // flush keeps the persistence context honest for any same-tx re-read.
+        claims.saveAndFlush(claim);
         metrics.decision("DENIED");
         auditLog.append(actor.getKeycloakSub(), "DECISION", "CLAIM", claim.getId(),
                 AuditJson.of(Map.of("status", "UNDER_REVIEW")),
@@ -149,7 +158,8 @@ public class ClaimDecisionService {
         switch (outcome) {
             case APPROVE -> {
                 claim.approve(amount, now);
-                claims.save(claim);
+                // Flush: see deny above.
+                claims.saveAndFlush(claim);
                 metrics.decision("APPROVED");
                 payments.save(new Payment(claim.getId(), amount, actor.getId(), now));
                 auditLog.append(actor.getKeycloakSub(), "DECISION", "CLAIM", claim.getId(),

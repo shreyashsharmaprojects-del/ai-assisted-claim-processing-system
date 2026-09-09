@@ -5,6 +5,42 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-09 — S5 optimistic concurrency (V21 version + @Version, 409-on-conflict)
+
+**Context:** Two adjusters on one claim (post-reassign) could silently
+overwrite each other on the money paths. V21 adds `claim.version BIGINT NOT
+NULL DEFAULT 0` with `Claim.java` `@Version private Long version` (+ getter,
+no setter). Six writers compare-and-swap via body field `expectedVersion`
+(reserve, assessment, cover-decision, decision legacy, escalation-decision,
+escalation-cover-decision); S6 reopen doesn't exist yet — its writer comes
+with S6. The version check runs before stage guards in the same transaction,
+so a 409 never masks a guard 400. A single `ApiExceptionHandler` maps every
+conflict (`OptimisticLockException` / `ObjectOptimisticLockingFailureException`
+/ manual version-mismatch) to 409 `{error:"CONFLICT", message:"This claim
+changed since you opened it. Reload and retry."}`.
+
+**What changed (all additive):**
+- **Backend:** every mutating form accepts the caller's loaded `version` as
+  `expectedVersion` (`ReserveRequest`, `AssessmentInput`,
+  `CoverDecisionInput`, `ClaimDecisionInput`, escalation inputs); mismatch
+  (or missing) → 409 via the one handler, never a 500 with driver internals.
+- **Staff views expose `version`:** `InternalClaimView` / `StagedClaimView`
+  carry it so forms can send it back. The claimant tracker was skipped — it
+  never mutates, so it needs no version.
+- **Frontend:** reserve/assessment/decision forms send their loaded `version`;
+  on 409 a warning banner ("Someone changed this claim — reloaded the
+  latest", testid `detail-conflict-banner`, `role=status`) + refetch.
+  Escalation flows through the same shared banner path.
+
+**Verified:** `ClaimConcurrencyIntegrationTest` 3/3 (v0 write ok → stale v0
+→ 409; concurrent reserve pair; stale decision after reassign), full backend
+suite 269/269 (266/266 at S4 per `git log` + 3 new — docs-only session,
+tests not re-run), frontend build green, `conflict.spec` 1/1 (stale reserve
+in a second context → banner).
+**Deliberately not built (Non-goals):** live collaboration/presence,
+SSE/polling (queues still fetch-on-load), field-level merge (last-writer-wins
+per form is correct here).
+
 ### 2026-09-09 — S4 document metadata + supersede (V20 doc_type + replaces_attachment_id)
 
 **Context:** Duplicate uploads had no chain: a corrected bill was just another

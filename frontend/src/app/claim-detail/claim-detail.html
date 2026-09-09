@@ -159,6 +159,11 @@
         Above your authority — proposals saved. Reduce, reject, or refer upwards.
       </p>
     }
+    @if (conflictNotice(); as conflict) {
+      <p class="notice notice--warning" data-testid="detail-conflict-banner" role="status">
+        {{ conflict }}
+      </p>
+    }
 
     @if (canDecide() || isSupervisor()) {
       <!-- ======================= THE NEXT STEP ======================= -->

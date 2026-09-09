@@ -123,6 +123,19 @@ public class ApiExceptionHandler {
                 "message", ex.getMessage(), "claimNumber", ex.getClaimNumber()));
     }
 
+    /**
+     * V21 (V3 S5): optimistic-concurrency conflicts (thrown explicitly on a stale
+     * {@code expectedVersion}) — one shape everywhere: 409 CONFLICT with the
+     * reload-and-retry message.
+     */
+    @ExceptionHandler({jakarta.persistence.OptimisticLockException.class,
+            org.springframework.orm.ObjectOptimisticLockingFailureException.class})
+    public ResponseEntity<java.util.Map<String, String>> versionConflict(Exception ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(java.util.Map.of(
+                "error", "CONFLICT",
+                "message", "This claim changed since you opened it. Reload and retry."));
+    }
+
     /** Anything unexpected: log the cause, never leak internals to the caller. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> unexpected(Exception ex) {

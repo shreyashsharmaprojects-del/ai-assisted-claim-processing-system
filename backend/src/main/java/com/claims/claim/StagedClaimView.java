@@ -22,7 +22,7 @@ public record StagedClaimView(String claimNumber, String status, String stage, S
         List<StagedCoverView> covers, BigDecimal claimedTotal,
         List<VerificationView> verifications, BigDecimal authorityLimit,
         String authorityBasis, Boolean proposalsSaved, BigDecimal proposedTotal,
-        Integer documentsReceived, Integer documentsTotal) {
+        Integer documentsReceived, Integer documentsTotal, Long version) {
 
     public record StagedCoverView(String coverCode, String displayName,
             BigDecimal claimedAmount, BigDecimal subLimit, boolean aboveLimit,

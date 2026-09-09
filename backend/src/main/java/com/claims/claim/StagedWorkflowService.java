@@ -353,6 +353,7 @@ public class StagedWorkflowService {
     public StagedClaimView assess(String claimNumber, String actorSub, boolean supervisor,
             AssessmentInput input) {
         Claim claim = requireAssigneeForUpdate(claimNumber, actorSub, supervisor);
+        requireExpectedVersion(input == null ? null : input.expectedVersion(), claim);
         requireOpenUnderReview(claim);
         if (!"VERIFICATION".equals(stageOf(claim))) {
             throw new InvalidRequestException(
@@ -438,7 +439,9 @@ public class StagedWorkflowService {
             claimCovers.save(row);
         }
         claim.setStage("DECISION");
-        claims.save(claim);
+        // Flush so the returned view carries the bumped version the SPA's next
+        // write must echo (the in-memory @Version only moves on flush).
+        claims.saveAndFlush(claim);
         audit("ASSESSMENT_RECORDED", actorSub, claim,
                 Map.of("status", "UNDER_REVIEW", "stage", "VERIFICATION"),
                 after(claim, "stage", "DECISION", "assessedTotal", assessedTotal), rationale);
@@ -465,7 +468,8 @@ public class StagedWorkflowService {
             ClaimDecisionInput legacy = new ClaimDecisionInput(
                     input == null ? null : input.decision(),
                     input == null ? null : input.indemnityAmount(),
-                    input == null ? null : input.rationale());
+                    input == null ? null : input.rationale(),
+                    input == null ? null : input.expectedVersion());
             return legacyDecisions.decide(claimNumber, actorSub, legacy);
         }
         return decideWithCovers(claim, actorSub, input);
@@ -473,6 +477,7 @@ public class StagedWorkflowService {
 
     private StagedClaimView decideWithCovers(Claim claim, String actorSub,
             CoverDecisionInput input) {
+        requireExpectedVersion(input == null ? null : input.expectedVersion(), claim);
         requireOpenUnderReview(claim);
         if (!"DECISION".equals(stageOf(claim))) {
             throw new InvalidRequestException(
@@ -595,7 +600,8 @@ public class StagedWorkflowService {
                 claimCovers.save(row);
             }
             claim.deny(rationale, now);
-            claims.save(claim);
+            // Flush so the returned view carries the bumped version (see assess).
+            claims.saveAndFlush(claim);
             metrics.decision("DENIED");
             audit("DECISION", actorSub, claim, Map.of("status", "UNDER_REVIEW"),
                     after(claim, "decision", "DENIED", "decisionRemarks", rationale),
@@ -632,7 +638,8 @@ public class StagedWorkflowService {
             } else {
                 claim.approve(approvedTotal, closed);
             }
-            claims.save(claim);
+            // Flush so the returned view carries the bumped version (see assess).
+            claims.saveAndFlush(claim);
             metrics.decision(mixed ? "PARTIALLY_APPROVED" : "APPROVED");
             payments.save(new Payment(claim.getId(), netTotal, actor.getId(), closed));
             audit("DECISION", actorSub, claim,
@@ -899,6 +906,7 @@ public class StagedWorkflowService {
             CoverDecisionInput input) {
         Claim claim = claims.findByClaimNumberForUpdate(claimNumber)
                 .orElseThrow(ClaimNotFoundException::new);
+        requireExpectedVersion(input == null ? null : input.expectedVersion(), claim);
         if (!"ESCALATED_SUPERVISOR".equals(claim.getStatus())) {
             if (claim.getDecision() != null) {
                 throw new InvalidRequestException("This claim has already been decided.");
@@ -911,7 +919,8 @@ public class StagedWorkflowService {
             ClaimDecisionInput legacy = new ClaimDecisionInput(
                     input == null ? null : input.decision(),
                     input == null ? null : input.indemnityAmount(),
-                    input == null ? null : input.rationale());
+                    input == null ? null : input.rationale(),
+                    input == null ? null : input.expectedVersion());
             // Supervisor path stays on the escalation service (ungated legacy close).
             return supervisorLegacyDecide(claimNumber, actorSub, legacy);
         }
@@ -929,6 +938,7 @@ public class StagedWorkflowService {
 
     private StagedClaimView decideEscalationWithCovers(Claim claim, String actorSub,
             CoverDecisionInput input) {
+        requireExpectedVersion(input == null ? null : input.expectedVersion(), claim);
         if (input == null || input.covers() == null || input.covers().isEmpty()) {
             throw new InvalidRequestException("A decision needs an outcome per cover.");
         }
@@ -1016,7 +1026,8 @@ public class StagedWorkflowService {
         }
         if (!anyApproved && anyRejected) {
             claim.deny(rationale, now);
-            claims.save(claim);
+            // Flush so the returned view carries the bumped version (see assess).
+            claims.saveAndFlush(claim);
             metrics.decision("DENIED");
             audit("DECISION", actorSub, claim, Map.of("status", "ESCALATED_SUPERVISOR"),
                     after(claim, "decision", "DENIED", "decisionRemarks", rationale),
@@ -1033,7 +1044,8 @@ public class StagedWorkflowService {
         } else {
             claim.approve(approvedTotal, now);
         }
-        claims.save(claim);
+        // Flush so the returned view carries the bumped version (see assess).
+        claims.saveAndFlush(claim);
         metrics.decision(anyRejected ? "PARTIALLY_APPROVED" : "APPROVED");
         payments.save(new Payment(claim.getId(), netTotal, null, now));
         audit("DECISION", actorSub, claim, Map.of("status", "ESCALATED_SUPERVISOR"),
@@ -1087,7 +1099,7 @@ public class StagedWorkflowService {
                 claim.getNeedInfoPriorStage(), covers.isEmpty() ? null : covers,
                 claim.getClaimedTotal(), history.isEmpty() ? null : history, limit,
                 config.getAuthorityBasis(), anyProposal ? Boolean.TRUE : null,
-                proposedTotal, docCounts[0], docCounts[1]);
+                proposedTotal, docCounts[0], docCounts[1], claim.getVersion());
     }
 
     private StagedClaimView.VerificationView verificationView(Verification row) {
@@ -1175,6 +1187,17 @@ public class StagedWorkflowService {
 
     private static String stageOf(Claim claim) {
         return claim.getStage() == null ? "REVIEW" : claim.getStage();
+    }
+
+    /**
+     * V21 (V3 S5): compare-and-swap — a stale caller is a 409 BEFORE any guard,
+     * so a conflict never masks a guard 400.
+     */
+    private static void requireExpectedVersion(Long expectedVersion, Claim claim) {
+        if (expectedVersion == null || !expectedVersion.equals(claim.getVersion())) {
+            throw new jakarta.persistence.OptimisticLockException(
+                    "This claim changed since you opened it. Reload and retry.");
+        }
     }
 
     private Policy policyOf(Claim claim) {

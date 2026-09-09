@@ -1,6 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { accessToken, hasRole } from '../auth/auth.service';
@@ -113,6 +113,8 @@ interface StagedView {
   authorityBasis?: string | null;
   proposalsSaved?: boolean | null;
   proposedTotal?: number | null;
+  /** S5 (V21): optimistic-concurrency version; every money write echoes it back as expectedVersion. */
+  version?: number | null;
 }
 
 /** The legacy decision outcome returned by POST /decision. */
@@ -210,6 +212,12 @@ export class ClaimDetail {
   }
 
   protected readonly decisionResult = signal<string | null>(null);
+  /**
+   * S5: shown after a 409 CONFLICT — another writer bumped the claim version,
+   * so the form's expectedVersion went stale. Set after the refetch, cleared
+   * on the next full load; the retry goes out against the fresh version.
+   */
+  protected readonly conflictNotice = signal<string | null>(null);
   /**
    * True once this actor refers the claim upwards: the claim has left their
    * hands (a reload would 404), so action panels hide while the confirmation
@@ -804,6 +812,7 @@ export class ClaimDetail {
 
   async load() {
     this.error.set(null);
+    this.conflictNotice.set(null);
     this.loaded.set(false);
     try {
       const headers = await this.authHeaders();
@@ -895,6 +904,39 @@ export class ClaimDetail {
       this.http.get<StagedView>(`/api/claims/${this.claimNumber}/staged`, { headers }),
     );
     this.applyView(view);
+  }
+
+  /** S5: the version the current form state was loaded at (body field `expectedVersion`). */
+  private loadedVersion(): number | null {
+    return this.view()?.version ?? null;
+  }
+
+  /** S5: the single 409 shape the backend returns on a stale write. */
+  private isConflict(err: unknown): boolean {
+    if (err instanceof HttpErrorResponse && err.status === 409) {
+      const body = err.error as { error?: string } | null;
+      return body != null && typeof body === 'object' && body.error === 'CONFLICT';
+    }
+    return false;
+  }
+
+  /**
+   * S5: on 409, refetch the claim (the retry then goes out against the fresh
+   * version) and raise the warning banner. Returns true when the error was a
+   * conflict (handled); false otherwise.
+   */
+  private async handleConflict(headers: HttpHeaders, err: unknown): Promise<boolean> {
+    if (!this.isConflict(err)) {
+      return false;
+    }
+    try {
+      await this.reloadStaged(headers);
+      await this.loadTimeline(headers);
+    } catch {
+      // The banner still explains what happened even when the refetch fails.
+    }
+    this.conflictNotice.set('Someone changed this claim — reloaded the latest');
+    return true;
   }
 
   /** Refreshes just the document list after an upload (the staged wire omits it). */
@@ -1231,13 +1273,20 @@ export class ClaimDetail {
       const view = await firstValueFrom(
         this.http.put<StagedView>(
           `/api/claims/${this.claimNumber}/assessment`,
-          { covers, rationale: this.assessmentRationale.trim() },
+          {
+            covers,
+            rationale: this.assessmentRationale.trim(),
+            expectedVersion: this.loadedVersion(),
+          },
           { headers },
         ),
       );
       this.toasts.success('Assessment recorded — claim moved to decision.');
       this.applyView(view);
     } catch (err) {
+      if (await this.handleConflict(headers, err)) {
+        return;
+      }
       this.error.set(serverMessage(err, 'Could not record the assessment.'));
     } finally {
       this.assessing.set(false);
@@ -1298,12 +1347,17 @@ export class ClaimDetail {
     }
     try {
       // The supervisor's escalation decision is its own endpoint; the assigned
-      // adjuster's decision is the other one.
+      // adjuster's decision is the other one. Both are S5 version-checked, so
+      // both send the loaded version.
       const path = this.supervisorEscalationDecision()
         ? `/api/claims/${this.claimNumber}/escalation-decision`
         : `/api/claims/${this.claimNumber}/decision`;
       const outcome = await firstValueFrom(
-        this.http.post<ClaimDecisionView>(path, body, { headers }),
+        this.http.post<ClaimDecisionView>(
+          path,
+          { ...body, expectedVersion: this.loadedVersion() },
+          { headers },
+        ),
       );
       this.decisionResult.set(this.describe(outcome));
       if (outcome.escalatedTo == null) {
@@ -1311,6 +1365,9 @@ export class ClaimDetail {
         await this.load();
       }
     } catch (err) {
+      if (await this.handleConflict(headers, err)) {
+        return;
+      }
       this.error.set(serverMessage(err, 'Could not record the decision.'));
     } finally {
       this.deciding.set(false);
@@ -1367,9 +1424,17 @@ export class ClaimDetail {
         ? `/api/claims/${this.claimNumber}/escalation-cover-decision`
         : `/api/claims/${this.claimNumber}/cover-decision`;
       const view = await firstValueFrom(
-        this.http.post<StagedView>(path, { covers, rationale: this.decisionRationale.trim() }, {
-          headers,
-        }),
+        this.http.post<StagedView>(
+          path,
+          {
+            covers,
+            rationale: this.decisionRationale.trim(),
+            expectedVersion: this.loadedVersion(),
+          },
+          {
+            headers,
+          },
+        ),
       );
       if (view.status === 'CLOSED') {
         this.decisionResult.set('Decision recorded — claim closed.');
@@ -1382,6 +1447,9 @@ export class ClaimDetail {
       }
       this.applyView(view);
     } catch (err) {
+      if (await this.handleConflict(headers, err)) {
+        return;
+      }
       this.error.set(serverMessage(err, 'Could not record the decision.'));
     } finally {
       this.deciding.set(false);
@@ -1531,13 +1599,16 @@ export class ClaimDetail {
       const view = await firstValueFrom(
         this.http.put<StagedView>(
           `/api/claims/${this.claimNumber}/reserve`,
-          { amount },
+          { amount, expectedVersion: this.loadedVersion() },
           { headers },
         ),
       );
       this.applyView(view);
       this.toasts.success('Reserve saved.');
     } catch (err) {
+      if (await this.handleConflict(headers, err)) {
+        return;
+      }
       this.error.set(serverMessage(err, 'Could not save the reserve.'));
     } finally {
       this.savingReserve.set(false);
