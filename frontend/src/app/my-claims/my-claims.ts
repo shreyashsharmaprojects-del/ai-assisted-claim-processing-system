@@ -53,6 +53,7 @@ export class MyClaims implements OnDestroy {
   protected readonly signedIn = signal(isAuthenticated());
   protected readonly query = signal('');
   protected readonly statusFilter = signal<MyClaimsStatusFilter>('ALL');
+  protected readonly exporting = signal(false);
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
@@ -175,5 +176,37 @@ export class MyClaims implements OnDestroy {
 
   protected loadMore(): void {
     void this.load(false);
+  }
+
+  /** S9 (V24): download the caller's own GDPR data as JSON (blob + Content-Disposition name). */
+  protected async exportMine(): Promise<void> {
+    if (this.exporting()) {
+      return;
+    }
+    this.exporting.set(true);
+    try {
+      const response = await firstValueFrom(
+        this.http.get('/api/privacy/me/export', {
+          responseType: 'blob',
+          observe: 'response',
+        }),
+      );
+      const body = response.body ?? new Blob();
+      const match = /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(
+        response.headers.get('Content-Disposition') ?? '',
+      );
+      const name = match?.[3]?.trim() || match?.[4]?.trim() || 'my-data.json';
+      const url = URL.createObjectURL(body);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      this.toasts.success('Your data was downloaded.');
+    } catch (err) {
+      this.toasts.error('Could not download your data.', err);
+    } finally {
+      this.exporting.set(false);
+    }
   }
 }

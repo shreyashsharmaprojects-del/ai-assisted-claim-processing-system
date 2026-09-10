@@ -15,6 +15,15 @@
       <a routerLink="/claim/new" class="btn btn--primary" data-testid="my-claims-file">
         File a claim
       </a>
+      <button
+        type="button"
+        class="btn btn--secondary"
+        data-testid="myclaims-export"
+        [disabled]="exporting()"
+        (click)="exportMine()"
+      >
+        {{ exporting() ? 'Preparing…' : 'Download my data' }}
+      </button>
     </div>
   </div>
 

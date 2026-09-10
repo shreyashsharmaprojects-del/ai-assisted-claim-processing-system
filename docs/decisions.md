@@ -5,6 +5,58 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-10 — S9 GDPR + retention story (V24 privacy_request)
+
+**Context:** The first EU pilot needs a designed privacy answer: export-my-data,
+erasure-without-rewriting-history, and a retention report — before anyone asks.
+Needs final column knowledge (S1–S8), hence late in the order. Plan:
+`docs/plan-v3.md` S9.
+
+**What changed (all additive):**
+- **Migration `V24__privacy.sql`:** `privacy_request` table (`claimant_sub`,
+  kind EXPORT|ERASURE, status COMPLETED default — a row documents a completed
+  handling, never a pending workflow, `handled_by`/`handled_at`); index on
+  sub. No PII columns added anywhere.
+- **Export `GET /api/privacy/me/export`** (CLAIMANT, own-sub enforced in the
+  service): own policies + claims + covers + attachment **metadata** (name,
+  type, size, sha, label, docType — never bytes, no storage read) + timeline
+  milestones (audit CLAIM rows) as a JSON attachment download. Slice-literal:
+  exports write **no** `privacy_request` row.
+- **Anonymize `POST /api/admin/privacy/anonymize {claimantSub, rationale}`**
+  (SUPERVISOR): overwrites **only** the listed columns —
+  `policy.holder_name→'REDACTED'`,
+  `holder_email→'redacted+<sha8(sub)>@example.invalid'` (single-owner policies
+  only — shared policies are 400 with an explanation),
+  `claim.claimant_sub→'ANON:<sha8>'` + `claimant_remarks→NULL`,
+  subject-authored `internal_note` bodies → `'[redacted]'` (row + author link
+  kept), `attachment.uploaded_by_sub→NULL`. `sha8` = first 8 hex of
+  SHA-256(sub). **Never touches:** `audit_log` (V7 trigger), payment amounts,
+  decision outcomes/remarks, claim descriptions. Writes an ERASURE row +
+  `PRIVACY_ERASURE` audit row. Idempotent rerun (the ANON: key matches, stable
+  200).
+- **Retention `GET /api/admin/privacy/retention-report`** (SUPERVISOR): fixed
+  `olderThan6y/7y/10y` counts of CLOSED claims (`closed_at` older than the
+  window; NULL excluded) + `policyClosedYears` from
+  `claims.retention.closed-years=7` (advisory — report-only, **no auto-delete**).
+- **Timeline:** anonymized actors/holders render "Redacted".
+- **Test scaffolding:** `privacy_request` in the
+  `ClaimTableResettingTest` TRUNCATE list (no FK to claim); seed holder
+  identities restored in `@BeforeEach` (redaction is permanent in the shared
+  Testcontainers DB); `@Ordered` tests with dedicated single-use policies per
+  test (an earlier anonymize would 404 later filings via holder mismatch).
+- **Frontend:** My-claims "Download my data" button (testid
+  `myclaims-export`, JSON download); `/admin/privacy` panel (supervisorGuard)
+  with anonymize confirm + retention table (testids
+  `admin-privacy-anonymize/confirm/report`).
+
+**Verified:** `PrivacyIntegrationTest` 5/5 x3 (export own-only + no export
+trail; anonymize exact columns + history byte-identical + idempotent; shared
+400; retention buckets; auth matrix), full backend suite 289/289 (284/284 at
+S8 per `git log` + 5 new — docs-only session, tests not re-run), frontend
+build green, `privacy.spec` 1/1 (valid JSON with exactly the caller's claims).
+**Deliberately not built (Non-goals):** auto-deletion jobs, consent
+management, DPA paperwork (docs link only).
+
 ### 2026-09-10 — S8 structured decisions + audit export (V23 denial_reason)
 
 **Context:** Closures carried free-text rationale only, so nobody could ask

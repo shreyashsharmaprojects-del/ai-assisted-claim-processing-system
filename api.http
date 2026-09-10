@@ -678,3 +678,35 @@ Content-Type: application/json
 {
   "active": true
 }
+
+### Privacy export — my own data as JSON (CLAIMANT only, V24 S9)
+# Own policies + claims + covers + attachment METADATA (never bytes) + timeline
+# milestones, as a JSON attachment download. Own-sub enforced inside the
+# service: another claimant's rows can never enter the payload. Writes no
+# privacy_request row (slice-literal: ERASURE rows only). Auth: token from a
+# claimant session (DevTools -> Authorization).
+GET {{host}}/api/privacy/me/export
+Authorization: Bearer {{token}}
+Accept: application/json
+
+### Privacy anonymize — erase one subject's PII (SUPERVISOR only, V24 S9)
+# Overwrites ONLY: policy holder_name/email (single-owner policies only —
+# shared policies -> 400 naming the policy), claim claimant_sub/remarks,
+# subject-authored internal_note bodies ('[redacted]', row kept), matching
+# attachment uploader links. Never audit/payments/decisions/descriptions.
+# Idempotent: a second run is a stable 200. rationale required (400).
+POST {{host}}/api/admin/privacy/anonymize
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "claimantSub": "d5f2c1a0-0000-0000-0000-000000000001",
+  "rationale": "Subject erasure request received and verified; handling now."
+}
+
+### Privacy retention report — closed-claim age buckets (SUPERVISOR only, V24 S9)
+# Fixed olderThan6y/7y/10y counts of CLOSED claims (closed_at older than the
+# window) + policyClosedYears from claims.retention.closed-years (default 7,
+# advisory). Report-only: nothing is deleted.
+GET {{host}}/api/admin/privacy/retention-report
+Authorization: Bearer {{token}}

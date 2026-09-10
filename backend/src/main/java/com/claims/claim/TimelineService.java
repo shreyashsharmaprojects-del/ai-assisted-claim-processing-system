@@ -234,6 +234,12 @@ public class TimelineService {
         if (sub == null) {
             return null;
         }
+        // V24 (V3 S9): anonymized subjects render "Redacted" — the holder row
+        // is gone (or re-keyed to ANON:<sha8>) so the claimant-branch lookup
+        // below can no longer resolve them; never leak the raw ANON: token.
+        if (sub.startsWith("ANON:")) {
+            return "Redacted";
+        }
         String staff = appUsers.findByKeycloakSub(sub)
                 .map(u -> u.getDisplayName()).orElse(null);
         if (staff != null) {
@@ -244,6 +250,10 @@ public class TimelineService {
                         + "WHERE c.claimant_sub = ? LIMIT 1",
                 rs -> rs.next() ? rs.getString(1) : null, sub);
         if (holder != null) {
+            // V24 (V3 S9): anonymized holder rows render "Redacted" too.
+            if ("REDACTED".equals(holder)) {
+                return "Redacted";
+            }
             return holder + " (claimant)";
         }
         return null;

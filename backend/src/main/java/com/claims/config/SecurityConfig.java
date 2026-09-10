@@ -130,6 +130,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/audit/export",
                                 "/api/decisions/export")
                                 .hasRole("SUPERVISOR")
+                        // V24 (V3 S9): the privacy surface — the claimant's own
+                        // export (own-sub enforced inside the service) and the
+                        // supervisor's anonymize + retention report.
+                        .requestMatchers(HttpMethod.GET, "/api/privacy/me/**")
+                                .hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.GET, "/api/admin/privacy/**")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.POST, "/api/admin/privacy/**")
+                                .hasRole("SUPERVISOR")
                         // V3 S7: the staff surface — list + active toggle,
                         // supervisor only (adjusters/claimants are 403 at the URL).
                         .requestMatchers(HttpMethod.GET, "/api/staff")
