@@ -134,11 +134,19 @@ public class SecurityConfig {
                         // export (own-sub enforced inside the service) and the
                         // supervisor's anonymize + retention report.
                         .requestMatchers(HttpMethod.GET, "/api/privacy/me/**")
-                                .hasRole("CLAIMANT")
-                        .requestMatchers(HttpMethod.GET, "/api/admin/privacy/**")
+                                .hasRole("CLAIMANT")                        .requestMatchers(HttpMethod.GET, "/api/admin/privacy/**")
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.POST, "/api/admin/privacy/**")
                                 .hasRole("SUPERVISOR")
+                        // V25 (V3 S10): the claimant's own notification center
+                        // (own-sub enforced inside the service: another
+                        // claimant's row id is a 404, never a 403).
+                        .requestMatchers(HttpMethod.GET, "/api/notifications/**")
+                                .hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.POST, "/api/notifications/**")
+                                .hasRole("CLAIMANT")
+                        .requestMatchers(HttpMethod.PUT, "/api/notifications/**")
+                                .hasRole("CLAIMANT")
                         // V3 S7: the staff surface — list + active toggle,
                         // supervisor only (adjusters/claimants are 403 at the URL).
                         .requestMatchers(HttpMethod.GET, "/api/staff")

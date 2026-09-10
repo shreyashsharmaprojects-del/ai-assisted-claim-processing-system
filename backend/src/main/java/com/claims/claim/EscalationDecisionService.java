@@ -13,6 +13,7 @@ import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.metrics.ClaimsMetrics;
 import com.claims.outbox.EmailOutboxWriter;
+import com.claims.notify.NotificationWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityGate;
@@ -40,16 +41,18 @@ public class EscalationDecisionService {
     private final AuditLogWriter auditLog;
     private final ClaimsMetrics metrics;
     private final EmailOutboxWriter outboxWriter;
+    private final NotificationWriter notifications;
 
     public EscalationDecisionService(ClaimRepository claims, PolicyRepository policies,
             PaymentRepository payments, AuditLogWriter auditLog, ClaimsMetrics metrics,
-            EmailOutboxWriter outboxWriter) {
+            EmailOutboxWriter outboxWriter, NotificationWriter notifications) {
         this.claims = claims;
         this.policies = policies;
         this.payments = payments;
         this.auditLog = auditLog;
         this.metrics = metrics;
         this.outboxWriter = outboxWriter;
+        this.notifications = notifications;
     }
 
     /**
@@ -114,8 +117,13 @@ public class EscalationDecisionService {
         ClaimDecisionOutcome result = outcome(claim, policy);
         // R2: same-transaction outbox write — the notice commits or rolls back with the
         // supervisor's closure.
+        // V25 (V3 S10): the DECIDED INAPP mirror rides the same transaction.
         outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
                 policy.getHolderName(), result.view());
+        notifications.write(claim.getId(), claim.getClaimantSub(), "DECIDED",
+                "Decision on claim " + claim.getClaimNumber(),
+                "Your claim " + claim.getClaimNumber() + " has been "
+                        + decisionOutcomeText(claim.getDecision()) + ".");
         return result;
     }
 
@@ -138,8 +146,13 @@ public class EscalationDecisionService {
                 rationale);
         ClaimDecisionOutcome result = outcome(claim, policy);
         // R2: same-transaction outbox write (see deny above).
+        // V25 (V3 S10): the DECIDED INAPP mirror rides the same transaction.
         outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
                 policy.getHolderName(), result.view());
+        notifications.write(claim.getId(), claim.getClaimantSub(), "DECIDED",
+                "Decision on claim " + claim.getClaimNumber(),
+                "Your claim " + claim.getClaimNumber() + " has been "
+                        + decisionOutcomeText(claim.getDecision()) + ".");
         return result;
     }
 
@@ -148,5 +161,11 @@ public class EscalationDecisionService {
                 new ClaimDecisionView(claim.getClaimNumber(), claim.getDecision(),
                         claim.getIndemnityAmount(), claim.getDecisionRemarks(), null),
                 policy.getHolderName(), policy.getHolderEmail());
+    }
+
+    /** V25 (V3 S10): claimant-safe decision wording for the INAPP mirror. */
+    private static String decisionOutcomeText(String decision) {
+        return decision == null ? "decided"
+                : decision.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
     }
 }

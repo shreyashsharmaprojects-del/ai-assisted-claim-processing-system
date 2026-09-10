@@ -14,6 +14,7 @@ import com.claims.api.InvalidRequestException;
 import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
+import com.claims.notify.NotificationWriter;
 import com.claims.staff.AppUser;
 import com.claims.staff.AppUserRepository;
 
@@ -43,14 +44,17 @@ public class ClaimAdminService {
     private final ClaimAssigner assigner;
     private final AuditLogWriter auditLog;
     private final JdbcTemplate jdbcTemplate;
+    private final NotificationWriter notifications;
 
     public ClaimAdminService(ClaimRepository claims, AppUserRepository appUsers,
-            ClaimAssigner assigner, AuditLogWriter auditLog, JdbcTemplate jdbcTemplate) {
+            ClaimAssigner assigner, AuditLogWriter auditLog, JdbcTemplate jdbcTemplate,
+            NotificationWriter notifications) {
         this.claims = claims;
         this.appUsers = appUsers;
         this.assigner = assigner;
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
+        this.notifications = notifications;
     }
 
     /**
@@ -102,6 +106,12 @@ public class ClaimAdminService {
                         "level", claim.getLevel(),
                         "status", claim.getStatus())),
                 null);
+        // V25 (V3 S10): the ASSIGNED ping for the manual reassign, in this same
+        // transaction (no mail today — referral-style mails cover refer only).
+        notifications.write(claim.getId(), claim.getClaimantSub(), "ASSIGNED",
+                "Claim " + claimNumber + " is now with an adjuster",
+                "Your claim " + claimNumber + " has been assigned to "
+                        + pick.getDisplayName() + ".");
         return new ClaimAssigneeView(claimNumber, claim.getStatus(), claim.getLevel(),
                 pick.getDisplayName());
     }

@@ -710,3 +710,37 @@ Content-Type: application/json
 # advisory). Report-only: nothing is deleted.
 GET {{host}}/api/admin/privacy/retention-report
 Authorization: Bearer {{token}}
+
+### Notifications — mine (CLAIMANT only, V25 S10)
+# Own notifications newest first; the envelope is the PageResult shape plus
+# `unread` (the bell count): {content, page, size, totalElements, totalPages,
+# unread}. Each row: {id, claimNumber, event, title, body, read, createdAt}.
+# Channel is INAPP-only this slice (SMS is a seam only). Auth: token from a
+# claimant session (DevTools -> Authorization).
+GET {{host}}/api/notifications/mine?page=0&size=25
+Authorization: Bearer {{token}}
+
+### Notifications — mark read (CLAIMANT, own row only, V25 S10)
+# Own row -> 200 (row gains read_at); someone else's id -> 404, never 403.
+# Find an id via the mine example above.
+POST {{host}}/api/notifications/1/read
+Authorization: Bearer {{token}}
+
+### Notification preferences — read own (CLAIMANT only, V25 S10)
+# {emailEvents, inappEvents, smsEvents, phone} — defaults true/true/false/null.
+GET {{host}}/api/notifications/preferences
+Authorization: Bearer {{token}}
+
+### Notification preferences — update own (CLAIMANT only, V25 S10)
+# Opting out of inapp_events suppresses future INAPP rows (outbox mail still
+# flows); sms_events/phone are stored but send nothing (NoopSmsSender).
+PUT {{host}}/api/notifications/preferences
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "emailEvents": true,
+  "inappEvents": true,
+  "smsEvents": false,
+  "phone": "+44 7700 900000"
+}

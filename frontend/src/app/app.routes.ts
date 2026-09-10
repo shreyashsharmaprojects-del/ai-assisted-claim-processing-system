@@ -29,6 +29,11 @@ export const routes: Routes = [
     loadComponent: () => import('./claim-status/claim-status').then((m) => m.ClaimStatus),
   },
   {
+    path: 'notifications',
+    canActivate: [claimantGuard],
+    loadComponent: () => import('./notifications/notifications').then((m) => m.Notifications),
+  },
+  {
     path: 'queue',
     canActivate: [internalGuard],
     loadComponent: () => import('./queue/queue').then((m) => m.Queue),

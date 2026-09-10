@@ -19,6 +19,14 @@ export interface MyClaimRow {
   decisionRemarks?: string | null;
 }
 
+/** S10 (V25) notification preferences: exact backend field names. */
+export interface NotificationPreferences {
+  emailEvents: boolean;
+  inappEvents: boolean;
+  smsEvents: boolean;
+  phone: string | null;
+}
+
 type MyClaimsStatusFilter = 'ALL' | 'OPEN' | 'APPROVED' | 'DENIED';
 
 const PAGE_SIZE = 25;
@@ -55,6 +63,14 @@ export class MyClaims implements OnDestroy {
   protected readonly statusFilter = signal<MyClaimsStatusFilter>('ALL');
   protected readonly exporting = signal(false);
 
+  /** S10 (V25): own notification preferences (defaults until first save). */
+  protected readonly prefEmail = signal(true);
+  protected readonly prefInapp = signal(true);
+  protected readonly prefSms = signal(false);
+  protected readonly prefPhone = signal('');
+  protected readonly prefsLoaded = signal(false);
+  protected readonly savingPrefs = signal(false);
+
   protected statusBadge(status: string): string {
     return badgeClass(status);
   }
@@ -70,6 +86,7 @@ export class MyClaims implements OnDestroy {
   constructor() {
     onSessionChange(() => this.signedIn.set(isAuthenticated()));
     void this.load(true);
+    void this.loadPrefs();
   }
 
   ngOnDestroy(): void {
@@ -207,6 +224,50 @@ export class MyClaims implements OnDestroy {
       this.toasts.error('Could not download your data.', err);
     } finally {
       this.exporting.set(false);
+    }
+  }
+
+  /** S10 (V25): load the caller's own notification preferences (server defaults apply). */
+  protected async loadPrefs(): Promise<void> {
+    try {
+      const prefs = await firstValueFrom(
+        this.http.get<NotificationPreferences>('/api/notifications/preferences'),
+      );
+      this.prefEmail.set(prefs.emailEvents ?? true);
+      this.prefInapp.set(prefs.inappEvents ?? true);
+      this.prefSms.set(prefs.smsEvents ?? false);
+      this.prefPhone.set(prefs.phone ?? '');
+    } catch {
+      // Best-effort: the form keeps its defaults when the fetch fails.
+    } finally {
+      this.prefsLoaded.set(true);
+    }
+  }
+
+  /** S10 (V25): upsert the caller's own notification preferences. */
+  protected async savePrefs(): Promise<void> {
+    if (this.savingPrefs()) {
+      return;
+    }
+    this.savingPrefs.set(true);
+    try {
+      const prefs = await firstValueFrom(
+        this.http.put<NotificationPreferences>('/api/notifications/preferences', {
+          emailEvents: this.prefEmail(),
+          inappEvents: this.prefInapp(),
+          smsEvents: this.prefSms(),
+          phone: this.prefPhone().trim() === '' ? null : this.prefPhone().trim(),
+        }),
+      );
+      this.prefEmail.set(prefs.emailEvents);
+      this.prefInapp.set(prefs.inappEvents);
+      this.prefSms.set(prefs.smsEvents);
+      this.prefPhone.set(prefs.phone ?? '');
+      this.toasts.success('Notification preferences saved.');
+    } catch (err) {
+      this.toasts.error('Could not save your preferences.', err);
+    } finally {
+      this.savingPrefs.set(false);
     }
   }
 }

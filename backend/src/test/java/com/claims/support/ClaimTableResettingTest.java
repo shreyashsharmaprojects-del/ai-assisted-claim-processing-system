@@ -44,12 +44,17 @@ public abstract class ClaimTableResettingTest {
      * Erasure tests redact seed {@code policy} PII (holder name/email); the seed
      * holder identities are restored here so redaction never leaks into other
      * classes sharing the single Testcontainers database.
+     *
+     * <p>V25 adds {@code notification} (FK to {@code claim}, so CASCADE covers
+     * it) and {@code notification_preference} (keyed by claimant subject, no
+     * claim FK — {@code §0.7} requires it here for hermetic prefs).
      */
     @BeforeEach
     final void resetClaimTablesBetweenTests() {
         jdbcTemplate.execute(
                 "TRUNCATE claim, attachment, internal_note, payment, audit_log, fnol_submission, "
-                        + "email_outbox, verification, privacy_request RESTART IDENTITY CASCADE");
+                        + "email_outbox, verification, privacy_request, notification, "
+                        + "notification_preference RESTART IDENTITY CASCADE");
         jdbcTemplate.update("UPDATE policy SET holder_name = CASE policy_number "
                 + "WHEN 'POL-10001' THEN 'Ada Lovelace' "
                 + "WHEN 'POL-20002' THEN 'Grace Hopper' "

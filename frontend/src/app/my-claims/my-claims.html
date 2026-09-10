@@ -167,4 +167,84 @@
       }
     </section>
   }
+
+  <section class="panel" aria-labelledby="notif-prefs-title">
+    <div class="panel__header">
+      <div class="panel__head-icon">
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 1.8a4.2 4.2 0 0 1 4.2 4.2c0 3.4.9 4.3.9 4.3H2.9s.9-.9.9-4.3A4.2 4.2 0 0 1 8 1.8Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+          <path d="M6.5 12.5a1.6 1.6 0 0 0 3 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h2 id="notif-prefs-title">Notification preferences</h2>
+    </div>
+    <div class="panel__body">
+      <p class="panel__sub">
+        Choose how you hear about movement on your claims. In-app updates always
+        appear on the notifications screen.
+      </p>
+      <div class="form-grid">
+        <div class="field">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="notif-pref-email"
+              [checked]="prefEmail()"
+              (change)="prefEmail.set($any($event.target).checked)"
+            />
+            Email updates
+          </label>
+          <p class="field__hint">Status and decision emails to your policy address.</p>
+        </div>
+        <div class="field">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="notif-pref-inapp"
+              [checked]="prefInapp()"
+              (change)="prefInapp.set($any($event.target).checked)"
+            />
+            In-app updates
+          </label>
+          <p class="field__hint">Movement pings in the header bell and notifications screen.</p>
+        </div>
+        <div class="field">
+          <label>
+            <input
+              type="checkbox"
+              data-testid="notif-pref-sms"
+              [checked]="prefSms()"
+              (change)="prefSms.set($any($event.target).checked)"
+            />
+            SMS updates
+          </label>
+          <p class="field__hint">Text messages to the phone number below.</p>
+        </div>
+        <div class="field">
+          <label for="notif-pref-phone-input">Phone number</label>
+          <input
+            id="notif-pref-phone-input"
+            type="tel"
+            class="input"
+            placeholder="e.g. +44 7700 900123"
+            autocomplete="tel"
+            data-testid="notif-pref-phone"
+            [value]="prefPhone()"
+            (input)="prefPhone.set($any($event.target).value)"
+          />
+        </div>
+      </div>
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn--primary"
+          data-testid="notif-pref-save"
+          [disabled]="savingPrefs() || !prefsLoaded()"
+          (click)="savePrefs()"
+        >
+          {{ savingPrefs() ? 'Saving…' : 'Save preferences' }}
+        </button>
+      </div>
+    </div>
+  </section>
 </main>

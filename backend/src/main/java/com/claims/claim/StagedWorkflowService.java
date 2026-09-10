@@ -21,6 +21,7 @@ import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.metrics.ClaimsMetrics;
 import com.claims.outbox.EmailOutboxWriter;
+import com.claims.notify.NotificationWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyCover;
 import com.claims.policy.PolicyCoverRepository;
@@ -78,6 +79,7 @@ public class StagedWorkflowService {
     private final AuditLogWriter auditLog;
     private final ClaimsMetrics metrics;
     private final EmailOutboxWriter outboxWriter;
+    private final NotificationWriter notifications;
     private final JdbcTemplate jdbcTemplate;
     private final EscalationDecisionService escalationDecisions;
     private final RequiredDocumentService requiredDocuments;
@@ -90,7 +92,7 @@ public class StagedWorkflowService {
             ClaimDecisionService legacyDecisions, PaymentRepository payments,
             AuditLogWriter auditLog, ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
             JdbcTemplate jdbcTemplate, EscalationDecisionService escalationDecisions,
-            RequiredDocumentService requiredDocuments) {
+            RequiredDocumentService requiredDocuments, NotificationWriter notifications) {
         this.claims = claims;
         this.policies = policies;
         this.policyCovers = policyCovers;
@@ -106,6 +108,7 @@ public class StagedWorkflowService {
         this.auditLog = auditLog;
         this.metrics = metrics;
         this.outboxWriter = outboxWriter;
+        this.notifications = notifications;
         this.jdbcTemplate = jdbcTemplate;
         this.escalationDecisions = escalationDecisions;
         this.requiredDocuments = requiredDocuments;
@@ -177,6 +180,7 @@ public class StagedWorkflowService {
                     claim.getDecisionRemarks(), null);
             outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
                     policy.getHolderName(), legacyView);
+            notifyDecided(claim, policy);
             return viewOf(claim, actorSub);
         }
         // NEED_INFO: any stage (REVIEW | VERIFICATION | DECISION), never twice.
@@ -201,6 +205,15 @@ public class StagedWorkflowService {
                 Map.of("status", "UNDER_REVIEW", "stage", priorStage),
                 after(claim, "needInfoPriorStage", priorStage, "needInfoReason", reason),
                 reason);
+        // V25 (V3 S10): the NEED_INFO claimant mail (new kind) + its INAPP
+        // mirror, in this same transaction.
+        Policy needInfoPolicy = policyOf(claim);
+        outboxWriter.enqueueNeedInfo(claim.getId(), needInfoPolicy.getHolderEmail(),
+                needInfoPolicy.getHolderName(), claim.getClaimNumber(), reason);
+        notifications.write(claim.getId(), claim.getClaimantSub(), "NEED_INFO_SENT",
+                "Claim " + claim.getClaimNumber() + " needs information from you",
+                reason == null ? "Your claim needs more information before we can continue."
+                        : reason);
         return viewOf(claim, actorSub);
     }
 
@@ -615,6 +628,7 @@ public class StagedWorkflowService {
                     claim.getDecisionRemarks(), null);
             outboxWriter.enqueueDecision(claim.getId(), holderPolicy.getHolderEmail(),
                     holderPolicy.getHolderName(), legacyView);
+            notifyDecided(claim, holderPolicy);
             return viewOf(claim, actorSub);
         }
         BigDecimal basisTotal = "NET_PAYABLE_TOTAL".equals(config.getAuthorityBasis())
@@ -656,6 +670,7 @@ public class StagedWorkflowService {
             enqueueCoverDecision(holderPolicy, claim.getId(), claim.getClaimNumber(),
                     holderPolicy.getHolderName(), claim.getDecision(), approvedTotal,
                     netTotal, rationale);
+            notifyDecided(claim, holderPolicy);
             return viewOf(claim, actorSub);
         }
         // Above authority: proposals saved, the claim STAYS open at DECISION.
@@ -703,6 +718,7 @@ public class StagedWorkflowService {
             String reason, String actorSub) {
         AppUser target = resolveDirectTarget(claim, actor, targetId, auto);
         Instant now = Instant.now();
+        Policy policy = policyOf(claim);
         String previousLevel = claim.getLevel();
         Long previousAssignee = claim.getAssignedAdjusterId();
         if (target == null) {
@@ -716,6 +732,7 @@ public class StagedWorkflowService {
                                     : previousAssignee),
                     after(claim, "escalatedTo", "SUPERVISOR"),
                     reason);
+            notifyReferred(claim, policy, "SUPERVISOR", reason);
             return new ReferResult(claim.getClaimNumber(), claim.getStatus(),
                     claim.getLevel(), null, "SUPERVISOR");
         }
@@ -732,6 +749,7 @@ public class StagedWorkflowService {
                         "assignedAdjusterId",
                         previousAssignee == null ? 0 : previousAssignee),
                 after, reason);
+        notifyReferred(claim, policy, target.getLevel(), reason);
         return new ReferResult(claim.getClaimNumber(), claim.getStatus(), claim.getLevel(),
                 target.getDisplayName(), target.getLevel());
     }
@@ -846,6 +864,7 @@ public class StagedWorkflowService {
                                     : previousAssignee),
                     after(claim, "escalatedTo", "SUPERVISOR", "proposedTotal", basisTotal),
                     reason);
+            notifyReferred(claim, policy, "SUPERVISOR", reason);
             return new ReferResult(claim.getClaimNumber(), claim.getStatus(),
                     claim.getLevel(), null, "SUPERVISOR");
         }
@@ -862,6 +881,7 @@ public class StagedWorkflowService {
                         "assignedAdjusterId",
                         previousAssignee == null ? 0 : previousAssignee),
                 after, reason);
+        notifyReferred(claim, policy, target.getLevel(), reason);
         return new ReferResult(claim.getClaimNumber(), claim.getStatus(), claim.getLevel(),
                 target.getDisplayName(), target.getLevel());
     }
@@ -895,6 +915,15 @@ public class StagedWorkflowService {
         }
         audit("NEED_INFO_RESPONDED", claimantSub, claim, Map.of("status", "NEED_INFO"),
                 after, message);
+        // V25 (V3 S10): the response has no mail today — mirror it in-app only
+        // (no new outbox kind for an internal re-pick notice).
+        notifications.write(claim.getId(), claimantSub, "NEED_INFO_RESPONSE",
+                "Claim " + claim.getClaimNumber() + " is back under review",
+                "Thanks — your response is in and claim " + claim.getClaimNumber()
+                        + " is back under review.");
+        if (pick != null) {
+            notifyAssigned(claim, pick);
+        }
         return claimantViewOf(claim);
     }
 
@@ -944,6 +973,15 @@ public class StagedWorkflowService {
         Policy policy = policyOf(claim);
         outboxWriter.enqueueReopen(claim.getId(), policy.getHolderEmail(),
                 policy.getHolderName(), claim.getClaimNumber(), rationale);
+        // V25 (V3 S10): the reopen INAPP mirror + the ASSIGNED ping for the
+        // fresh assignee, in this same transaction.
+        notifications.write(claim.getId(), claim.getClaimantSub(), "REOPENED",
+                "Claim " + claim.getClaimNumber() + " has been reopened",
+                "Your claim " + claim.getClaimNumber()
+                        + " has been reopened for further review.");
+        if (pick != null) {
+            notifyAssigned(claim, pick);
+        }
         return viewOf(claim, actorSub);
     }
 
@@ -1094,6 +1132,7 @@ public class StagedWorkflowService {
                     holderPolicy.getHolderName(), new ClaimDecisionView(
                             claim.getClaimNumber(), claim.getDecision(),
                             claim.getIndemnityAmount(), claim.getDecisionRemarks(), null));
+            notifyDecided(claim, holderPolicy);
             return viewOf(claim, actorSub);
         }
         if (anyRejected) {
@@ -1115,6 +1154,7 @@ public class StagedWorkflowService {
                 holderPolicy.getHolderName(), new ClaimDecisionView(
                         claim.getClaimNumber(), claim.getDecision(), approvedTotal, null,
                         null, null, null, null));
+        notifyDecided(claim, holderPolicy);
         return viewOf(claim, actorSub);
     }
 
@@ -1560,6 +1600,49 @@ public class StagedWorkflowService {
 
     private static String pounds(BigDecimal amount) {
         return amount == null ? "" : "£" + amount.toPlainString();
+    }
+
+    /**
+     * V25 (V3 S10): the INAPP mirror of every claimant decision mail — called at
+     * each of the five decision close sites (this service only) in the same
+     * transaction as the outbox row.
+     */
+    private void notifyDecided(Claim claim, Policy policy) {
+        String outcome = claim.getDecision() == null ? "decided"
+                : claim.getDecision().toLowerCase(java.util.Locale.ROOT).replace('_',
+                        ' ');
+        notifications.write(claim.getId(), claim.getClaimantSub(), "DECIDED",
+                "Decision on claim " + claim.getClaimNumber(),
+                "Your claim " + claim.getClaimNumber() + " has been " + outcome + ".");
+    }
+
+    /**
+     * V25 (V3 S10): the INAPP mirror + the new REFERRAL claimant mail — called
+     * at both refer sinks (direct + with-proposals) in the refer transaction.
+     */
+    private void notifyReferred(Claim claim, Policy policy, String escalatedTo,
+            String reason) {
+        outboxWriter.enqueueReferral(claim.getId(), policy.getHolderEmail(),
+                policy.getHolderName(), claim.getClaimNumber(), escalatedTo, reason);
+        notifications.write(claim.getId(), claim.getClaimantSub(), "REFERRED",
+                "Claim " + claim.getClaimNumber() + " has been referred for senior review",
+                reason == null
+                        ? "Your claim has been referred to " + escalatedTo
+                                + " for further review."
+                        : reason);
+    }
+
+    /**
+     * V25 (V3 S10): the ASSIGNED ping wherever the claim lands on a new holder
+     * after a claimant-visible round-trip (need-info response, reopen,
+     * reassign). FNOL assignments are mirrored in ClaimService; referral moves
+     * are covered by REFERRED (no double ping).
+     */
+    private void notifyAssigned(Claim claim, AppUser assignee) {
+        notifications.write(claim.getId(), claim.getClaimantSub(), "ASSIGNED",
+                "Claim " + claim.getClaimNumber() + " is now with an adjuster",
+                "Your claim " + claim.getClaimNumber() + " has been assigned to "
+                        + assignee.getDisplayName() + ".");
     }
 
     private Map<String, Object> after(Claim claim, Object... pairs) {

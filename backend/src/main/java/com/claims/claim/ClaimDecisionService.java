@@ -16,6 +16,7 @@ import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.metrics.ClaimsMetrics;
 import com.claims.outbox.EmailOutboxWriter;
+import com.claims.notify.NotificationWriter;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyRepository;
 import com.claims.routing.AuthorityConfig;
@@ -54,11 +55,13 @@ public class ClaimDecisionService {
     private final AuditLogWriter auditLog;
     private final ClaimsMetrics metrics;
     private final EmailOutboxWriter outboxWriter;
+    private final NotificationWriter notifications;
 
     public ClaimDecisionService(ClaimRepository claims, PolicyRepository policies,
             AuthorityConfigRepository authorityConfigs, AppUserRepository appUsers,
             ClaimAccess access, ClaimAssigner assigner, PaymentRepository payments,
-            AuditLogWriter auditLog, ClaimsMetrics metrics, EmailOutboxWriter outboxWriter) {
+            AuditLogWriter auditLog, ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
+            NotificationWriter notifications) {
         this.claims = claims;
         this.policies = policies;
         this.authorityConfigs = authorityConfigs;
@@ -69,6 +72,7 @@ public class ClaimDecisionService {
         this.auditLog = auditLog;
         this.metrics = metrics;
         this.outboxWriter = outboxWriter;
+        this.notifications = notifications;
     }
 
     /**
@@ -143,8 +147,13 @@ public class ClaimDecisionService {
         // R2: the decision mail is an outbox row in this same transaction — it commits or
         // rolls back with the closure, so the notice is never lost and never sent for a
         // decision that did not happen.
+        // V25 (V3 S10): the DECIDED INAPP mirror rides the same transaction.
         outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
                 policy.getHolderName(), result.view());
+        notifications.write(claim.getId(), claim.getClaimantSub(), "DECIDED",
+                "Decision on claim " + claim.getClaimNumber(),
+                "Your claim " + claim.getClaimNumber() + " has been "
+                        + decisionOutcomeText(claim.getDecision()) + ".");
         return result;
     }
 
@@ -172,8 +181,13 @@ public class ClaimDecisionService {
                         rationale);
                 ClaimDecisionOutcome result = outcome(claim, policy, null);
                 // R2: same-transaction outbox write (see deny above).
+                // V25 (V3 S10): the DECIDED INAPP mirror rides the same transaction.
                 outboxWriter.enqueueDecision(claim.getId(), policy.getHolderEmail(),
                         policy.getHolderName(), result.view());
+                notifications.write(claim.getId(), claim.getClaimantSub(), "DECIDED",
+                        "Decision on claim " + claim.getClaimNumber(),
+                        "Your claim " + claim.getClaimNumber() + " has been "
+                                + decisionOutcomeText(claim.getDecision()) + ".");
                 return result;
             }
             case ESCALATE_TO_L2 -> {
@@ -237,5 +251,11 @@ public class ClaimDecisionService {
                 new ClaimDecisionView(claim.getClaimNumber(), claim.getDecision(),
                         claim.getIndemnityAmount(), claim.getDecisionRemarks(), escalatedTo),
                 policy.getHolderName(), policy.getHolderEmail());
+    }
+
+    /** V25 (V3 S10): claimant-safe decision wording for the INAPP mirror. */
+    private static String decisionOutcomeText(String decision) {
+        return decision == null ? "decided"
+                : decision.toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
     }
 }

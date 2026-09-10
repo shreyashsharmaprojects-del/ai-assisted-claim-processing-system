@@ -31,6 +31,7 @@ import com.claims.assignment.ClaimAssigner;
 import com.claims.audit.AuditJson;
 import com.claims.audit.AuditLogWriter;
 import com.claims.outbox.EmailOutboxWriter;
+import com.claims.notify.NotificationWriter;
 import com.claims.metrics.ClaimsMetrics;
 import com.claims.policy.Policy;
 import com.claims.policy.PolicyCover;
@@ -75,6 +76,7 @@ public class ClaimService {
     private final FnolSubmissionRepository submissions;
     private final ClaimsMetrics metrics;
     private final EmailOutboxWriter outboxWriter;
+    private final NotificationWriter notifications;
     private final RequiredDocumentService requiredDocuments;
     private final int fnolPerDay;
 
@@ -84,7 +86,7 @@ public class ClaimService {
             PhotoStorage photoStorage, AuditLogWriter auditLog, ClaimAssigner assigner,
             JdbcTemplate jdbcTemplate, FnolSubmissionRepository submissions,
             ClaimsMetrics metrics, EmailOutboxWriter outboxWriter,
-            RequiredDocumentService requiredDocuments,
+            NotificationWriter notifications, RequiredDocumentService requiredDocuments,
             @Value("${claims.fnol.rate-limit-per-day:20}") int fnolPerDay) {
         this.claims = claims;
         this.policies = policies;
@@ -99,6 +101,7 @@ public class ClaimService {
         this.submissions = submissions;
         this.metrics = metrics;
         this.outboxWriter = outboxWriter;
+        this.notifications = notifications;
         this.requiredDocuments = requiredDocuments;
         this.fnolPerDay = fnolPerDay;
     }
@@ -248,12 +251,22 @@ public class ClaimService {
         // R2: FNOL + assignment mails are outbox rows in this same transaction — the write
         // commits or rolls back with the claim, so mail is never lost and never sent for a
         // filing that did not happen. Delivery is the dispatcher's job, after commit.
+        // V25 (V3 S10): each mail is mirrored with an INAPP row in this same
+        // transaction (honours the claimant's inapp_events preference).
         outboxWriter.enqueueFnol(claimId, input.holderEmail().trim(), claim.getClaimNumber(),
                 policy.getHolderName());
+        notifications.write(claimId, input.claimantSub(), "FNOL_RECEIVED",
+                "Claim " + claim.getClaimNumber() + " received",
+                "We have received your claim " + claim.getClaimNumber()
+                        + ". It is being routed to an adjuster.");
         if (adjuster != null) {
             outboxWriter.enqueueAssignment(claimId, input.holderEmail().trim(),
                     claim.getClaimNumber(), policy.getHolderName(), adjuster.getDisplayName(),
                     adjuster.getEmail());
+            notifications.write(claimId, input.claimantSub(), "ASSIGNED",
+                    "Claim " + claim.getClaimNumber() + " is now with an adjuster",
+                    "Your claim " + claim.getClaimNumber() + " has been assigned to "
+                            + adjuster.getDisplayName() + ".");
         }
         return new FnolResult(ClaimantClaimView.from(claim, coverViews, claimedTotal,
                 null, docsOf(claimId).received(), docsOf(claimId).total(),

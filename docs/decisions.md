@@ -5,6 +5,55 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-10 — S10 notifications beyond email (V25 prefs + INAPP, SMS-ready)
+
+**Context:** Status-check calls die when claimants get movement pings in-app
+plus prefs; SMS arrives later without rework. Needs every event (incl. S6
+reopen), hence late in the order. Email outbox stays the mail spine. Plan:
+`docs/plan-v3.md` S10.
+
+**What changed (all additive):**
+- **Migration `V25__notifications.sql`:** `notification_preference` table
+  (`claimant_sub` PK, `email_events`/`inapp_events` default TRUE,
+  `sms_events` default FALSE, `phone` NULL) + `notification` table
+  (`claim_id` FK CASCADE, `claimant_sub`, `channel` INAPP-only CHECK,
+  `event`, `title`, `body`, `read_at`, `created_at`) + index on
+  `(claimant_sub, created_at DESC)`; kind-CHECK extension inside V25 only
+  (V10 file untouched, Flyway checksums safe).
+- **New outbox kinds** (`EmailOutboxWriter`): NEED_INFO (review NEED_INFO
+  transaction, "what we need from you"), REFERRAL (refer transaction),
+  REOPEN (claimant reopen notice under its own kind — reopen DECISION→REOPEN
+  same subject; need-info response is INAPP-only).
+- **`NotificationWriter` (in-tx mirror):** writes INAPP rows in the business
+  transaction on 7 events (FNOL_RECEIVED / ASSIGNED / NEED_INFO_SENT /
+  NEED_INFO_RESPONSE / DECIDED / REOPENED / REFERRED; assign scope covers
+  FNOL + reassign + NEED_INFO-response/reopen reassigns; referral moves are
+  covered by REFERRED), honoring `inapp_events`.
+- **Endpoints (`NotificationController`, CLAIMANT-only):** `GET
+  /api/notifications/mine` (paginated envelope — `NotificationPage` extends
+  the PageResult shape with `unread` for the bell count, own-sub enforced) +
+  `POST /api/notifications/{id}/read` (own row only, others' 404) +
+  `GET/PUT /api/notifications/preferences` (own prefs round-trip).
+- **`SmsSender` interface + `NoopSmsSender`** (logs at info, records
+  nothing): the seam for a future provider adapter;
+  `claims.sms.enabled=false` default — no provider wired this slice.
+- **Test scaffolding:** `notification` + `notification_preference` added to
+  the `ClaimTableResettingTest` TRUNCATE list (preference table has no FK to
+  claim, so CASCADE would not cover it).
+- **Frontend:** header bell with unread badge (testids
+  `nav-notifications/count`), notifications screen with mark-read (testids
+  `notif-page/item/read`), prefs form on My-claims (testids
+  `notif-pref-email/inapp/sms/phone/save`).
+
+**Verified:** `NotificationIntegrationTest` 4/4 (every event writes outbox +
+INAPP unless opted out; read/others'-read 404 matrix; prefs round-trip +
+opt-out suppresses INAPP only; claimant-only surface), full backend suite
+293/293 (289/289 at S9 per `git log` + 4 new — docs-only session, tests not
+re-run), frontend build green, `notifications.spec` 1/1 (file → bell badge
+1 → open → mark read → badge clears).
+**Deliberately not built (Non-goals):** SMS provider, email templating
+rework, digest mode.
+
 ### 2026-09-10 — S9 GDPR + retention story (V24 privacy_request)
 
 **Context:** The first EU pilot needs a designed privacy answer: export-my-data,

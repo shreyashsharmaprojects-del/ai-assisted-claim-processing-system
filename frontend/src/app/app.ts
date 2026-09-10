@@ -1,6 +1,7 @@
 import { Component, OnDestroy, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
+import { Subscription } from 'rxjs';
 import {
   isAuthenticated,
   logout,
@@ -33,16 +34,32 @@ export class App implements OnDestroy {
   protected readonly queueBadge = signal<number | null>(null);
   protected readonly escalationBadge = signal<number | null>(null);
 
+  /**
+   * S10 (V25): claimant bell unread count. Rides on the
+   * `GET /api/notifications/mine` envelope's `unread` field — no new endpoint.
+   * Poll on navigation/app-load (no SSE); a failed fetch hides the badge.
+   */
+  protected readonly notifUnread = signal<number | null>(null);
+  private readonly navSub: Subscription;
+
   constructor() {
     this.stopListening = onSessionChange(() => {
       this.sessionVersion.update((v) => v + 1);
       this.refreshBadges();
+      this.refreshNotifUnread();
+    });
+    this.navSub = this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) {
+        this.refreshNotifUnread();
+      }
     });
     this.refreshBadges();
+    this.refreshNotifUnread();
   }
 
   ngOnDestroy(): void {
     this.stopListening();
+    this.navSub.unsubscribe();
   }
 
   /** Supervisor-only nav links (the routes are guarded too). */
@@ -128,5 +145,34 @@ export class App implements OnDestroy {
     await logout();
     this.toasts.info('You have been signed out.');
     await this.router.navigate(['/']);
+  }
+
+  /** Claimant-only: fetch the unread count for the header bell. Best-effort. */
+  private refreshNotifUnread(): void {
+    this.notifUnread.set(null);
+    const roles = sessionState().roles;
+    if (!isAuthenticated() || !roles.includes('claimant')) {
+      return;
+    }
+    const internal =
+      roles.includes('adjuster_l1') || roles.includes('adjuster_l2')
+      || roles.includes('adjuster_l3') || roles.includes('supervisor');
+    if (internal) {
+      return;
+    }
+    this.http.get<{ unread?: number }>('/api/notifications/mine', {
+      params: { page: '0', size: '1' },
+    }).subscribe({
+      next: (body) => {
+        const unread = (body as { unread?: number }).unread;
+        this.notifUnread.set(typeof unread === 'number' ? unread : null);
+      },
+      error: () => this.notifUnread.set(null),
+    });
+  }
+
+  /** Called by the notifications screen after a mark-read so the bell clears. */
+  refreshNotifications(): void {
+    this.refreshNotifUnread();
   }
 }
