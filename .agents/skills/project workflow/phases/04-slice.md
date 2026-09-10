@@ -1,6 +1,6 @@
 # Phase 04 — Build One Slice
 
-Read `docs/plan.md`, `docs/progress.md`, `rules/yagni.md`, `rules/testing-web.md`.
+Read `docs/plan.md`, `docs/progress.md`, `rules/yagni.md`, `rules/testing-web.md`, `rules/security.md`.
 
 One slice per run. Finish it completely rather than starting three.
 
@@ -16,6 +16,24 @@ Before touching anything, write out:
 If the plan is unclear or wrong here, stop and say so. Discovering mid-slice that the
 plan was wrong is normal and fine. Quietly building something different from the plan is
 not, because the plan is what review checks against.
+
+**Record the declaration (non-optional — same register as the gates below).**
+Immediately after writing the restate, if the repo has a cartographer map
+(`.codebase-map/graph.json` exists), run the pre-implementation capture:
+
+```bash
+python3 <carto>/scripts/cartographer.py intent bind --slice "<slice-name>" \
+  --realizes <REQ-ids...> --nodes <expected-entry-symbols...> \
+  --why "<one line: what this slice will build>" \
+  --declares-files <expected paths...>
+```
+
+This is stated-before-code intent — unrecoverable later. Post-hoc binding cannot
+distinguish planned files from speculative ones, and the deferred `drift` check
+compares this declaration against actually-changed files. If the map or the
+intent nodes don't exist yet, record the same declaration in `docs/progress.md`
+under the slice heading instead (same fields: slice, req ids, files, why).
+Skipping the capture because "I'll bind at the end" loses the declaration.
 
 ## 2. Tests first
 
@@ -64,6 +82,22 @@ Add to `docs/decisions.md` if you made a call the plan didn't cover, or delibera
 didn't build something you were tempted to build.
 
 Update `api.http` if the project keeps one and this slice added endpoints.
+
+**Record the final bindings (non-optional — same register as the gates below).**
+After `sync`, if the repo has a cartographer map, bind the actual delivered
+symbols at node level:
+
+```bash
+python3 <carto>/scripts/cartographer.py sync
+python3 <carto>/scripts/cartographer.py intent bind --slice "<slice-name>" \
+  --realizes <REQ-ids...> --nodes <delivered-symbol-ids...> \
+  --why "<one line: what actually shipped>"
+```
+
+The step-1 declaration stays on the record (re-binding without
+`--declares-files` preserves it); this call adds the realized node-level
+evidence. Then run `why` on each changed area and `validate` — unbound
+requirements and `needs-review` bindings are review inputs, not cleanup.
 
 ## 6. Report
 

@@ -25,6 +25,15 @@ Acceptance criteria:
 - [ ] 
 - [ ] 
 
+<!--
+  Cartographer note (when the repo has a codebase map): each box above
+  becomes a requirement node with an id derived from its text. Tag a
+  criterion `[REQ-001]` at the start of its line to give it a stable id
+  that survives rewording — untagged criteria re-key their node id when
+  the wording changes, dropping any bindings. Tag before approval for
+  anything a slice will bind.
+-->
+
 ### Flow 2 — [name]
 
 ...

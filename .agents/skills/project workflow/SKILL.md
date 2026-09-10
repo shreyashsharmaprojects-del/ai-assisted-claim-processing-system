@@ -38,8 +38,18 @@ obvious from its name.
 ## Rules to load
 
 - `rules/yagni.md` — read before phases 03, 04, and 05. Non-optional for those phases.
-- `rules/testing-web.md` — read during phase 02 to choose a strategy, and during 04 to
-  follow it.
+- `rules/security.md` — read during phase 02 alongside `testing-web.md`, applied
+  during 04, checked during 05 and 06. Non-optional for those phases.
+
+## Codebase map (companion skill)
+
+If the repo has a living-codebase-cartographer map (`.codebase-map/graph.json`
+exists), phases 01–02 feed it via `intent import`, and phase 04 records intent
+at both ends of every slice: the step-1 declaration (`intent bind
+--declares-files ...` before implementation) and the step-5 node-level bindings
+(after `sync`). Both captures are non-optional when the map exists — see
+`phases/04-slice.md`. Intent is only recoverable at the moment of the change;
+a slice built without its captures ships code with no recorded why.
 
 ## Templates
 

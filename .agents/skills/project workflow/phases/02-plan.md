@@ -1,6 +1,6 @@
 # Phase 02 — Plan
 
-Read `docs/requirements.md` and `rules/testing-web.md`. Produce `docs/plan.md` from
+Read `docs/requirements.md`, `rules/testing-web.md`, and `rules/security.md`. Produce `docs/plan.md` from
 `templates/plan.md`.
 
 Still no implementation code. This phase produces a document.
@@ -74,3 +74,7 @@ Show the user the slice list and the test strategy. Ask directly: *is anything h
 than we need for the first version?*
 
 Do not write implementation code until they approve.
+
+After approval, if the repo has a cartographer map (`.codebase-map/graph.json`
+exists), run `intent import` so the slices enter the graph as intent nodes
+before any slice code exists.
