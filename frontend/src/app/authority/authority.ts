@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { formatMoney, plainAmount } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 
 interface ConfigRow {
@@ -53,8 +54,8 @@ export class Authority {
         rows.map((row) => ({
           productCode: row.productCode,
           routeLevel: row.routeLevel,
-          l1Text: row.l1LimitAmount.toFixed(2),
-          l2Text: row.l2LimitAmount.toFixed(2),
+          l1Text: plainAmount(row.l1LimitAmount),
+          l2Text: plainAmount(row.l2LimitAmount),
         })),
       );
     } catch (err) {
@@ -78,6 +79,12 @@ export class Authority {
       return 'The L1 limit cannot exceed the L2 limit.';
     }
     return null;
+  }
+
+  /** Currency symbol from the locale formatter (en-GB: ₹) — for static labels. */
+  protected currencySymbol(): string {
+    const shaped = formatMoney(0).replace(/[\d.,\s ]+/g, '').trim();
+    return shaped === '' ? '₹' : shaped;
   }
 
   async save(row: EditableRow) {

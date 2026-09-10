@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, effect, inject, OnDestroy, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
@@ -90,6 +90,8 @@ export class Policies implements OnDestroy {
   // ---- Retire ----
   protected readonly retireTarget = signal<string | null>(null);
   protected readonly retiring = signal(false);
+  @ViewChild('retireDialog') private retireDialog?: ElementRef<HTMLElement>;
+  private retireOpener: HTMLElement | null = null;
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
@@ -97,6 +99,19 @@ export class Policies implements OnDestroy {
 
   constructor() {
     void this.load(true);
+    // S11: when the retire dialog opens, move focus inside; when it closes,
+    // return focus to the opener (Escape path included — cancelRetire runs there).
+    effect(() => {
+      if (this.retireTarget() !== null) {
+        queueMicrotask(() => {
+          const dialog = this.retireDialog?.nativeElement;
+          const first = dialog?.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+          );
+          (first ?? dialog)?.focus();
+        });
+      }
+    });
   }
 
   ngOnDestroy(): void {
@@ -367,12 +382,54 @@ export class Policies implements OnDestroy {
 
   // ---------- retire ----------
 
-  protected askRetire(policyNumber: string): void {
+  protected askRetire(policyNumber: string, opener?: HTMLElement): void {
+    this.retireOpener = opener ?? null;
     this.retireTarget.set(policyNumber);
   }
 
   protected cancelRetire(): void {
     this.retireTarget.set(null);
+    const opener = this.retireOpener;
+    this.retireOpener = null;
+    if (opener) {
+      queueMicrotask(() => opener.focus());
+    }
+  }
+
+  /**
+   * Minimal focus trap for the retire dialog (the only real modal): Escape closes,
+   * Tab cycles inside while open. Inline confirms elsewhere need no trap.
+   */
+  protected trapRetireFocus(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.cancelRetire();
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const dialog = this.retireDialog?.nativeElement;
+    if (!dialog) {
+      return;
+    }
+    const focusables = [...dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )].filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (focusables.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   async doRetire(): Promise<void> {

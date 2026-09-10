@@ -71,7 +71,7 @@ test('multi-cover FNOL: pick two covers with amounts, see them on confirmation',
   // Above-limit OPD (40k vs 30k sub-limit) files fine but is flagged.
   await expect(page.getByTestId('claim-covers')).toContainText('HOSPITALIZATION');
   await expect(page.getByTestId('claim-covers')).toContainText('OPD');
-  await expect(page.getByTestId('claim-total')).toContainText('240000');
+  await expect(page.getByTestId('claim-total')).toHaveText('₹240,000.00');
 });
 
 /** Journey 2: the tracker shows per-cover outcomes and no internal fields, on screen or wire. */

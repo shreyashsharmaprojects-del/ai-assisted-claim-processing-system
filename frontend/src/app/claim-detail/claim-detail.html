@@ -231,7 +231,7 @@
                   recorded for both outcomes.
                 </p>
                 <div class="field">
-                  <label for="decision-amount">Indemnity amount (£)</label>
+                  <label for="decision-amount">Indemnity amount ({{ currencySymbol() }})</label>
                   <input
                     id="decision-amount"
                     class="input"
@@ -743,7 +743,7 @@
                 </button>
                 <div class="assess-side">
                   <form (ngSubmit)="saveReserve()" class="assess-side__item">
-                    <label for="reserve">Reserve (£) — internal, never shown to the claimant</label>
+                    <label for="reserve">Reserve ({{ currencySymbol() }}) — internal, never shown to the claimant</label>
                     <div class="assess-side__row">
                       <input
                         id="reserve"
@@ -969,7 +969,11 @@
                       <td class="num">{{ money(cover.claimedAmount) }}</td>
                       <td class="num">{{ money(cover.assessedAmount) }}</td>
                       <td class="num">
+                        <label class="sr-only" [attr.for]="'approve-' + cover.coverCode">
+                          Approved amount for {{ cover.coverCode }}
+                        </label>
                         <input
+                          [id]="'approve-' + cover.coverCode"
                           class="input input--sm num"
                           type="number"
                           min="0"
@@ -980,7 +984,11 @@
                         />
                       </td>
                       <td>
+                        <label class="sr-only" [attr.for]="'cover-decision-' + cover.coverCode">
+                          Outcome for {{ cover.coverCode }}
+                        </label>
                         <select
+                          [id]="'cover-decision-' + cover.coverCode"
                           class="input input--sm"
                           [attr.data-testid]="'detail-cover-decision-' + cover.coverCode"
                           [(ngModel)]="coverDecision[cover.coverCode]"
@@ -989,7 +997,11 @@
                           <option value="APPROVED">APPROVED</option>
                           <option value="REJECTED">REJECTED</option>
                         </select>
+                        <label class="sr-only" [attr.for]="'cover-remarks-' + cover.coverCode">
+                          Remarks for {{ cover.coverCode }} (required to reject)
+                        </label>
                         <input
+                          [id]="'cover-remarks-' + cover.coverCode"
                           class="input input--sm"
                           placeholder="Remarks (required to reject)"
                           [attr.data-testid]="'detail-cover-remarks-' + cover.coverCode"
@@ -1040,7 +1052,7 @@
             </div>
             <div class="decision-side">
               <form (ngSubmit)="saveReserve()" class="decision-side__item">
-                <label for="decision-reserve">Reserve (£) — internal, never shown to the claimant</label>
+                <label for="decision-reserve">Reserve ({{ currencySymbol() }}) — internal, never shown to the claimant</label>
                 <div class="decision-side__row">
                   <input
                     id="decision-reserve"
@@ -1340,7 +1352,7 @@
               </p>
               <form (ngSubmit)="saveReserve()" class="inline-form">
                 <div class="field">
-                  <label for="reserve">New reserve (£)</label>
+                  <label for="reserve">New reserve ({{ currencySymbol() }})</label>
                   <input
                     id="reserve"
                     class="input"
@@ -1667,6 +1679,7 @@
                       }
                     </select>
                     @if (docChoice === 'Other…') {
+                      <label class="sr-only" for="doc-custom">Name this document</label>
                       <input
                         id="doc-custom"
                         class="input"
@@ -1676,6 +1689,7 @@
                         name="docCustom"
                       />
                     }
+                    <label class="sr-only" for="doc-file">File to attach</label>
                     <input
                       #docFile
                       id="doc-file"

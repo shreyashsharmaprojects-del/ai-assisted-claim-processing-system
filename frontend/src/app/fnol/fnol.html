@@ -26,7 +26,7 @@
   </div>
 
   @if (result(); as view) {
-    <section class="panel result-panel" data-testid="fnol-result">
+    <section class="panel result-panel" data-testid="fnol-result" role="status" aria-label="Claim received">
       <div class="panel__header">
         <div class="panel__head-icon">
           <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -216,7 +216,7 @@
                     <span><strong class="mono">{{ cover.coverCode }}</strong> — {{ cover.displayName }}</span>
                   </label>
                   <div class="field">
-                    <label [for]="'amount-' + cover.coverCode">Claimed amount (₹)</label>
+                    <label [for]="'amount-' + cover.coverCode">Claimed amount ({{ currencySymbol() }})</label>
                     <input
                       [id]="'amount-' + cover.coverCode"
                       [name]="'amount-' + cover.coverCode"
@@ -229,7 +229,7 @@
                       [(ngModel)]="coverAmounts[cover.coverCode]"
                     />
                     @if (cover.subLimit > 0) {
-                      <p class="field__hint">Sub-limit ₹{{ cover.subLimit }}</p>
+                      <p class="field__hint">Sub-limit {{ money(cover.subLimit) }}</p>
                     }
                     @if (aboveLimitHint(cover); as aboveHint) {
                       <p class="field__hint cover-row__above">{{ aboveHint }}</p>

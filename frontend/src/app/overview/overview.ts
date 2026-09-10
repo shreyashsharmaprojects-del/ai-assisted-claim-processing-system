@@ -4,7 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
-import { formatMoney } from '../format';
+import { formatISODate, formatMoney } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 import { normalizePage, pageParams } from '../paged';
 
@@ -39,13 +39,13 @@ const OUTBOX_PAGE_SIZE = 25;
 
 /** S8 (V23): decisions-export range defaults — the last 30 days, yyyy-MM-dd. */
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return formatISODate(new Date());
 }
 
 function last30Start(): string {
   const date = new Date();
   date.setDate(date.getDate() - 30);
-  return date.toISOString().slice(0, 10);
+  return formatISODate(date);
 }
 
 /**

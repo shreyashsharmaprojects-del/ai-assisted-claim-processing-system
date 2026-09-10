@@ -76,6 +76,7 @@
                 }
               </select>
               @if (docChoice === 'Other…') {
+                <label class="sr-only" for="need-info-doc-custom">Name this document</label>
                 <input
                   id="need-info-doc-custom"
                   class="input"
@@ -87,6 +88,7 @@
               }
             </div>
             <div class="inline-form" style="margin-top: var(--space-2)">
+              <label class="sr-only" for="need-info-doc-file">Document file to attach</label>
               <input
                 #needInfoFile
                 id="need-info-doc-file"

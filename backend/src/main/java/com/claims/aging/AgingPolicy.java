@@ -61,6 +61,29 @@ public final class AgingPolicy {
         return AgingStep.NONE;
     }
 
+    /**
+     * Day-count variant of the ladder: {@code daysOld} is whole calendar days between the
+     * claim's FNOL date and the job's "now" date <em>in the tenant timezone</em> (the caller
+     * converts both instants with the configured {@code ZoneId} first). A claim filed late
+     * Monday and still open early Thursday is 3 days old by the tenant's calendar even
+     * though fewer than 72 exact hours elapsed — the service commitment is a day promise,
+     * not an hour promise. Negative counts (FNOL after now — clock skew) never age.
+     */
+    public static AgingStep stepFor(String status, String level, long daysOld) {
+        if ("CLOSED".equals(status) || "ESCALATED_SUPERVISOR".equals(status)) {
+            return AgingStep.NONE;
+        }
+        if (daysOld >= 5) {
+            // The 5-day rung wins over the 3-day rung: one idempotent move to the top.
+            return AgingStep.ESCALATE_TO_SUPERVISOR;
+        }
+        if (daysOld >= 3 && ("L1".equals(level) || "UNASSIGNED".equals(status))) {
+            // Below the L2 tier still: an L1-held claim, or one that never got an adjuster.
+            return AgingStep.REASSIGN_TO_L2;
+        }
+        return AgingStep.NONE;
+    }
+
     static boolean atLeast(Instant created, Instant now, long days) {
         return !now.isBefore(created.plus(days, ChronoUnit.DAYS));
     }

@@ -80,7 +80,7 @@
               <p class="field__hint" id="route-hint-{{ row.productCode }}">New {{ row.productCode }} claims start here.</p>
             </div>
             <div class="field">
-              <label for="l1-{{ row.productCode }}">L1 limit (£)</label>
+              <label for="l1-{{ row.productCode }}">L1 limit ({{ currencySymbol() }})</label>
               <input
                 id="l1-{{ row.productCode }}"
                 class="input"
@@ -94,7 +94,7 @@
               />
             </div>
             <div class="field">
-              <label for="l2-{{ row.productCode }}">L2 limit (£)</label>
+              <label for="l2-{{ row.productCode }}">L2 limit ({{ currencySymbol() }})</label>
               <input
                 id="l2-{{ row.productCode }}"
                 class="input"

@@ -211,6 +211,33 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
                 "a claim already on the supervisor is not aged again");
     }
 
+    // --- tenant timezone -------------------------------------------------------
+
+    @Test
+    void agingCountsDayBoundariesInTheTenantTimezone() {
+        // The ladder is a day promise in the tenant zone (Europe/London, BST = UTC+1 in
+        // September), not an hour promise. FNOL 2026-09-12T00:30Z is 01:30 London on
+        // Sep 12; now 2026-09-15T00:15Z is 01:15 London on Sep 15: 3 London calendar
+        // days (12 -> 15) but only 71h45m of exact time. Under the old exact-instant
+        // ladder this claim would NOT age (atLeast needs 72h); under the tenant-zone
+        // ladder it hits the 3-day rung.
+        String claimNumber = fileHomeFnol("sub-aging-tz");
+        backdate(claimNumber, Instant.parse("2026-09-12T00:30:00Z"));
+        assertEquals(1, agingService.ageClaims(Instant.parse("2026-09-15T00:15:00Z")),
+                "3 London calendar days (under 72 exact hours) still hits the 3-day rung");
+        assertEquals("L2", levelOf(claimNumber));
+
+        // And a 2-calendar-day claim never ages, however many exact hours it holds:
+        // FNOL 2026-09-13T22:30Z (23:30 London Sep 13) to now 2026-09-15T22:00Z
+        // (23:00 London Sep 15) is just under 48 exact hours on Sep 13 -> Sep 15 =
+        // 2 calendar days. Calendar days decide, and 2 < 3.
+        String young = fileHomeFnol("sub-aging-tz-young");
+        backdate(young, Instant.parse("2026-09-13T22:30:00Z"));
+        assertEquals(0, agingService.ageClaims(Instant.parse("2026-09-15T22:00:00Z")),
+                "2 London calendar days never ages — the calendar count decides");
+        assertEquals("L1", levelOf(young));
+    }
+
     // --- helpers ------------------------------------------------------------------
 
     private String fileHomeFnol(String claimantSub) {

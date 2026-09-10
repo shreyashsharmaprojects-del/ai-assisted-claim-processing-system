@@ -155,7 +155,7 @@ export class Fnol {
     if (!(cover.subLimit > 0) || amount <= cover.subLimit) {
       return null;
     }
-    return `Above the ₹${cover.subLimit} sub-limit — still fileable, flagged for review`;
+    return `Above the ${formatMoney(cover.subLimit)} sub-limit — still fileable, flagged for review`;
   }
 
   /**
@@ -177,6 +177,12 @@ export class Fnol {
 
   protected money(value: number | null | undefined): string {
     return formatMoney(value);
+  }
+
+  /** Currency symbol derived from the locale formatter (en-GB: ₹) — for static labels. */
+  protected currencySymbol(): string {
+    const shaped = formatMoney(0).replace(/[\d.,\s ]+/g, '').trim();
+    return shaped === '' ? '₹' : shaped;
   }
 
   private async loadCovers(): Promise<void> {

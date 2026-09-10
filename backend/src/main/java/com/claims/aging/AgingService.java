@@ -2,6 +2,8 @@ package com.claims.aging;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
@@ -9,6 +11,7 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,14 +50,17 @@ public class AgingService {
     private final AuditLogWriter auditLog;
     private final JdbcTemplate jdbcTemplate;
     private final ClaimsMetrics metrics;
+    private final ZoneId tenantZone;
 
     public AgingService(ClaimRepository claims, ClaimAssigner assigner,
-            AuditLogWriter auditLog, JdbcTemplate jdbcTemplate, ClaimsMetrics metrics) {
+            AuditLogWriter auditLog, JdbcTemplate jdbcTemplate, ClaimsMetrics metrics,
+            @Value("${claims.timezone.default:Europe/London}") String timezoneDefault) {
         this.claims = claims;
         this.assigner = assigner;
         this.auditLog = auditLog;
         this.jdbcTemplate = jdbcTemplate;
         this.metrics = metrics;
+        this.tenantZone = ZoneId.of(timezoneDefault);
     }
 
     /**
@@ -62,11 +68,22 @@ public class AgingService {
      * the ladder (open, created 3+ days before {@code now}); each is transitioned at most
      * once per pass.
      *
+     * <p>Day counting is in the tenant timezone ({@code claims.timezone.default}): the
+     * claim's FNOL instant and {@code now} are both converted to {@link LocalDate} in that
+     * zone and the rung is decided on the whole-day difference — a day promise, not an
+     * hour promise. Tests fix the zone explicitly via the constructor.
+     *
      * @return how many claims the pass transitioned (useful to tests; the scheduler logs it)
      */
     @Transactional
     public int ageClaims(Instant now) {
-        Timestamp oldest = Timestamp.from(now.minus(3, ChronoUnit.DAYS));
+        LocalDate today = LocalDate.ofInstant(now, tenantZone);
+        // Zone-aware candidate cutoff: start of (today - 2) in the tenant zone. Any
+        // claim with calendar age >= 3 was created strictly before that instant, so the
+        // query cannot miss it — exact-hour arithmetic would (a 3-calendar-day claim can
+        // be under 72 exact hours old). The rung evaluation below stays authoritative;
+        // younger candidates selected by the one-day margin evaluate to NONE.
+        Timestamp oldest = Timestamp.from(today.minusDays(2).atStartOfDay(tenantZone).toInstant());
         List<Candidate> candidates = jdbcTemplate.query(
                 "SELECT claim_number, created_at FROM claim "
                         + "WHERE status IN ('UNASSIGNED', 'UNDER_REVIEW') "
@@ -83,8 +100,9 @@ public class AgingService {
             if (claim == null) {
                 continue;
             }
-            AgingStep step = AgingPolicy.stepFor(claim.getStatus(), claim.getLevel(),
-                    candidate.createdAt(), now);
+            long daysOld = ChronoUnit.DAYS.between(
+                    LocalDate.ofInstant(candidate.createdAt(), tenantZone), today);
+            AgingStep step = AgingPolicy.stepFor(claim.getStatus(), claim.getLevel(), daysOld);
             switch (step) {
                 case REASSIGN_TO_L2 -> {
                     reassignToL2(claim);

@@ -264,7 +264,9 @@ number). Provision the Keycloak user + `app_user` row (same level), or have a
 supervisor reassign the claim to a staffed level.
 
 **Aging job moved claims unexpectedly.**
-The 03:00 job pushes 3-day-undecided claims to L2 and 5-day to the supervisor; every
+The 03:00 job (tenant time — `claims.timezone.default`, default Europe/London; day
+counts are calendar days in that zone) pushes 3-day-undecided claims to L2 and 5-day
+to the supervisor; every
 move is a `CLAIM_ESCALATED` audit row with a NULL actor and an "Aged at least N days"
 rationale. Query the audit log by claim to confirm before touching anything:
 `GET /api/claims/<number>/audit` (supervisor).

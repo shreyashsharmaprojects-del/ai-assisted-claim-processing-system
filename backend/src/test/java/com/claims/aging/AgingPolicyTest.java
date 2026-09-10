@@ -144,4 +144,19 @@ class AgingPolicyTest {
         assertEquals(AgingStep.NONE,
                 AgingPolicy.stepFor("UNDER_REVIEW", "L1", CREATED, CREATED.minusSeconds(1)));
     }
+
+    // --- tenant-zone day-count variant (S11) ------------------------------------
+
+    @Test
+    void theDayCountVariantAgesOnCalendarDays() {
+        assertEquals(AgingStep.NONE, AgingPolicy.stepFor("UNDER_REVIEW", "L1", 2));
+        assertEquals(AgingStep.REASSIGN_TO_L2, AgingPolicy.stepFor("UNDER_REVIEW", "L1", 3));
+        assertEquals(AgingStep.REASSIGN_TO_L2, AgingPolicy.stepFor("UNDER_REVIEW", "L1", 4));
+        assertEquals(AgingStep.ESCALATE_TO_SUPERVISOR, AgingPolicy.stepFor("UNDER_REVIEW", "L1", 5));
+        assertEquals(AgingStep.NONE, AgingPolicy.stepFor("CLOSED", "L1", 10));
+        assertEquals(AgingStep.NONE,
+                AgingPolicy.stepFor("ESCALATED_SUPERVISOR", "L1", 10));
+        assertEquals(AgingStep.NONE, AgingPolicy.stepFor("UNDER_REVIEW", "L1", -1),
+                "clock skew (FNOL after now) never ages");
+    }
 }

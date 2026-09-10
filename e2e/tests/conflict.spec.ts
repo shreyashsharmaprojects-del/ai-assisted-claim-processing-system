@@ -125,7 +125,7 @@ test('stale reserve save in a second context shows the conflict banner', async (
   // Context B saves first: version v → v+1.
   await pageB.getByTestId('detail-reserve-input').fill('2000');
   await pageB.getByTestId('detail-reserve-save').click();
-  await expect(pageB.getByTestId('detail-reserve-value')).toContainText('2000');
+  await expect(pageB.getByTestId('detail-reserve-value')).toHaveText('₹2,000.00');
 
   // Context A saves with its stale version → 409 CONFLICT → banner + refetch.
   const conflictResponse = pageA!.waitForResponse(
@@ -139,7 +139,7 @@ test('stale reserve save in a second context shows the conflict banner', async (
     'reloaded the latest',
   );
   // The refetch shows the latest (B's) reserve, not A's stale write.
-  await expect(pageA!.getByTestId('detail-reserve-value')).toContainText('2000');
+  await expect(pageA!.getByTestId('detail-reserve-value')).toHaveText('₹2,000.00');
 
   await contextB.close();
   await contextA!.close();

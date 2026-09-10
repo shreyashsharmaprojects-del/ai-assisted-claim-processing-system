@@ -145,7 +145,7 @@
 
   <div class="toast-stack" aria-live="polite" aria-atomic="false">
     @for (toast of toastItems(); track toast.id) {
-      <div class="toast toast--{{ toast.kind }}" role="status">
+      <div class="toast toast--{{ toast.kind }}" [attr.role]="toast.kind === 'error' ? 'alert' : 'status'">
         <span class="toast__message">{{ toast.message }}</span>
         <button type="button" class="toast__close" (click)="dismissToast(toast.id)" aria-label="Dismiss notification">
           <svg viewBox="0 0 16 16" aria-hidden="true">

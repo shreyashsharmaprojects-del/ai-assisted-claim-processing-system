@@ -56,10 +56,11 @@ async function signInAdjuster(page: Page, username: string): Promise<void> {
 }
 
 /**
- * True when the signed-in adjuster's queue shows exactly one row for the claim. Waits for
- * the queue fetch to settle first: rows render only once loaded() is true, so counting
- * rows immediately after the page shell appears can race the render under parallel load
- * and report a claim that is present as missing (observed on the shared claims_e2e DB).
+ * True when the signed-in adjuster's queue holds the claim. The queue is
+ * server-paginated (25/page, oldest first), so a newly filed claim sits past page 0
+ * once the holder already has 25+ open claims on the shared claims_e2e DB — counting
+ * the first page's rows reports a held claim as missing. The queue's own
+ * server-side search is used instead, so the claim is found on any page.
  */
 async function queueShows(page: Page, claimNumber: string): Promise<boolean> {
   await page.goto('/queue');
@@ -71,6 +72,14 @@ async function queueShows(page: Page, claimNumber: string): Promise<boolean> {
       .or(page.getByTestId('queue-row').first()),
   ).toBeVisible();
   await expect(page.getByTestId('queue-error')).toHaveCount(0);
+  // Narrow server-side to the one claim number (debounced reload), then wait for the
+  // filtered result to settle: either the matching row or the no-results panel.
+  await page.getByTestId('queue-search').fill(claimNumber);
+  await expect(
+    page
+      .getByTestId('queue-no-results')
+      .or(page.getByTestId('queue-row').filter({ hasText: claimNumber })),
+  ).toBeVisible();
   const row = page.getByTestId('queue-row').filter({ hasText: claimNumber });
   return (await row.count()) === 1;
 }
@@ -205,7 +214,7 @@ test('the assigned adjuster sets a reserve, adds an internal note and downloads 
   // Set a reserve; the saved value is shown back.
   await holder.getByTestId('detail-reserve-input').fill('1250.50');
   await holder.getByTestId('detail-reserve-save').click();
-  await expect(holder.getByTestId('detail-reserve-value')).toContainText('1250');
+  await expect(holder.getByTestId('detail-reserve-value')).toHaveText('₹1,250.50');
 
   // Add an internal note; it appears on the claim timeline with the actor.
   await holder.getByTestId('detail-note-input').fill('Coverage confirmed; awaiting builder quote.');
@@ -395,7 +404,16 @@ test('claimant sees the decision on the closed claim: approved amount, or denial
         response.request().method() === 'GET' &&
         /\/api\/claims\/CLM-\d+$/.test(response.url())
       ) {
-        const body = await response.text();
+        // The body of an in-flight response is discarded when the page navigates
+        // (e.g. claimant reopens the closed claim): reading it then throws a
+        // Protocol error that would fail the running step, so ignore unreadable
+        // bodies — the wire wall is still asserted on every body that is read.
+        let body: string;
+        try {
+          body = await response.text();
+        } catch {
+          return;
+        }
         for (const field of [
           'reserveAmount',
           'reserve',
@@ -433,7 +451,7 @@ test('claimant sees the decision on the closed claim: approved amount, or denial
   await expect(claimantPage.getByTestId('claim-status-page')).toBeVisible();
   await expect(claimantPage.getByTestId('claim-status-state')).toHaveText('CLOSED');
   await expect(claimantPage.getByTestId('claim-decision-approved')).toBeVisible();
-  await expect(claimantPage.getByTestId('claim-decision-amount')).toHaveText('₹1500.00');
+  await expect(claimantPage.getByTestId('claim-decision-amount')).toHaveText('₹1,500.00');
   await expect(claimantPage.getByTestId('claim-decision-denied')).toHaveCount(0);
   await claimantContext.close();
 

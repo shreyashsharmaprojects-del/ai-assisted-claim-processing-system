@@ -5,6 +5,61 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-10 — S11 locale/timezone + accessibility pass (second-customer ready)
+
+**Context:** Money was hardcoded `₹`-concat/`toFixed(2)`, dates were hand-built
+`dd Mon yyyy` strings, and the aging job counted exact hours on the server clock;
+a11y was partial (labels/roles/steppers/focus-visible present, but no focus trap
+anywhere). Done last because it reformats strings every journey pins. Plan:
+`docs/plan-v3.md` S11.
+
+**What changed:**
+- **Config:** `claims.locale.default=en-GB` +
+  `claims.timezone.default=Europe/London` (`application.properties` with
+  `CLAIMS_LOCALE_DEFAULT`/`CLAIMS_TIMEZONE_DEFAULT` env overrides, mirrored in
+  `.env.example`); `AgingScheduler` cron + `AgingService` inject the tenant
+  `ZoneId` (aging evaluates day-boundaries in tenant time, not server time).
+  Money stays NUMERIC server-side — no formatting change in JSON.
+- **`format.ts` Intl rewrite:** `formatMoney` → `Intl.NumberFormat(locale,
+  {style:'currency', currency:'INR'})`; dates → `Intl.DateTimeFormat(locale,
+  {day:'2-digit', month:'short', year:'numeric'})`; datetimes add hour/minute;
+  `formatISODate` centralizes the `yyyy-MM-dd` API contract and `plainAmount`
+  the bare two-decimal editor text (the only `toFixed` left lives in
+  `format.ts`). Sweep removed 5 money literals (`fnol.ts`/`fnol.html`,
+  `authority.ts` incl. `£`-label leftovers) + `overview.ts` ISO centralization.
+- **Real bug fixed:** the exact-72h candidate pre-filter excluded 3-calendar-day
+  claims (filed late Monday, still open early Thursday = under 72 exact hours).
+  Cutoff is now start-of-(today−2) in the tenant zone; the rung evaluation stays
+  authoritative on whole calendar days (`AgingPolicy.stepFor(status, level,
+  daysOld)`, negative counts never age).
+- **A11y:** focus trap in the policies retire dialog (Tab cycles, Escape
+  closes, focus returns to the opener); sr-only labels on 5 claim-detail
+  controls (approve/decision/remarks per cover + doc-custom/doc-file), FNOL
+  result `role=status`, error toasts `role=alert`, timeline filter
+  `role=group`, table action columns get sr-only headers, queue counts
+  `aria-live=polite`; `operations.md` tenant-TZ aging note (4 lines). No
+  migration. api.http: no change (no endpoint changes).
+
+**Verified:** backend 295/295 (aging 25/25 incl. new TZ + day-count tests),
+frontend build green, formatter matrix via node (en-GB `₹1,500.00` +
+`01 Sept 2026`; de-DE `1.500,00 ₹`-shape), E2E queue 9/9 + conflict 1/1 +
+covers 3/3 (isolation green; one combined-run flake on shared-Keycloak timing).
+E2E pins updated to exact new shapes (`queue.spec` `₹1,500.00`), never loosened
+to substring-match. Counts via `git log`/file inspection — tests not re-run in
+this docs session.
+**Screen-reader run notes (filed here per plan):** (1) inline confirms are
+plain buttons+notices, no trap needed; (2) FNOL result announces via
+`role=status`; (3) tables carry sr-only headers; (4) timeline filters are
+`role=group`; (5) queue counts are `aria-live=polite`. Contrast: badges
+4.76–7.10:1, muted 4.55–4.76:1, link 7.04:1 — pass; placeholder/disabled
+2.34:1 exempt (disabled), no fix, no color changes.
+**Keyboard run notes (filed here per plan):** all 38 claim-detail controls
+reachable/labelled; steppers `aria-current=step`; dialog traps Tab +
+Escape/focus-return; error toasts `role=alert`; focus-visible global,
+reduced-motion intact.
+**Deliberately not built (Non-goals):** full i18n string catalog, per-tenant
+locales (single configured default — row-level comes with multi-tenancy).
+
 ### 2026-09-10 — S10 notifications beyond email (V25 prefs + INAPP, SMS-ready)
 
 **Context:** Status-check calls die when claimants get movement pings in-app

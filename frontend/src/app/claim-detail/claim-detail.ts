@@ -603,6 +603,12 @@ export class ClaimDetail {
     return formatMoney(value);
   }
 
+  /** Currency symbol from the locale formatter (en-GB: ₹) — for static labels. */
+  protected currencySymbol(): string {
+    const shaped = formatMoney(0).replace(/[\d.,\s ]+/g, '').trim();
+    return shaped === '' ? '₹' : shaped;
+  }
+
   protected assessedTotal(): number {
     return this.covers().reduce((sum, c) => sum + (c.assessedAmount ?? 0), 0);
   }
