@@ -1,15 +1,77 @@
-# Claims Processing System
+# ClaimFlow — Insurance Claim Processing System (Angular + Spring Boot)
 
-A small single-carrier claims-handling system: a claimant reports a loss (FNOL) with
-photos, the claim is classified L1/L2 and load-balanced to the least-loaded adjuster, an
-adjuster works it (coverage, reserve, internal notes), and a decision closes it — enforced
-by an authority gate (L1 < L2 < supervisor) and a hard visibility wall between carrier and
-claimant. A supervisor sees the team queue, approves escalations, manages aging, edits the
-authority table, and reads the immutable audit log.
+![CI](https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system/actions/workflows/ci.yml/badge.svg)
+![Backend tests](https://img.shields.io/badge/backend-295%2F295-green)
+![E2E](https://img.shields.io/badge/E2E-Plawright-green)
+![Java](https://img.shields.io/badge/Java-21-orange)
+![Angular](https://img.shields.io/badge/Angular-22-red)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 
-All plan slices (0–7) plus the sale-readiness pass (R1–R7) are built and green:
-**182 backend tests** and **13 E2E journeys** (11 original + supervisor overview +
-queue search/filters). `docs/progress.md` is the source of truth for status.
+**ClaimFlow** is a complete, production-grade **insurance claim processing system**:
+claimants file losses online (FNOL — First Notice of Loss), the claim is auto-routed to
+the least-loaded qualified adjuster, adjusters assess it through a staged workflow
+(review → verification → assessment → decision), and supervisors oversee the whole book
+(escalations, aging, authority limits, audit, privacy). Built with an
+**Angular 22** single-page app, a **Spring Boot 3 (Java 21)** REST API,
+**PostgreSQL 16** with Flyway migrations, **Keycloak** SSO (OIDC/PKCE), and
+**Playwright** end-to-end tests.
+
+> 📕 **Full visual demo:** [`demo/ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf)
+> — 56 pages covering every role and every feature (42 live screenshots + 11
+> capability deep-dives + system map). Start here if you are evaluating the project.
+
+## ✨ Features
+
+**Claimant journey**
+- 2-step FNOL form (policy identity → loss details + per-cover picker with claimed amounts)
+- Instant `CLM-` claim number; duplicate filings return the original number (HTTP 409)
+- Plain-words status tracker (steps only — reserves, notes and assignees never leak)
+- My-claims history with search + status filters; policy cockpit with per-cover
+  sub-limit / claimed / remaining math; PDF + photo evidence upload
+
+**Adjuster workspace**
+- Mine-only work queue with age/SLA flags (On track · Due soon · Breaching), tabs, search + sort
+- Claim work surface: facts, Review → Verification → Decision stepper, reserve + internal notes
+- Staged assessment: per-cover review triage, verification records, send-back to claimant
+  (claim parks; tracker shows what was asked), per-cover assessment with server-side
+  guardrails, approve/reject/split decision grid
+- **Authority gate** — inside your limit closes + pays; above it saves a proposal and
+  refers upward; **optimistic locking** — concurrent edits get a conflict banner, never a
+  silent overwrite (HTTP 409)
+
+**Supervisor console**
+- Book-wide overview dashboard (open, exposure, approvals, aging) + escalations queue
+- Mid-flight reassign, supervisor-only **claim reopen** with rationale + sequenced payments
+- Policy book admin (create, CSV import, retire), editable **authority ladder** (L1/L2/L3/supervisor per product)
+- Notification outbox (SENT/FAILED + retry), append-only **audit log** with one-click CSV export
+
+**Platform (production-grade)**
+| Capability | Detail |
+|---|---|
+| Evidence integrity | PDF + photo upload, magic-byte validation, SHA-256 + size per attachment |
+| Object storage | Filesystem default, S3-compatible seam (MinIO dev, real S3 prod, zero code change) |
+| Required documents | Per-product checklist per claim — link an upload or waive with rationale |
+| Document versioning | Supersede (new version replaces old, timeline records it), full history kept |
+| Structured decisions | 7 denial codes, rationale ≥ 20 chars, CSV export of audit + decisions |
+| Privacy (GDPR) | Claimant self-export, supervisor anonymize, 7-year retention report |
+| Notifications | Bell + unread count, in-app center, email/in-app/SMS prefs, outbox never loses mail |
+| Locale & a11y | INR (`₹1,500.00`), en-GB dates, tenant timezone, full keyboard + screen-reader support |
+
+**Security by design** — Keycloak OIDC/PKCE; 404-not-403 on every cross-owner read;
+hard claimant/carrier visibility wall (asserted in tests); rate-limited FNOL;
+append-only audit log (no edit/delete endpoint exists).
+
+## 🏗️ Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Angular 22 SPA, `keycloak-js`, Intl formatters, `frontend/` |
+| Backend | Spring Boot 3, Java 21, Maven, Spring Data JPA + Flyway (V1–V25), `backend/` |
+| Database | PostgreSQL 16 (`claims` dev, `claims_e2e` hermetic E2E) |
+| Auth | Keycloak 26, OIDC/PKCE, realm `claims` |
+| Email | Mailpit (SMTP :1025, UI :8025), transactional outbox pattern |
+| E2E | Playwright, hermetic (own backend :8082 + own `ng serve`, per-run unique data) |
+| CI | GitHub Actions — backend tests + frontend build + full E2E stack |
 
 ```
 Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
@@ -18,99 +80,74 @@ Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
        +-- Playwright E2E (e2e/) ----+          email --> Mailpit (:1025 SMTP / :8025 UI)
 ```
 
-## Layout
+## 📁 Project structure
 
 | Path | What |
 |---|---|
-| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V11), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, decision/gate, escalation + aging, and supervisor admin (escalations, dashboard, authority config, reassign, audit, policy book, email outbox, metrics). |
-| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail, escalations, supervisor overview, authority settings. |
-| `e2e/` | Playwright (13 journeys + 2 new P0 journeys) against the dedicated `claims_e2e` DB. |
+| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail, escalations, supervisor overview, authority settings, notifications, staff + privacy admin. |
+| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V25), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, staged workflow, decision/gate, escalation + aging, supervisor admin (reassign, reopen, dashboard, authority config, audit export, policy book, email outbox, metrics), staff, privacy, notifications. |
+| `e2e/` | Playwright (14 spec files) against the dedicated `claims_e2e` DB. `e2e/shots/` + `shots.spec.ts` capture the demo screenshots. |
+| `demo/` | [`ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf) (56-page visual demo), [`DEMO-PROMPT.md`](demo/DEMO-PROMPT.md) (reusable demo-generation prompt), `build_pdf.py` + `build_full_demo_pdf.py` (PDF builders). |
 | `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
 | `scripts/` | `demo-seed.sql` / `demo-reset.sql` — sales-demo book (dev `claims` DB only). |
-| `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
 | `docker/` | DB bootstrap (creates `claims_e2e`). |
-| `docker-compose.yml` | Postgres 16, Mailpit, Keycloak 26. |
+| `docker-compose.yml` | Postgres 16, Mailpit, Keycloak 26 (+ MinIO for S3 dev). |
 | `.github/workflows/ci.yml` | Backend (Testcontainers), frontend build, E2E (full compose stack). |
 | `api.http` | REST Client examples for every endpoint. |
+| `docs/` | `progress.md` (status source of truth), `plan-v3.md` (S1–S11 specs), `decisions.md` (decision log), `operations.md` (S3 + timezone runbook). |
 
-## Prerequisites
+## 🚀 Quickstart
 
-- Java 21, Maven 3.9+, Node 22 + npm, Docker.
-
-## Setup (first time)
-
-Credentials are **never committed** — copy the example env file once and render the
-Keycloak realm from its template:
+**Prerequisites:** Java 21, Maven 3.9+, Node 22 + npm, Docker.
 
 ```bash
+git clone https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system.git
+cd ai-assisted-claim-processing-system
 npm run setup        # copies .env.example -> .env and renders keycloak/realm-export.json
-```
-
-`.env.example` lists every variable (`DB_USERNAME`, `DB_PASSWORD`,
-`KEYCLOAK_ADMIN_USERNAME`, `KEYCLOAK_ADMIN_PASSWORD`, `ADJUSTER_PASSWORD`,
-`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`). Edit `.env` if you want different local values; the values there
-are DEV-ONLY for the throwaway local Postgres/Keycloak.
-
-## Run it
-
-```bash
-# 1. Stack: Postgres ("claims" + "claims_e2e"), Mailpit, Keycloak (realm "claims").
-#    Renders the realm from .env first.
-npm run db:up
-
-# 2. Install frontend dependencies (first time or after pulls)
+npm run db:up        # Postgres + Mailpit + Keycloak (realm "claims"), waits for health
 npm ci --prefix frontend
-
-# 3. Backend on http://localhost:8081 — Flyway migrates on boot (V1..V11 + seeds).
-#    Sources .env so DB_USERNAME/DB_PASSWORD are set.
-npm run backend
-
-# 4. Frontend on http://localhost:4200 (dev server proxies /api -> :8081)
-npm --prefix frontend start
+npm run backend      # Spring Boot on http://localhost:8081 (Flyway migrates V1..V25 on boot)
+npm --prefix frontend start   # Angular on http://localhost:4200 (proxies /api -> :8081)
 ```
 
-Open http://localhost:4200. **Claimant:** sign in with a pre-provisioned customer
-account — `ada.lovelace` (POL-10001, Ada Lovelace / ada.lovelace@example.test),
-`grace.hopper` (POL-20002, AUTO → L2), `ravi.menon`, `fatima.khan`,
-`david.dsouza`, `lakshmi.iyer`, `arjun.nair`, `kavya.reddy`, or `vikram.rao` —
-all with the `CLAIMANT_PASSWORD` from `.env` (`claims-Pass-123` by default).
-Your cockpit (`My policies`) shows only your own policies; file against your own
-policy number + holder details → claim number immediately → Track this claim for
-the status screen (steps only — never reserve/notes; a closed claim shows the
-decision). **Adjuster:** sign in as `adjuster.one`/`adjuster.two`
-(L1) or `adjuster.three` (L2) with the `ADJUSTER_PASSWORD` from `.env` — the
-workspace is the queue only (no filing/tracking surfaces). **Supervisor:**
-sign in as `supervisor` with `SUPERVISOR_PASSWORD` → Escalations and Authority settings.
-Keycloak admin console: http://localhost:8090 (`KEYCLOAK_ADMIN_USERNAME`/
-`KEYCLOAK_ADMIN_PASSWORD`). Emails land in Mailpit at http://localhost:8025.
+Credentials are **never committed** — `.env.example` lists every variable
+(`DB_USERNAME`, `DB_PASSWORD`, `KEYCLOAK_ADMIN_*`, `ADJUSTER_PASSWORD`,
+`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`). Values in `.env` are DEV-ONLY for the
+throwaway local stack.
 
-Ports: backend **8081** and Keycloak **8090** because 8080 on this machine is taken.
-Health check: `GET http://localhost:8081/api/health` (public liveness).
+**Sign in at http://localhost:4200:**
+- **Claimant:** `ada.lovelace` (POL-10001, HLTH-PLUS ₹10L) · `grace.hopper`
+  (POL-20002, AUTO) · plus `ravi.menon`, `fatima.khan`, `david.dsouza`,
+  `lakshmi.iyer`, `arjun.nair`, `kavya.reddy`, `vikram.rao` — all with
+  `CLAIMANT_PASSWORD` (`claims-Pass-123` default). File → get a `CLM-` number →
+  Track this claim (steps only, never reserves/notes).
+- **Adjuster:** `adjuster.one` / `adjuster.two` (L1, ₹1L) or `adjuster.three`
+  (L2, ₹4L) with `ADJUSTER_PASSWORD` — the workspace is the queue only.
+- **Supervisor:** `supervisor` with `SUPERVISOR_PASSWORD` → overview, escalations,
+  staff, authority, privacy, outbox.
+- Mailpit UI: http://localhost:8025 · Keycloak admin: http://localhost:8090 ·
+  health: `GET http://localhost:8081/api/health`.
 
-## Migrations
+> First boot on a machine whose `pgdata` volume predates slice 1:
+> `docker compose down -v` once so the init script can create `claims_e2e`.
 
-Flyway runs on backend boot: empty database → current in one step.
-`backend/src/main/resources/db/migration/`. Tables are intentionally vertical; later
-slices add columns via new migrations (see `docs/decisions.md`).
-
-## Tests
+## 🧪 Tests
 
 ```bash
-# Backend: unit + integration (real Postgres + Mailpit via Testcontainers, or a dedicated
-# claims_test DB fallback when Docker is unavailable — see docs/decisions.md).
-npm run backend:test
-
-# E2E — start the stack once (renders the realm + waits for health), install Chromium once:
+npm run backend:test   # unit + integration: 295/295 green (Testcontainers Postgres+Mailpit,
+                       # or claims_test DB fallback when Docker is unavailable)
 npm run db:up
 npx --prefix e2e playwright install chromium
-npm run e2e
+npm run e2e            # hermetic Playwright: own backend :8082 + ng serve, claims_e2e truncated
 ```
 
-Expected: backend **182 tests** and **13 E2E journeys** (+ 2 new P0 journeys) — all
-green. E2E never touches the dev `claims` database: Playwright boots the backend on
-port 8082 against `claims_e2e` (the dev backend stays on 8081).
+Backend **295/295** green · frontend build green · hermetic E2E green across
+`fnol`, `covers`, `queue`, `staged`, `conflict`, `reopen`, `staff`,
+`structured-decision`, `privacy`, `notifications`, `need-info-docs`.
+E2E never touches the dev `claims` database. `docs/progress.md` is the source of
+truth for status; `docs/decisions.md` logs every slice decision (S1–S11).
 
-## Demo seed (sales walkthroughs — dev `claims` DB only, never `claims_e2e`)
+## 🎬 Demo
 
 ```bash
 npm run demo:seed    # 6 POL-DEMO-* policies + claims at each ladder rung
@@ -119,51 +156,31 @@ npm run demo:seed    # 6 POL-DEMO-* policies + claims at each ladder rung
 npm run demo:reset   # deletes all demo rows (audit_log rows stay: append-only)
 ```
 
-Demo markers: `policy_number LIKE 'POL-DEMO-%'`, `claimant_sub LIKE 'demo-%'`
-(holder names/emails are fictitious `@example.test`). Both scripts refuse any
-database but `claims`. See `docs/operations.md` (carrier onboarding checklist)
-for where the seed fits a demo.
+Screenshots: `npx playwright test --config shots.config.ts` from `e2e/` (after
+`npm run demo:seed`) → `e2e/shots/` → `python3 demo/build_full_demo_pdf.py`
+rebuilds the 56-page PDF. See `demo/DEMO-PROMPT.md` for the reusable prompt.
 
-## CI
+## 🗄️ Migrations
 
-`.github/workflows/ci.yml` on every push/PR: backend (`mvn test`), frontend build, and E2E
-(full compose stack, realm rendered from env first). Nothing merges red. CI injects the
-dev credentials as job-level env vars (overridable with GitHub secrets for any non-local
-run).
+Flyway runs on backend boot: empty database → current in one step (V1–V25).
+`backend/src/main/resources/db/migration/`. Tables are intentionally vertical; later
+slices add columns via new migrations — V1–V17 are never edited
+(see `docs/decisions.md`).
 
-## Deploy, backup, rollback
+## 🔁 CI / Deploy / Backup
 
-No hosting target is specified in `docs/requirements.md`, so there is no deployment
-artifact beyond the standard pieces: a Spring Boot jar (`backend/`), an Angular static
-build (`frontend/dist/`), and Postgres/Keycloak/Mailpit containers. Deploying means running
-those three with production credentials injected via the environment (never committed).
+- **CI:** `.github/workflows/ci.yml` on every push/PR — backend tests, frontend
+  build, full-stack E2E (realm rendered from env first). Nothing merges red.
+- **Deploy:** standard pieces — Spring Boot jar (`backend/`), Angular static build
+  (`frontend/dist/`), Postgres/Keycloak/Mailpit containers — with production
+  credentials injected via environment (never committed).
+- **Backup:** `pg_dump` the `claims` DB + archive `claims.uploads.dir` (on-disk
+  evidence). Restore with `pg_restore`, then re-point `SPRING_DATASOURCE_URL`.
+- **Rollback:** redeploy the previous image/commit. Flyway is forward-only
+  (audit log is immutable — no down-migrations); schema rollback = restore a
+  pre-migration backup. Backend logs to stdout, free of secrets and PII.
 
-- **Backup:** `pg_dump` the `claims` database (and archive `claims.uploads.dir`, the
-  on-disk photo evidence). Restore with `pg_restore` into a fresh database, then re-point
-  `SPRING_DATASOURCE_URL`.
-- **Rollback:** redeploy the previous application image/commit. Flyway migrations are
-  forward-only by design (the audit log is immutable, so no down-migrations); a schema
-  rollback means restoring the database from a backup taken before the migration.
-- **Logs:** the backend logs to stdout (read them from the container/orchestrator). Logs
-  carry no passwords, tokens, or personal data — errors are logged server-side with a
-  generic message returned to the client.
+## 📜 Status
 
-## From a fresh clone
-
-```bash
-git clone <repo> && cd <repo>
-npm run setup
-npm run db:up
-npm ci --prefix frontend && npm ci --prefix e2e
-npm run backend:test
-npx --prefix e2e playwright install chromium
-npm run e2e
-```
-
-> First boot on a machine whose `pgdata` volume predates slice 1: `docker compose down -v`
-> once so the init script can create `claims_e2e`.
-
-## Status
-
-All plan slices (0–7) are done and reviewed; the pre-ship hardening pass is complete.
-`docs/progress.md` is the source of truth for where the project stands.
+All plan slices S1–S11 (plan V3) are built, tested and committed on top of the
+V1 + V2 foundation — 11/11 done. `docs/progress.md` is the source of truth.
