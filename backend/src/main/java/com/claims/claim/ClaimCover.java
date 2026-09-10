@@ -54,6 +54,10 @@ public class ClaimCover {
     @Column(name = "decision_remarks")
     private String decisionRemarks;
 
+    /** V23 (V3 S8): structured denial code on a REJECTED cover; internal-only. */
+    @Column(name = "denial_reason")
+    private String denialReason;
+
     @Column(name = "is_proposal", nullable = false)
     private boolean proposal = false;
 
@@ -115,6 +119,14 @@ public class ClaimCover {
 
     public String getDecisionRemarks() {
         return decisionRemarks;
+    }
+
+    public String getDenialReason() {
+        return denialReason;
+    }
+
+    public void setDenialReason(String denialReason) {
+        this.denialReason = denialReason;
     }
 
     public boolean isProposal() {

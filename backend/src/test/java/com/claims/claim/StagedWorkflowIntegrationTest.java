@@ -135,12 +135,13 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // PARTIALLY_APPROVED with payment = Σ net = (80000-10000) + 0 = 70000.
         HttpResponse<String> decided = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Within authority.\",\"expectedVersion\":"
+                "{\"rationale\":\"Within authority to close now.\",\"expectedVersion\":"
                         + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":80000,\"remarks\":\"Bills verified.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Pre-dates the waiting period.\"}]}");
+                        + "\"remarks\":\"Pre-dates the waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, decided.statusCode(), decided.body());
         assertTrue(decided.body().contains("\"status\":\"CLOSED\""), decided.body());
 
@@ -281,12 +282,13 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         // HLTH-PLUS L1 100000; propose 150000 approved -> proposals saved, claim stays.
         HttpResponse<String> gated = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Needs senior sign-off.\",\"expectedVersion\":"
+                "{\"rationale\":\"Needs senior sign-off here.\",\"expectedVersion\":"
                         + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Waiting period.\"}]}");
+                        + "\"remarks\":\"Waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, gated.statusCode(), gated.body());
         assertTrue(gated.body().contains("\"proposalsSaved\":true"), gated.body());
         assertTrue(gated.body().contains("\"proposedTotal\":150000"), gated.body());
@@ -348,7 +350,8 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Agreed.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Waiting period.\"}]}");
+                        + "\"remarks\":\"Waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, closed.statusCode(), closed.body());
         assertTrue(closed.body().contains("\"status\":\"CLOSED\""), closed.body());
         assertEquals("CLOSED", statusOf(claimNumber));
@@ -463,12 +466,13 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> closed = postJson(
                 "/api/claims/" + claimNumber + "/escalation-cover-decision",
                 supervisorBearer(),
-                "{\"rationale\":\"Agreed at revised figures.\",\"expectedVersion\":"
+                "{\"rationale\":\"Agreed at revised figures now.\",\"expectedVersion\":"
                         + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":120000,\"remarks\":\"Revised.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Waiting period.\"}]}");
+                        + "\"remarks\":\"Waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, closed.statusCode(), closed.body());
         assertTrue(closed.body().contains("\"status\":\"CLOSED\""), closed.body());
         assertEquals("CLOSED", statusOf(claimNumber));
@@ -660,12 +664,13 @@ class StagedWorkflowIntegrationTest extends ClaimTableResettingTest {
     private void proposeAboveL1(String claimNumber, String bearer) throws Exception {
         HttpResponse<String> gated = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Needs senior sign-off.\",\"expectedVersion\":"
+                "{\"rationale\":\"Needs senior sign-off here.\",\"expectedVersion\":"
                         + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":150000,\"remarks\":\"Large bill.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Waiting period.\"}]}");
+                        + "\"remarks\":\"Waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, gated.statusCode(), gated.body());
         assertTrue(gated.body().contains("\"proposalsSaved\":true"), gated.body());
     }

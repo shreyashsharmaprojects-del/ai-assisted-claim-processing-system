@@ -198,7 +198,7 @@ class ClaimConcurrencyIntegrationTest extends ClaimTableResettingTest {
 
         // The current holder decides with the fresh version: closes normally.
         HttpResponse<String> decided = postJson(decisionPath, holderBearer,
-                "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\","
+                "{\"decision\":\"DENIED\",\"rationale\":\"Not covered by this policy.\","
                         + "\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(200, decided.statusCode(), decided.body());
         assertEquals("CLOSED", statusOf(claimNumber));

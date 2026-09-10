@@ -196,7 +196,7 @@ class QueuePaginationIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":1200000.00,"
-                        + "\"rationale\":\"Exceptional loss.\",\"expectedVersion\":"
+                        + "\"rationale\":\"Exceptional loss; escalating upward.\",\"expectedVersion\":"
                         + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
     }

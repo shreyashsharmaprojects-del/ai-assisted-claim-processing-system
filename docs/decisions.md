@@ -5,6 +5,50 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-10 — S8 structured decisions + audit export (V23 denial_reason)
+
+**Context:** Closures carried free-text rationale only, so nobody could ask
+"why was this cover denied" in a structured way, and an audit story could not
+leave the system except as screen text. Plan: `docs/plan-v3.md` S8 (depends
+on S5 version-checked decisions + S6 reopen/re-decide).
+
+**What changed (all additive):**
+- **Migration `V23__decision_codes.sql`:** `claim_cover.denial_reason
+  VARCHAR(60) NULL`. Codes are a Java enum (`DenialReason`, 7 codes:
+  NOT_COVERED, EXCLUDED_PER_CLAUSE, ABOVE_SUB_LIMIT_EXHAUSTED,
+  INSUFFICIENT_EVIDENCE, DUPLICATE_PRE_EXISTING, FRAUD_SUSPECTED_REFERRAL,
+  OTHER) — no lookup table this slice; mapped onto `ClaimCover.denialReason`
+  and `CoverOutcome.denialReason`.
+- **≥20-char rationale on all closures:** staged decide/decideEscalation
+  (`StagedWorkflowService.requireClosureRationale`) + `AuthorityGate.validate`
+  for the legacy single-figure and escalation decisions (legacy has no
+  per-cover rejects, so rationale-only there).
+- **Code + remarks per REJECTED cover:** every reject needs a denial code
+  (OTHER still needs remarks); 400s name the offending `coverCode` (unknown
+  codes 400 naming the 7 valid values); validate-before-write —
+  `expectedVersion` compare-and-swap runs first (stale → 409), so a 400 never
+  moves the claim.
+- **Exports (`AuditExportController`, SUPERVISOR-only at the URL):**
+  `GET /api/audit/export?claimNumber=` (claim audit CSV: at, actor, action,
+  before, after, rationale) + `GET /api/decisions/export?from&to` (closure
+  CSV: claim, policy, product, aggregate, totals, decider, rationale, denial
+  codes). Streamed via `JdbcTemplate`, `text/csv`,
+  `Content-Disposition: attachment`; unknown claim → 404, never 403.
+- **Claimant wall:** claimant-visible denial text is the remarks; codes never
+  leave the supervisor surface.
+- **Frontend:** denial-reason `<select>` per rejected cover + rationale
+  textarea with live char count and min-length error (testids
+  `detail-deny-reason-{coverCode}`, `detail-rationale-count`); Export buttons
+  on the audit panel + overview (testids `overview-export-audit/decisions`).
+
+**Verified:** `StructuredDecisionIntegrationTest` 5/5 (short-rationale 400,
+codeless-reject 400, unknown-code 400, valid close persists codes + exports,
+supervisor-only/unknown-404), full backend suite 284/284 (279/279 at S7 per
+`git log` + 5 new — docs-only session, tests not re-run), frontend build
+green, `structured-decision.spec` 1/1 (reject with a code, count hint, close).
+**Deliberately not built (Non-goals):** appeal-letter templates,
+code-effectiveness reporting.
+
 ### 2026-09-10 — S7 staff management surface, supervisor-only (no migration)
 
 **Context:** Offboarding stranded queues: deactivating an adjuster had no path,

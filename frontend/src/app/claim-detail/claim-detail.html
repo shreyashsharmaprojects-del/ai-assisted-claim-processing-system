@@ -250,18 +250,24 @@
                     id="decision-rationale"
                     class="input"
                     rows="3"
-                    placeholder="Required for approval and denial"
+                    placeholder="Required for approval and denial (min 20 characters)"
                     data-testid="detail-decision-rationale"
                     [(ngModel)]="decisionRationale"
                     name="decisionRationale"
                   ></textarea>
+                  <p class="muted" data-testid="detail-rationale-count">
+                    {{ rationaleLength() }}/{{ RATIONALE_MIN }} characters
+                    @if (!rationaleReady()) {
+                      <span> — at least {{ RATIONALE_MIN }} characters required</span>
+                    }
+                  </p>
                 </div>
                 <div class="button-row decision-actions">
                   <button
                     type="submit"
                     class="btn btn--primary"
                     data-testid="detail-approve"
-                    [disabled]="deciding() || !decisionAmount || !decisionRationale.trim()"
+                    [disabled]="deciding() || !decisionAmount || !rationaleReady()"
                   >
                     Approve
                   </button>
@@ -269,7 +275,7 @@
                     type="button"
                     class="btn btn--danger"
                     data-testid="detail-deny"
-                    [disabled]="deciding() || !decisionRationale.trim()"
+                    [disabled]="deciding() || !rationaleReady()"
                     (click)="deny()"
                   >
                     Deny
@@ -990,6 +996,20 @@
                           [(ngModel)]="coverRemarks[cover.coverCode]"
                           [name]="'coverRemarks' + cover.coverCode"
                         />
+                        @if (coverDecision[cover.coverCode] === 'REJECTED') {
+                          <select
+                            class="input input--sm"
+                            [attr.aria-label]="'Denial reason for ' + cover.coverCode"
+                            [attr.data-testid]="'detail-deny-reason-' + cover.coverCode"
+                            [(ngModel)]="coverDenyReason[cover.coverCode]"
+                            [name]="'denyReason' + cover.coverCode"
+                          >
+                            <option value="">Denial reason…</option>
+                            @for (reason of DENIAL_REASONS; track reason) {
+                              <option [value]="reason">{{ reason }}</option>
+                            }
+                          </select>
+                        }
                       </td>
                     </tr>
                   }
@@ -1006,11 +1026,17 @@
                 id="cover-decision-rationale"
                 class="input"
                 rows="2"
-                placeholder="Required to submit the decision"
+                placeholder="Required to submit the decision (min 20 characters)"
                 data-testid="detail-decision-rationale"
                 [(ngModel)]="decisionRationale"
                 name="decisionRationale"
               ></textarea>
+              <p class="muted" data-testid="detail-rationale-count">
+                {{ rationaleLength() }}/{{ RATIONALE_MIN }} characters
+                @if (!rationaleReady()) {
+                  <span> — at least {{ RATIONALE_MIN }} characters required</span>
+                }
+              </p>
             </div>
             <div class="decision-side">
               <form (ngSubmit)="saveReserve()" class="decision-side__item">
@@ -1085,7 +1111,7 @@
                 type="button"
                 class="btn btn--primary"
                 data-testid="detail-submit-decision"
-                [disabled]="deciding() || !decisionRationale.trim()"
+                [disabled]="deciding() || !rationaleReady()"
                 (click)="submitCoverDecision()"
               >
                 Submit decision
@@ -1383,6 +1409,17 @@
               }
             </div>
             <div class="panel__body">
+              <div class="button-row">
+                <button
+                  type="button"
+                  class="btn btn--secondary btn--sm"
+                  data-testid="overview-export-audit"
+                  [disabled]="exportingAudit()"
+                  (click)="exportAudit()"
+                >
+                  {{ exportingAudit() ? 'Exporting…' : 'Export audit CSV' }}
+                </button>
+              </div>
               @if (auditError(); as auditMessage) {
                 <p class="notice notice--error" data-testid="detail-audit-error" role="alert">{{ auditMessage }}</p>
               } @else if (auditTrail().length === 0) {

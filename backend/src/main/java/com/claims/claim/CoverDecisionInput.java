@@ -11,6 +11,7 @@ import java.util.List;
 public record CoverDecisionInput(String decision, BigDecimal indemnityAmount, String rationale,
         List<CoverOutcome> covers, Long expectedVersion) {
     public record CoverOutcome(String coverCode, String decision, BigDecimal approvedAmount,
-            BigDecimal deductibleAmount, BigDecimal adjustmentAmount, String remarks) {
+            BigDecimal deductibleAmount, BigDecimal adjustmentAmount, String remarks,
+            String denialReason) {
     }
 }

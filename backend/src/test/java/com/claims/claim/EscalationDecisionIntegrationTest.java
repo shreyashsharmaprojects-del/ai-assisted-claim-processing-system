@@ -251,13 +251,13 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = escalatedClaimNumber();
         String path = "/api/claims/" + claimNumber + "/escalation-decision";
         String body = "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                + ABOVE_L2 + ",\"rationale\":\"first\""
+                + ABOVE_L2 + ",\"rationale\":\"first valid approval\""
                 + ",\"expectedVersion\":" + versionOf(claimNumber) + "}";
 
         assertEquals(200, postJson(path, supervisorBearer(), body).statusCode());
         HttpResponse<String> second = postJson(path, supervisorBearer(),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"first\""
+                        + ABOVE_L2 + ",\"rationale\":\"first valid approval\""
                         + ",\"expectedVersion\":" + versionOf(claimNumber) + "}");
         assertEquals(400, second.statusCode(), second.body());
         assertTrue(second.body().contains("already been decided"), second.body());
@@ -334,7 +334,7 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
 
         assertEquals(200, postJson("/api/claims/" + claimNumber + "/escalation-decision",
                 supervisorBearer(), "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Approved.\""
+                        + ABOVE_L2 + ",\"rationale\":\"Approved after full review.\""
                         + ",\"expectedVersion\":" + versionOf(claimNumber) + "}")
                 .statusCode());
 
@@ -379,7 +379,7 @@ class EscalationDecisionIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\""
+                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss; supervisor review needed.\""
                         + ",\"expectedVersion\":" + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertTrue(escalation.body().contains("\"escalatedTo\":\"SUPERVISOR\""),

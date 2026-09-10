@@ -100,6 +100,46 @@
         <a routerLink="/admin/policies" class="btn btn--tertiary">Policies</a>
       </div>
     </div>
+
+    <section class="panel" aria-label="Decisions export">
+      <div class="panel__header">
+        <h2>Decisions export</h2>
+      </div>
+      <div class="panel__body">
+        <p class="muted">Closure CSV for a date range (defaults to the last 30 days).</p>
+        <div class="inline-form">
+          <div class="field">
+            <label for="export-from">From</label>
+            <input
+              id="export-from"
+              class="input"
+              type="date"
+              [(ngModel)]="exportFrom"
+              name="exportFrom"
+            />
+          </div>
+          <div class="field">
+            <label for="export-to">To</label>
+            <input
+              id="export-to"
+              class="input"
+              type="date"
+              [(ngModel)]="exportTo"
+              name="exportTo"
+            />
+          </div>
+          <button
+            type="button"
+            class="btn btn--secondary"
+            data-testid="overview-export-decisions"
+            [disabled]="exportingDecisions()"
+            (click)="exportDecisions()"
+          >
+            {{ exportingDecisions() ? 'Exporting…' : 'Export decisions CSV' }}
+          </button>
+        </div>
+      </div>
+    </section>
   }
 
   <section class="panel" data-testid="outbox-panel" aria-label="Email outbox">

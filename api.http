@@ -362,6 +362,27 @@ Content-Type: application/json
   ]
 }
 
+### Staged workflow — cover decision with denial codes (V23 S8). Claim-level
+# rationale >= 20 chars on every closure; each REJECTED cover carries a denialReason
+# (NOT_COVERED | EXCLUDED_PER_CLAUSE | ABOVE_SUB_LIMIT_EXHAUSTED |
+# INSUFFICIENT_EVIDENCE | DUPLICATE_PRE_EXISTING | FRAUD_SUSPECTED_REFERRAL |
+# OTHER) + remarks. Missing/short rationale, codeless or unknown-code rejects ->
+# 400 naming the cover (coverCode); stale expectedVersion -> 409 first
+# (validate-after-version, field errors leave the claim open). Codes stay
+# internal — the claimant sees only the remarks.
+POST {{host}}/api/claims/CLM-000001/cover-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rationale": "Hospital bills verified against the schedule; OPD pre-dates cover.",
+  "expectedVersion": 3,
+  "covers": [
+    { "coverCode": "HOSPITALIZATION", "decision": "APPROVED", "approvedAmount": 80000.00, "remarks": "Bills verified." },
+    { "coverCode": "OPD", "decision": "REJECTED", "remarks": "OPD visits pre-date the policy waiting period.", "denialReason": "NOT_COVERED" }
+  ]
+}
+
 ### Staged workflow — refer upwards (DECISION with saved proposals only). Named
 # senior (higher rung whose limit covers the proposed total) or "auto": true (the
 # least-loaded skilled adjuster at the lowest covering rung; supervisor fallback
@@ -434,6 +455,20 @@ Content-Type: application/json
 # Append-only is enforced at the data layer (V7 trigger): raw UPDATE/DELETE are rejected.
 GET {{host}}/api/claims/CLM-000001/audit
 Authorization: Bearer {{token}}
+
+### Audit export — claim story as CSV (SUPERVISOR only, V23 S8). Columns: at,
+# actor, action, before, after, rationale. text/csv + attachment download;
+# unknown claim -> 404, never 403.
+GET {{host}}/api/audit/export?claimNumber=CLM-000001
+Authorization: Bearer {{token}}
+Accept: text/csv
+
+### Decisions export — closures in range as CSV (SUPERVISOR only, V23 S8).
+# from/to are dates (yyyy-MM-dd; bad format -> 400). Columns: claim, policy,
+# product, aggregate, totals, decider, rationale, denialCodes (cover=code;…).
+GET {{host}}/api/decisions/export?from=2026-01-01&to=2026-12-31
+Authorization: Bearer {{token}}
+Accept: text/csv
 
 ### Policy admin — create (SUPERVISOR only). Unknown product code -> 400 naming valid
 # codes (10-row V2 catalog: HLTH-PLUS, AUTO-STD, PROP-HOME, ...); duplicate number

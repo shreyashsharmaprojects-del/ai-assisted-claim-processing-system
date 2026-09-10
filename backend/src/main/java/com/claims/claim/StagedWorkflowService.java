@@ -488,6 +488,7 @@ public class StagedWorkflowService {
         }
         String rationale = textOf(input.rationale());
         requireRationale(rationale, "A rationale is required.");
+        requireClosureRationale(rationale);
         AppUser actor = appUsers.findByKeycloakSub(actorSub)
                 .orElseThrow(IllegalStateException::new);
         Policy policy = policyOf(claim);
@@ -532,6 +533,8 @@ public class StagedWorkflowService {
                 String remarks = textOf(outcome.remarks());
                 requireRationale(remarks,
                         "Remarks are required to reject cover " + row.getCoverCode() + ".");
+                row.setDenialReason(requireDenialReason(row.getCoverCode(),
+                        textOf(outcome.denialReason())));
                 row.applyDecision("REJECTED", null,
                         row.getDeductibleAmount(), row.getAdjustmentAmount(), null,
                         remarks, actor.getId(), now, false);
@@ -995,6 +998,7 @@ public class StagedWorkflowService {
         }
         String rationale = textOf(input.rationale());
         requireRationale(rationale, "A rationale is required.");
+        requireClosureRationale(rationale);
         Map<String, PolicyCover> opted = optedByCode(claim.getPolicyId());
         Map<String, CoverDecisionInput.CoverOutcome> byCode = new HashMap<>();
         for (CoverDecisionInput.CoverOutcome outcome : input.covers()) {
@@ -1030,6 +1034,8 @@ public class StagedWorkflowService {
                 String remarks = textOf(outcome.remarks());
                 requireRationale(remarks,
                         "Remarks are required to reject cover " + row.getCoverCode() + ".");
+                row.setDenialReason(requireDenialReason(row.getCoverCode(),
+                        textOf(outcome.denialReason())));
                 row.applyDecision("REJECTED", null, row.getDeductibleAmount(),
                         row.getAdjustmentAmount(), null, remarks, null, now, false);
                 claimCovers.save(row);
@@ -1444,6 +1450,38 @@ public class StagedWorkflowService {
         if (rationale == null) {
             throw new InvalidRequestException(message);
         }
+    }
+
+    /**
+     * V23 (V3 S8): every closure carries a ≥20-char claim-level rationale. Runs
+     * alongside {@link #requireRationale} — the message names the problem.
+     */
+    private static void requireClosureRationale(String rationale) {
+        if (rationale != null && rationale.length() < 20) {
+            throw new InvalidRequestException(
+                    "Rationale must be at least 20 characters.");
+        }
+    }
+
+    /**
+     * V23 (V3 S8): every REJECTED cover carries a denial code (OTHER still
+     * needs remarks, enforced by the caller). Unknown codes are a 400 naming
+     * the valid codes; every error names the offending cover.
+     */
+    private static String requireDenialReason(String coverCode, String denialReason) {
+        if (denialReason == null) {
+            throw new InvalidRequestException("Cover " + coverCode
+                    + " needs a denial reason (" + DenialReason.list() + ").");
+        }
+        try {
+            DenialReason.valueOf(denialReason.trim()
+                    .toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            throw new InvalidRequestException("Cover " + coverCode
+                    + " has an unknown denial reason '" + denialReason
+                    + "' (valid: " + DenialReason.list() + ").");
+        }
+        return denialReason.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private static void validateMoney(BigDecimal amount, String what) {

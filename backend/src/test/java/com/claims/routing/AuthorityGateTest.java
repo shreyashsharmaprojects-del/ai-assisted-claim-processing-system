@@ -103,45 +103,61 @@ class AuthorityGateTest {
     void rationaleIsRequiredForAnApproval() {
         assertEquals("A rationale is required.",
                 AuthorityGate.validate("APPROVED", new BigDecimal("100.00"), "  "));
-        assertNull(AuthorityGate.validate("APPROVED", new BigDecimal("100.00"), "ok"));
+        // V23 (V3 S8): closures need a rationale of at least 20 characters.
+        assertEquals("Rationale must be at least 20 characters.",
+                AuthorityGate.validate("APPROVED", new BigDecimal("100.00"), "ok"));
+        assertNull(AuthorityGate.validate("APPROVED", new BigDecimal("100.00"),
+                "A well-documented reason here."));
     }
 
     @Test
     void rationaleIsRequiredForADenial() {
         assertEquals("A rationale is required.",
                 AuthorityGate.validate("DENIED", null, null));
-        assertNull(AuthorityGate.validate("DENIED", null, "ok"));
+        assertEquals("Rationale must be at least 20 characters.",
+                AuthorityGate.validate("DENIED", null, "ok"));
+        assertNull(AuthorityGate.validate("DENIED", null,
+                "A well-documented reason here."));
     }
 
     @Test
     void approvalRequiresAPositiveIndemnityAmount() {
         assertEquals("An indemnity amount is required for an approval.",
-                AuthorityGate.validate("APPROVED", null, "ok"));
+                AuthorityGate.validate("APPROVED", null,
+                        "A well-documented reason here."));
         assertEquals("Indemnity amount must be greater than zero.",
-                AuthorityGate.validate("APPROVED", BigDecimal.ZERO, "ok"));
+                AuthorityGate.validate("APPROVED", BigDecimal.ZERO,
+                        "A well-documented reason here."));
         assertEquals("Indemnity amount must be greater than zero.",
-                AuthorityGate.validate("APPROVED", new BigDecimal("-5"), "ok"));
+                AuthorityGate.validate("APPROVED", new BigDecimal("-5"),
+                        "A well-documented reason here."));
     }
 
     @Test
     void approvalAmountMustFitTheMoneyColumn() {
         assertEquals("Indemnity amount may have at most 2 decimal places.",
-                AuthorityGate.validate("APPROVED", new BigDecimal("1.234"), "ok"));
+                AuthorityGate.validate("APPROVED", new BigDecimal("1.234"),
+                        "A well-documented reason here."));
         assertEquals("Indemnity amount is too large (maximum 999999999999.99).",
-                AuthorityGate.validate("APPROVED", new BigDecimal("1000000000000"), "ok"));
-        assertNull(AuthorityGate.validate("APPROVED", new BigDecimal("999999999999.99"), "ok"));
+                AuthorityGate.validate("APPROVED", new BigDecimal("1000000000000"),
+                        "A well-documented reason here."));
+        assertNull(AuthorityGate.validate("APPROVED",
+                new BigDecimal("999999999999.99"),
+                "A well-documented reason here."));
     }
 
     @Test
     void denialCannotCarryAnIndemnityAmount() {
         assertEquals("An indemnity amount only applies to an approval.",
-                AuthorityGate.validate("DENIED", new BigDecimal("500.00"), "ok"));
+                AuthorityGate.validate("DENIED", new BigDecimal("500.00"),
+                        "A well-documented reason here."));
     }
 
     @Test
     void decisionMustBeApprovedOrDenied() {
         assertEquals("Decision must be APPROVED or DENIED.",
-                AuthorityGate.validate("MAYBE", new BigDecimal("500.00"), "ok"));
+                AuthorityGate.validate("MAYBE", new BigDecimal("500.00"),
+                        "A well-documented reason here."));
         assertEquals("Decision must be APPROVED or DENIED.",
                 AuthorityGate.validate(null, null, null));
     }

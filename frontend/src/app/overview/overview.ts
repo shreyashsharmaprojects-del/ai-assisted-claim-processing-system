@@ -37,6 +37,17 @@ type OutboxStatusFilter = 'ALL' | 'PENDING' | 'SENT' | 'FAILED';
 
 const OUTBOX_PAGE_SIZE = 25;
 
+/** S8 (V23): decisions-export range defaults — the last 30 days, yyyy-MM-dd. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function last30Start(): string {
+  const date = new Date();
+  date.setDate(date.getDate() - 30);
+  return date.toISOString().slice(0, 10);
+}
+
 /**
  * The supervisor's operations overview: one glance at team load, the escalation
  * pressure, and the money committed this month — with the action each number implies.
@@ -69,6 +80,11 @@ export class Overview implements OnDestroy {
   protected readonly outboxQuery = signal('');
   protected readonly outboxStatus = signal<OutboxStatusFilter>('ALL');
   protected readonly retrying = signal<number | null>(null);
+
+  // ---- S8 (V23) decisions CSV export (supervisor-only; from/to default to last 30 days) ----
+  protected readonly exportingDecisions = signal(false);
+  protected exportFrom = last30Start();
+  protected exportTo = todayIso();
 
   protected approvedText(): string {
     return formatMoney(this.stats()?.approvedThisMonth);
@@ -190,6 +206,36 @@ export class Overview implements OnDestroy {
 
   protected loadMoreOutbox(): void {
     void this.loadOutbox(false);
+  }
+
+  /** S8 (V23): download the closure CSV for the from/to range via blob + filename. */
+  async exportDecisions(): Promise<void> {
+    this.exportingDecisions.set(true);
+    try {
+      const params = `from=${encodeURIComponent(this.exportFrom)}&to=${encodeURIComponent(this.exportTo)}`;
+      const response = await firstValueFrom(
+        this.http.get(`/api/decisions/export?${params}`, {
+          responseType: 'blob',
+          observe: 'response',
+        }),
+      );
+      const body = response.body ?? new Blob();
+      const match = /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(
+        response.headers.get('Content-Disposition') ?? '',
+      );
+      const name = match?.[3]?.trim() || match?.[4]?.trim() || `decisions-${this.exportFrom}-${this.exportTo}.csv`;
+      const url = URL.createObjectURL(body);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = name;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      this.toasts.success('Decisions exported.');
+    } catch (err) {
+      this.toasts.error('Could not export the decisions.', err);
+    } finally {
+      this.exportingDecisions.set(false);
+    }
   }
 
   /** Retry a FAILED row: reset to PENDING. Quiet toast, list refreshes in place. */

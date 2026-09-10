@@ -180,7 +180,7 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
         String claimNumber = fileHomeFnol("sub-aging-closed");
         decisionService.decide(claimNumber, SUB_L1_ONE,
                 new ClaimDecisionInput("APPROVED", new BigDecimal("1500.00"),
-                        "within my authority", versionOf(claimNumber)));
+                        "within my authority here", versionOf(claimNumber)));
         assertEquals("CLOSED", statusOf(claimNumber));
 
         backdate(claimNumber, NOW.minus(10, ChronoUnit.DAYS));
@@ -198,7 +198,7 @@ class AgingIntegrationTest extends ClaimTableResettingTest {
         // limit, so the claim goes straight to the supervisor.
         decisionService.decide(claimNumber, SUB_L1_ONE,
                 new ClaimDecisionInput("APPROVED", new BigDecimal("1200000.00"),
-                        "above the L3 limit", versionOf(claimNumber)));
+                        "above the L3 limit by far", versionOf(claimNumber)));
         assertEquals("ESCALATED_SUPERVISOR", statusOf(claimNumber));
         assertEquals(1, count("SELECT count(*) FROM audit_log WHERE action = 'CLAIM_ESCALATED' "
                 + "AND entity_id = ?", idOf(claimNumber)));

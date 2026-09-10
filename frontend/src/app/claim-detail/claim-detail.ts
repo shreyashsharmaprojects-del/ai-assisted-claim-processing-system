@@ -275,6 +275,20 @@ export class ClaimDetail {
   protected approveInputs: Record<string, string> = {};
   protected coverDecision: Record<string, 'APPROVED' | 'REJECTED'> = {};
   protected coverRemarks: Record<string, string> = {};
+  /** S8 (V23): denial code per cover, sent as denialReason on REJECTED outcomes. */
+  protected coverDenyReason: Record<string, string> = {};
+  protected readonly DENIAL_REASONS = [
+    'NOT_COVERED',
+    'EXCLUDED_PER_CLAUSE',
+    'ABOVE_SUB_LIMIT_EXHAUSTED',
+    'INSUFFICIENT_EVIDENCE',
+    'DUPLICATE_PRE_EXISTING',
+    'FRAUD_SUSPECTED_REFERRAL',
+    'OTHER',
+  ];
+  /** S8 (V23): claim-level rationale floor the backend also enforces (400). */
+  protected readonly RATIONALE_MIN = 20;
+  protected readonly exportingAudit = signal(false);
   protected assessmentRationale = '';
 
   // Referral inputs.
@@ -1351,9 +1365,25 @@ export class ClaimDetail {
     }
   }
 
+  /** S8 (V23): live rationale length for the char-count hint + 20-char gate. */
+  protected rationaleLength(): number {
+    return this.decisionRationale.trim().length;
+  }
+
+  /** S8 (V23): submit stays blocked until the rationale meets the server floor. */
+  protected rationaleReady(): boolean {
+    return this.rationaleLength() >= this.RATIONALE_MIN;
+  }
+
   // --- legacy single-figure decision --------------------------------------------
 
   async approve() {
+    if (this.rationaleLength() < this.RATIONALE_MIN) {
+      this.error.set(
+        `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+      );
+      return;
+    }
     await this.decide({
       decision: 'APPROVED',
       indemnityAmount: Number(this.decisionAmount),
@@ -1362,6 +1392,12 @@ export class ClaimDetail {
   }
 
   async deny() {
+    if (this.rationaleLength() < this.RATIONALE_MIN) {
+      this.error.set(
+        `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+      );
+      return;
+    }
     await this.decide({ decision: 'DENIED', rationale: this.decisionRationale.trim() });
   }
 
@@ -1451,8 +1487,10 @@ export class ClaimDetail {
   async submitCoverDecision() {
     this.error.set(null);
     this.decisionResult.set(null);
-    if (!this.decisionRationale.trim()) {
-      this.error.set('A rationale is required.');
+    if (this.rationaleLength() < this.RATIONALE_MIN) {
+      this.error.set(
+        `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+      );
       return;
     }
     this.deciding.set(true);
@@ -1464,11 +1502,14 @@ export class ClaimDetail {
     try {
       const covers = this.covers().map((c) => {
         const decision = this.coverDecision[c.coverCode] ?? 'APPROVED';
+        const denialReason =
+          decision === 'REJECTED' ? (this.coverDenyReason[c.coverCode] ?? '').trim() || null : null;
         if (decision === 'REJECTED') {
           return {
             coverCode: c.coverCode,
             decision,
             remarks: (this.coverRemarks[c.coverCode] ?? '').trim() || null,
+            denialReason,
           };
         }
         return {
@@ -1722,6 +1763,35 @@ export class ClaimDetail {
     }
   }
 
+  /** S8 (V23): supervisor-only — download this claim's audit trail as CSV. */
+  async exportAudit() {
+    this.exportingAudit.set(true);
+    const headers = await this.authHeaders();
+    if (!headers) {
+      this.exportingAudit.set(false);
+      return;
+    }
+    try {
+      const response = await firstValueFrom(
+        this.http.get(`/api/audit/export?claimNumber=${encodeURIComponent(this.claimNumber)}`, {
+          headers,
+          responseType: 'blob',
+          observe: 'response',
+        }),
+      );
+      downloadBlob(
+        response.body ?? new Blob(),
+        response.headers.get('Content-Disposition'),
+        `audit-${this.claimNumber}.csv`,
+      );
+      this.toasts.success('Audit trail exported.');
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not export the audit trail.'));
+    } finally {
+      this.exportingAudit.set(false);
+    }
+  }
+
   private async authHeaders(): Promise<HttpHeaders | null> {
     const token = await accessToken();
     if (!token) {
@@ -1745,6 +1815,19 @@ function actionClass(action: string): string {  switch (action) {
     default:
       return 'badge badge--neutral';
   }
+}
+
+/** S8 (V23): blob download honoring Content-Disposition, with a sane fallback name. */
+function downloadBlob(blob: Blob, disposition: string | null, fallbackName: string): void {
+  const name = /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(disposition ?? '')?.[3]?.trim()
+    || /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(disposition ?? '')?.[4]?.trim()
+    || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 /** One-line scalar for an unknown coverage key (objects/arrays collapse). */

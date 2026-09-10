@@ -125,6 +125,11 @@ public class SecurityConfig {
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/audit")
                                 .hasRole("SUPERVISOR")
+                        // V23 (V3 S8): regulator-ready CSV exports — the claim
+                        // audit story + the closure list, supervisor only.
+                        .requestMatchers(HttpMethod.GET, "/api/audit/export",
+                                "/api/decisions/export")
+                                .hasRole("SUPERVISOR")
                         // V3 S7: the staff surface — list + active toggle,
                         // supervisor only (adjusters/claimants are 403 at the URL).
                         .requestMatchers(HttpMethod.GET, "/api/staff")

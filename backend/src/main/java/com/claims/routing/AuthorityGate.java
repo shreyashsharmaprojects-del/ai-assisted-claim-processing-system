@@ -70,6 +70,7 @@ public final class AuthorityGate {
      * Validates a decision request body, returning a user-actionable message or {@code null}
      * when valid. Rationale is required for both approve and deny; an approval needs a
      * positive indemnity amount within the {@code NUMERIC(14,2)} column bounds.
+     * V23 (V3 S8): the claim-level rationale on every closure is at least 20 characters.
      */
     public static String validate(String decision, BigDecimal amount, String rationale) {
         if (decision == null || (!"APPROVED".equals(decision) && !"DENIED".equals(decision))) {
@@ -77,6 +78,9 @@ public final class AuthorityGate {
         }
         if (rationale == null || rationale.isBlank()) {
             return "A rationale is required.";
+        }
+        if (rationale.trim().length() < 20) {
+            return "Rationale must be at least 20 characters.";
         }
         if ("DENIED".equals(decision)) {
             if (amount != null) {

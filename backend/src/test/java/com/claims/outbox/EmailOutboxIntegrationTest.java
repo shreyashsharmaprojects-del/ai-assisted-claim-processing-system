@@ -93,7 +93,7 @@ class EmailOutboxIntegrationTest extends ClaimTableResettingTest {
     @Test
     void closureWritesOutboxPendingAndDispatcherDeliversToMailpit() throws Exception {
         String claimNumber = fileHomeFnol();
-        decide(claimNumber, "{\"decision\":\"DENIED\",\"rationale\":\"Not covered.\"}");
+        decide(claimNumber, "{\"decision\":\"DENIED\",\"rationale\":\"Not covered by policy.\"}");
 
         // The controller flushes post-commit: rows are SENT and Mailpit holds the mails.
         assertEquals("CLOSED", statusOf(claimNumber));

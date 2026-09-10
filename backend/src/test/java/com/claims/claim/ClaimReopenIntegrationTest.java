@@ -125,7 +125,8 @@ class ClaimReopenIntegrationTest extends ClaimTableResettingTest {
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":90000,\"remarks\":\"Bills verified.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Waiting period.\"}]}");
+                        + "\"remarks\":\"Waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, redecided.statusCode(), redecided.body());
         assertEquals("CLOSED", statusOf(claimNumber));
 
@@ -258,12 +259,13 @@ class ClaimReopenIntegrationTest extends ClaimTableResettingTest {
         driveClaimToDecision(claimNumber, bearer);
         HttpResponse<String> decided = postJson(
                 "/api/claims/" + claimNumber + "/cover-decision", bearer,
-                "{\"rationale\":\"Within authority.\",\"expectedVersion\":"
+                "{\"rationale\":\"Within authority to close now.\",\"expectedVersion\":"
                         + versionOf(claimNumber) + ",\"covers\":["
                         + "{\"coverCode\":\"HOSPITALIZATION\",\"decision\":\"APPROVED\","
                         + "\"approvedAmount\":80000,\"remarks\":\"Bills verified.\"},"
                         + "{\"coverCode\":\"OPD\",\"decision\":\"REJECTED\","
-                        + "\"remarks\":\"Pre-dates the waiting period.\"}]}");
+                        + "\"remarks\":\"Pre-dates the waiting period.\","
+                        + "\"denialReason\":\"EXCLUDED_PER_CLAUSE\"}]}");
         assertEquals(200, decided.statusCode(), decided.body());
         assertEquals("CLOSED", statusOf(claimNumber));
         return claimNumber;

@@ -234,7 +234,7 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
     void reassignRejectsClosedAndSupervisorEscalatedClaims() throws Exception {
         // A decided claim is terminal: 400, never silently moved.
         String closed = fileHomeFnol();
-        approve(closed, WITHIN_L1, "Approve first.");
+        approve(closed, WITHIN_L1, "Approve first; within authority.");
         HttpResponse<String> closedResponse = postJson("/api/claims/" + closed + "/reassign",
                 supervisorBearer(), "{\"level\":\"L1\"}");
         assertEquals(400, closedResponse.statusCode(), closedResponse.body());
@@ -372,7 +372,7 @@ class ClaimAdminIntegrationTest extends ClaimTableResettingTest {
         HttpResponse<String> escalation = postJson("/api/claims/" + claimNumber + "/decision",
                 JwtTestConfig.tokenFor(holder, "adjuster_" + level.toLowerCase()),
                 "{\"decision\":\"APPROVED\",\"indemnityAmount\":"
-                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss.\""
+                        + ABOVE_L2 + ",\"rationale\":\"Exceptional loss; escalating upward.\""
                         + ",\"expectedVersion\":" + version + "}");
         assertEquals(200, escalation.statusCode(), escalation.body());
         assertEquals("ESCALATED_SUPERVISOR", jdbcTemplate.queryForObject(
