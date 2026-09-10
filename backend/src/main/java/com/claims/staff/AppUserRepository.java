@@ -11,4 +11,10 @@ public interface AppUserRepository extends JpaRepository<AppUser, Long> {
 
     /** Adjuster candidates of one level, in deterministic (id) order — the tie-break base. */
     List<AppUser> findByLevelOrderById(String level);
+
+    /**
+     * V3 S7: active-only candidates of one level, in deterministic (id) order —
+     * deactivated staff are skipped by assignment and never re-handed claims.
+     */
+    List<AppUser> findByLevelAndActiveTrueOrderById(String level);
 }

@@ -613,3 +613,33 @@ Content-Disposition: form-data; name="docType"\r
 \r
 FINAL_BILL
 ------ClaimantDocTypeBoundary--\r
+
+### Staff — list (SUPERVISOR only; adjusters/claimants get 403, anon 401)
+# Every staff row with its open-claim load, id order: [{id, displayName,
+# email, level, active, keycloakSub, openClaims}] (open = COUNT claim WHERE
+# assigned_adjuster_id = id AND status <> 'CLOSED'). The keycloak_sub is for
+# copy-paste into the Keycloak console — provisioning stays out of the API.
+GET {{host}}/api/staff
+Authorization: Bearer {{token}}
+
+### Staff — deactivate (SUPERVISOR only). Drains the adjuster's open queue:
+# each open claim moves to the least-loaded active same-level adjuster (one
+# CLAIM_REASSIGNED audit row per move); claims with no eligible target park
+# UNASSIGNED (the ?status=UNASSIGNED queue filter is the attention list).
+# Missing/null active -> 400; unknown id -> 404. Find the id via GET above.
+PUT {{host}}/api/staff/2/active
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "active": false
+}
+
+### Staff — reactivate (SUPERVISOR only). Flips the flag without moving claims.
+PUT {{host}}/api/staff/2/active
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "active": true
+}

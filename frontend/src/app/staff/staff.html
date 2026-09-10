@@ -1,0 +1,161 @@
+<main class="page" data-testid="staff-page">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a routerLink="/overview">Supervision</a>
+    <span class="breadcrumb__sep" aria-hidden="true">›</span>
+    <span aria-current="page">Staff</span>
+  </nav>
+
+  <div class="page-banner">
+    <div class="page-banner__main">
+      <div class="page-banner__title-row">
+        <h1>Staff</h1>
+        @if (loaded() && rows().length > 0) {
+          <span class="chip">{{ activeCount() }} active</span>
+        }
+      </div>
+      <p class="page-banner__sub">
+        Who exists, who is loaded, and who can take work. Deactivating someone moves
+        their open claims to other adjusters — history stays.
+      </p>
+    </div>
+    <div class="page-banner__aside">
+      <div class="stat">
+        <div class="stat__icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="5.2" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M2.8 13.2c.5-2.6 2.4-4 5.2-4s4.7 1.4 5.2 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <div>
+          <p class="stat__label">Active staff</p>
+          <p class="stat__value">{{ loaded() ? activeCount() : '—' }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (error(); as message) {
+    <p class="notice notice--error" data-testid="staff-error" role="alert">{{ message }}</p>
+    <button type="button" class="btn btn--secondary retry" (click)="load()">
+      Try again
+    </button>
+  } @else if (!loaded()) {
+    <div class="panel">
+      <div class="panel__body">
+        <div class="skeleton-list" aria-label="Loading staff">
+          @for (row of [1, 2, 3, 4]; track row) {
+            <div class="skeleton-row">
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+              <span class="skeleton-bar skeleton-bar--m"></span>
+              <span class="skeleton-bar skeleton-bar--xs"></span>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  } @else {
+    <section class="panel">
+      <div class="panel__header">
+        <div class="panel__head-icon">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="5.2" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4" />
+            <path d="M2.8 13.2c.5-2.6 2.4-4 5.2-4s4.7 1.4 5.2 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <h2>Staff list</h2>
+        <span class="panel__count">{{ rows().length }} people</span>
+      </div>
+
+      @if (rows().length === 0) {
+        <div class="state-panel">
+          <p class="state-panel__title">No staff yet</p>
+          <p class="state-panel__body">
+            Staff rows are created when accounts are provisioned. Nothing to show.
+          </p>
+        </div>
+      } @else {
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Level</th>
+                <th scope="col">Status</th>
+                <th scope="col" class="num">Open claims</th>
+                <th scope="col">Keycloak subject</th>
+                <th scope="col"><span class="sr-only">Active toggle</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rows(); track row.id) {
+                <tr [attr.data-testid]="'staff-row-' + row.id">
+                  <td class="cell-id">
+                    <span class="identifier">{{ row.displayName }}</span>
+                    <div class="muted">{{ row.email }}</div>
+                  </td>
+                  <td>{{ row.level }}</td>
+                  <td>
+                    <span class="{{ activeBadge(row.active) }}">{{ row.active ? 'ACTIVE' : 'INACTIVE' }}</span>
+                  </td>
+                  <td class="num tabular" [attr.data-testid]="'staff-load-' + row.id">{{ row.openClaims }}</td>
+                  <td>
+                    @if (row.keycloakSub) {
+                      <span class="mono">{{ row.keycloakSub }}</span>
+                      <span aria-hidden="true"> · </span>
+                      <button type="button" class="linklike" (click)="copySub(row)">
+                        Copy
+                      </button>
+                    } @else {
+                      <span class="muted">—</span>
+                    }
+                  </td>
+                  <td class="td-action">
+                    <button
+                      type="button"
+                      class="btn btn--secondary btn--sm"
+                      [attr.data-testid]="'staff-toggle-' + row.id"
+                      (click)="askToggle(row)"
+                    >
+                      {{ row.active ? 'Deactivate' : 'Reactivate' }}
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      @if (pending(); as target) {
+        <div class="panel__body">
+          <p class="notice notice--info" role="status">
+            {{ target.active ? 'Deactivate' : 'Reactivate' }} {{ target.displayName }}?
+            @if (target.active) {
+              {{ target.openClaims }} open claim{{ target.openClaims === 1 ? '' : 's' }} will move
+              to other adjusters at the same level. Claims with no eligible adjuster park
+              as unassigned for supervisor attention. History stays intact.
+            } @else {
+              Nothing moves — open claims stay where they are.
+            }
+          </p>
+          <div class="form-actions">
+            <button type="button" class="btn btn--secondary" (click)="cancelToggle()">
+              Keep {{ target.active ? 'active' : 'inactive' }}
+            </button>
+            <button
+              type="button"
+              class="btn btn--danger"
+              data-testid="staff-confirm"
+              [disabled]="toggling()"
+              (click)="confirmToggle()"
+            >
+              {{ toggling() ? 'Saving…' : (target.active ? 'Deactivate' : 'Reactivate') }}
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  }
+</main>

@@ -36,6 +36,14 @@ public class AppUser {
     @Column(name = "level", nullable = false)
     private String level;
 
+    /**
+     * V12 (V3 S7 mapped): the deactivation flag — FALSE removes the adjuster from
+     * assignment eligibility without deleting history. New rows default TRUE to
+     * match the DB default. No @Version (single-writer admin action; plain update).
+     */
+    @Column(name = "active", nullable = false)
+    private boolean active = true;
+
     protected AppUser() {
         // for JPA
     }
@@ -65,5 +73,14 @@ public class AppUser {
 
     public String getLevel() {
         return level;
+    }
+
+    /** V12 (V3 S7 mapped): whether the adjuster is eligible for new assignments. */
+    public boolean isActive() {
+        return active;
+    }
+
+    public void setActive(boolean active) {
+        this.active = active;
     }
 }

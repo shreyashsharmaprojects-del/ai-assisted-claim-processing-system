@@ -125,6 +125,12 @@ public class SecurityConfig {
                                 .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*/audit")
                                 .hasRole("SUPERVISOR")
+                        // V3 S7: the staff surface — list + active toggle,
+                        // supervisor only (adjusters/claimants are 403 at the URL).
+                        .requestMatchers(HttpMethod.GET, "/api/staff")
+                                .hasRole("SUPERVISOR")
+                        .requestMatchers(HttpMethod.PUT, "/api/staff/*/active")
+                                .hasRole("SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/queue")
                                 .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
                                         "SUPERVISOR")

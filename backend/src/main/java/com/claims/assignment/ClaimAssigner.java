@@ -42,6 +42,11 @@ public class ClaimAssigner {
      * @return the adjuster this claim was assigned to, or {@code null} when no adjuster of
      *         the claim's level is provisioned (the claim stays UNASSIGNED — a server
      *         provisioning gap, logged here).
+     *
+     *         <p>V3 S7: only active adjusters are candidates — a deactivated adjuster
+     *         never receives new claims, so deactivation actually drains their queue
+     *         and reassign never hands a claim back to them. The SELECT ... FOR UPDATE
+     *         still locks the whole level's rows so concurrent assignments serialize.
      */
     public AppUser assign(Claim claim) {
         String level = claim.getLevel();
@@ -50,12 +55,12 @@ public class ClaimAssigner {
         jdbcTemplate.queryForList(
                 "SELECT id FROM app_user WHERE level = ? ORDER BY id FOR UPDATE", Long.class, level);
 
-        List<Long> candidateIds = appUsers.findByLevelOrderById(level).stream()
+        List<Long> candidateIds = appUsers.findByLevelAndActiveTrueOrderById(level).stream()
                 .map(AppUser::getId)
                 .toList();
         if (candidateIds.isEmpty()) {
-            log.warn("Claim {} is level {} but no adjusters of that level are provisioned; "
-                    + "leaving it unassigned", claim.getClaimNumber(), level);
+            log.warn("Claim {} is level {} but no active adjusters of that level are "
+                    + "provisioned; leaving it unassigned", claim.getClaimNumber(), level);
             return null;
         }
 

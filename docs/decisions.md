@@ -5,6 +5,48 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-10 — S7 staff management surface, supervisor-only (no migration)
+
+**Context:** Offboarding stranded queues: deactivating an adjuster had no path,
+so their open claims sat with someone who left. The `app_user.active` flag
+exists since V12, but the entity was out of sync — this slice maps it
+(`AppUser.active`, default TRUE) instead of adding a migration. Plan:
+`docs/plan-v3.md` S7.
+
+**What changed (all additive):**
+- **No migration:** `active BOOLEAN NOT NULL DEFAULT TRUE` is V12; the slice
+  only maps the column onto the entity. A DB predating V12 must migrate first.
+- **No `@Version` on `AppUser`:** single-writer admin action — plain update
+  (`StaffService.setActive` + `saveAndFlush` before the JDBC re-read, since
+  `JdbcTemplate` never triggers a persistence-context flush).
+- **Active-only filter at the one choke point:** `ClaimAssigner.assign` takes
+  candidates from `findByLevelAndActiveTrueOrderById`, so FNOL, reassign,
+  reopen, and aging all skip inactive adjusters with no per-caller change.
+- **Backend (`StaffService`/`StaffController`, SUPERVISOR-only at the URL):**
+  `GET /api/staff` → `[{id, displayName, email, level, active, keycloakSub,
+  openClaims}]` (open = `COUNT claim WHERE assigned_adjuster_id AND status <>
+  'CLOSED'`, id order); `PUT /api/staff/{id}/active {active}` flips the flag.
+  Deactivation drains every open claim through `ClaimAssigner` (level
+  preserved, least-loaded active same-level adjuster) with one
+  `CLAIM_REASSIGNED` audit row per move; claims with no eligible target park
+  UNASSIGNED (the `?status=UNASSIGNED` queue filter is the attention list — no
+  reason column exists). Reactivation flips without moving. Unknown id → 404,
+  missing/null `active` → 400. No Keycloak writes.
+- **Frontend:** `/admin/staff` (supervisorGuard, "Supervision" nav, testid-free
+  link) — table with load counts, `keycloak_sub` + copy affordance,
+  active toggle with confirm + affected-claims warning (testids
+  `staff-page/row-{id}/toggle-{id}/confirm/load-{id}`); global classes only,
+  no stylesheet.
+
+**Verified:** `StaffAdminIntegrationTest` 4/4 (list loads; deactivate moves +
+audits + parks the unroutable one; reactivate no-move; auth matrix — anon
+401, adjuster/claimant 403, unknown id 404), full backend suite 279/279
+(275/275 at S6 per `git log` + 4 new — docs-only session, tests not re-run),
+frontend build green, `staff.spec` 1/1 x2 (supervisor deactivates the holder
+→ claim drains to another L1 queue → reactivated in a finally).
+**Deliberately not built (Non-goals):** Keycloak provision/deprovision API,
+named-adjuster assign (reassign still takes a level), capacity targets/WLB.
+
 ### 2026-09-09 — S6 claim reopen / appeal, supervisor-only (V22 seq + UNIQUE(claim_id,seq))
 
 **Context:** Plan V2 keeps "no appeals" as a non-goal (2026-09-03
