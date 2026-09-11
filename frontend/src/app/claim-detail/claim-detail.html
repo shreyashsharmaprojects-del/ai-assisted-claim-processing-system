@@ -1,9 +1,27 @@
 <main class="page" data-testid="claim-detail-page">
   @if (error(); as message) {
-    <p class="notice notice--error" data-testid="claim-detail-error" role="alert">{{ message }}</p>
-    <button type="button" class="btn btn--secondary retry" data-testid="claim-detail-retry" (click)="load()">
-      Try again
-    </button>
+    @if (restricted()) {
+      <section class="panel" data-testid="claim-detail-error" role="alert" aria-label="Restricted">
+        <div class="panel__body state-panel">
+          <p class="state-panel__title">You cannot open this claim</p>
+          <p class="state-panel__body">{{ message }}</p>
+          <div class="button-row state-panel__actions">
+            <a routerLink="/queue" class="btn btn--primary">Back to my queue</a>
+            <button type="button" class="btn btn--secondary" (click)="load()">Try again</button>
+          </div>
+        </div>
+      </section>
+    } @else {
+      <div data-testid="claim-detail-error" role="alert">
+        <p class="notice notice--error">{{ message }}</p>
+        @if (errorReference(); as ref) {
+          <p class="muted error-ref">Reference: <span class="mono">{{ ref }}</span></p>
+        }
+        <button type="button" class="btn btn--secondary retry" data-testid="claim-detail-retry" (click)="load()">
+          Try again
+        </button>
+      </div>
+    }
   } @else if (!loaded()) {
     <div class="panel">
       <div class="panel__body">
@@ -22,16 +40,16 @@
       <span class="mono" aria-current="page">{{ claim.claimNumber }}</span>
     </nav>
 
-    <!-- Compact header: identity + status + the one next step for this stage -->
-    <div class="page-banner">
+    <!-- Page header: identity + 1–3 actions right (doctrine §4). -->
+    <div class="page-banner detail-head">
       <div class="page-banner__main">
         <div class="page-banner__title-row">
           <h1>Claim <span class="mono detail-id" data-testid="detail-claim-number">{{ claim.claimNumber }}</span></h1>
-          <span class="{{ statusBadge(claim.status) }}" data-testid="detail-status">{{ claim.status }}</span>
+          <span class="{{ statusBadge(claim.status) }}" data-testid="detail-status" title="{{ claim.status }}">{{ statusText(claim.status) }}</span>
+          <span class="{{ slaBand().kind }}" title="Filing-anchored SLA">{{ slaBand().label }}</span>
           <span class="chip">{{ claim.level }}</span>
           @if (claim.assignedTo; as assignee) {
             <span class="detail-assignee">
-              <span class="detail-assignee__avatar" aria-hidden="true">{{ timelineInitials(assignee) }}</span>
               {{ assignee }}
             </span>
           } @else {
@@ -39,13 +57,63 @@
           }
         </div>
         <p class="page-banner__sub">
-          <span class="mono" data-testid="detail-policy">{{ claim.policyNumber }}</span>
-          · {{ claim.holderName }} · loss {{ lossDateText() }} · reserve {{ reserveText() }}
+          <button
+            type="button"
+            class="btn btn--tertiary btn--sm mono"
+            data-testid="detail-policy"
+            title="{{ claim.policyNumber }}"
+            (click)="openPolicyModal()"
+          >{{ claim.policyNumber }}</button>
+          <span aria-hidden="true">·</span> {{ claim.holderName }} · filed {{ filedDateText() }} ({{ filedAgeText() }}) · loss {{ lossDateText() }} · reserve {{ reserveText() }}
         </p>
+      </div>
+      <div class="page-banner__aside detail-head__actions">
+        @if (updatedText(); as updated) {
+          <span class="muted detail-updated">{{ updated }}</span>
+        }
+        <button
+          type="button"
+          class="btn btn--tertiary btn--sm"
+          [disabled]="refreshing()"
+          (click)="refresh()"
+        >
+          {{ refreshing() ? 'Refreshing…' : 'Refresh' }}
+        </button>
+        <a routerLink="/queue" class="btn btn--secondary btn--sm" data-testid="detail-back-to-queue-top">
+          Back to queue
+        </a>
       </div>
     </div>
 
-    <!-- Staged workflow: Review → Verification → Decision (V2-4/V2-5/V2-6) -->
+    <!-- Summary strip: the 6 facts a supervisor asks first, sticky (doctrine §4). -->
+    <div class="summary-strip detail-summary" data-testid="detail-summary" role="region" aria-label="Claim summary">
+      <div class="summary-cell">
+        <span class="summary-cell__label">Status</span>
+        <span class="summary-cell__value"><span class="{{ statusBadge(claim.status) }}" title="{{ claim.status }}">{{ statusText(claim.status) }}</span></span>
+      </div>
+      <div class="summary-cell">
+        <span class="summary-cell__label">Stage</span>
+        <span class="summary-cell__value">{{ statusText(stage()) }}</span>
+      </div>
+      <div class="summary-cell">
+        <span class="summary-cell__label">SLA</span>
+        <span class="summary-cell__value"><span class="{{ slaBand().kind }}">{{ slaBand().label }} · filed {{ filedDateText() }} ({{ filedAgeText() }})</span></span>
+      </div>
+      <div class="summary-cell">
+        <span class="summary-cell__label">Claimed</span>
+        <span class="summary-cell__value num">{{ money(claim.claimedTotal) }}</span>
+      </div>
+      <div class="summary-cell">
+        <span class="summary-cell__label">Assessed</span>
+        <span class="summary-cell__value num">{{ money(assessedTotal()) }}</span>
+      </div>
+      <div class="summary-cell">
+        <span class="summary-cell__label">Reserve</span>
+        <span class="summary-cell__value num" data-testid="detail-reserve-value">{{ reserveText() }}</span>
+      </div>
+    </div>
+
+    <!-- Staged workflow: Review → Verification → Decision (one stepper, no duplicates). -->
     @if (isNeedInfo()) {
       <p class="notice notice--warning" data-testid="detail-need-info-banner" role="status">
         With the claimant — awaiting their response. Requested: {{ needInfoText() }}
@@ -105,7 +173,7 @@
               </span>
               <span class="stage-step__text">
                 <span class="stage-step__label">Verification</span>
-                <span class="stage-step__hint">{{ checklistDone() }} of {{ checklistTotal() }} checks</span>
+                <span class="stage-step__hint">{{ stepperHint() }}</span>
               </span>
             </button>
           </li>
@@ -134,15 +202,15 @@
         <p class="stage-task">{{ stageTask() }}</p>
         @if (isViewingEarlier()) {
           <p class="notice notice--info stage-revisit" data-testid="detail-stage-revisit" role="status">
-            Viewing {{ shownStage().toLowerCase() }} — read-only. The claim itself is at
-            {{ stage().toLowerCase() }}.
+            Viewing {{ statusText(shownStage()).toLowerCase() }} — read-only. The claim itself is at
+            {{ statusText(stage()).toLowerCase() }}.
             <button
               type="button"
               class="btn btn--tertiary btn--sm"
               data-testid="detail-stage-back-current"
               (click)="backToCurrentStage()"
             >
-              Back to {{ stage().toLowerCase() }}
+              Back to {{ statusText(stage()).toLowerCase() }}
             </button>
           </p>
         }
@@ -160,10 +228,43 @@
       </p>
     }
     @if (conflictNotice(); as conflict) {
-      <p class="notice notice--warning" data-testid="detail-conflict-banner" role="status">
-        {{ conflict }}
-      </p>
+      <div class="notice notice--warning" data-testid="detail-conflict-banner" role="status">
+        <p>{{ conflict }}</p>
+        <button
+          type="button"
+          class="btn btn--secondary btn--sm"
+          (click)="refresh()"
+        >
+          Reload latest
+        </button>
+      </div>
     }
+    @if (recoveryHint(); as recovery) {
+      <p class="notice notice--info" role="status">{{ recovery }}</p>
+    }
+
+    <!-- Section tabs: Task · Files · Timeline · Reference (state in URL). -->
+    <div class="saved-views" role="tablist" aria-label="Claim sections">
+      @for (tab of SECTION_TABS; track tab.id) {
+        <button
+          type="button"
+          role="tab"
+          class="saved-views__tab"
+          [class.is-active]="section() === tab.id"
+          [attr.aria-selected]="section() === tab.id"
+          [attr.data-testid]="'detail-section-' + tab.id"
+          (click)="setSection(tab.id)"
+        >
+          {{ tab.label }}
+          @if (tab.id === 'files') {
+            <span class="saved-views__count">{{ attachmentViews().length }}</span>
+          }
+          @if (tab.id === 'timeline') {
+            <span class="saved-views__count">{{ timelineEntries().length }}</span>
+          }
+        </button>
+      }
+    </div>
 
     <!-- S6 (V22): supervisor-only reopen of a closed claim. Shown for both
          legacy and staged closures (mirror of the role/status gates above);
@@ -204,7 +305,7 @@
                   type="button"
                   class="btn btn--secondary"
                   data-testid="detail-reopen-confirm"
-                  [disabled]="reopening() || reopenRationale.trim().length < 20"
+                  [disabled]="reopening()"
                   (click)="reopen()"
                 >
                   {{ reopening() ? 'Reopening…' : 'Confirm reopen' }}
@@ -216,7 +317,7 @@
       </section>
     }
 
-    @if (canDecide() || isSupervisor()) {
+    @if (section() === 'task' && (canDecide() || isSupervisor())) {
       <!-- ======================= THE NEXT STEP ======================= -->
       @if (isLegacy()) {
         <section class="panel" data-testid="detail-decision-panel">
@@ -267,7 +368,7 @@
                     type="submit"
                     class="btn btn--primary"
                     data-testid="detail-approve"
-                    [disabled]="deciding() || !decisionAmount || !rationaleReady()"
+                    [disabled]="deciding()"
                   >
                     Approve
                   </button>
@@ -275,7 +376,7 @@
                     type="button"
                     class="btn btn--danger"
                     data-testid="detail-deny"
-                    [disabled]="deciding() || !rationaleReady()"
+                    [disabled]="deciding()"
                     (click)="deny()"
                   >
                     Deny
@@ -297,7 +398,7 @@
             </div>
             <div class="panel__body">
               <div class="table-scroll">
-                <table class="cover-grid cover-review" data-testid="detail-review-covers-readonly">
+                <table class="data-table cover-grid cover-review" data-testid="detail-review-covers-readonly">
                   <thead>
                     <tr>
                       <th scope="col">Cover</th>
@@ -331,7 +432,7 @@
                 data-testid="detail-stage-back-current-2"
                 (click)="backToCurrentStage()"
               >
-                Back to {{ stage().toLowerCase() }}
+                Back to {{ statusText(stage()).toLowerCase() }}
               </button>
             </div>
           </section>
@@ -339,11 +440,11 @@
         <section class="panel" data-testid="detail-review-panel">
           <div class="panel__header">
             <h2>Review — is this claim valid?</h2>
-            <span class="{{ statusBadge(claim.status) }}">{{ claim.status }}</span>
+            <span class="{{ statusBadge(claim.status) }}" title="{{ claim.status }}">{{ statusText(claim.status) }}</span>
           </div>
           <div class="panel__body">
             <div class="table-scroll">
-              <table class="cover-grid cover-review" data-testid="detail-review-covers">
+              <table class="data-table cover-grid cover-review" data-testid="detail-review-covers">
                 <thead>
                   <tr>
                     <th scope="col">Cover</th>
@@ -354,7 +455,7 @@
                 </thead>
                 <tbody>
                   @for (cover of covers(); track cover.coverCode) {
-                    <tr>
+                    <tr data-cover-row tabindex="0" (keydown)="onCoverKey($event, cover.coverCode)">
                       <td>
                         <span class="mono">{{ cover.coverCode }}</span>
                         <span class="muted cover-name">{{ cover.displayName }}</span>
@@ -388,7 +489,7 @@
                 type="button"
                 class="btn btn--primary"
                 data-testid="detail-review-advance"
-                [disabled]="reviewing() || !reviewRationale.trim()"
+                [disabled]="reviewing()"
                 (click)="reviewAdvance()"
               >
                 Advance to verification
@@ -398,7 +499,7 @@
                 class="btn btn--danger"
                 data-testid="detail-review-reject"
                 [disabled]="reviewing()"
-                (click)="showRejectForm = true"
+                (click)="openConfirm('reject')"
               >
                 Reject
               </button>
@@ -412,18 +513,33 @@
                 Ask claimant
               </button>
             </div>
-            @if (showRejectForm) {
-              <div class="field" style="margin-top: var(--space-3)">
-                <p class="muted">Rejecting closes the claim as denied with this rationale.</p>
-                <button
-                  type="button"
-                  class="btn btn--danger"
-                  data-testid="detail-review-reject-confirm"
-                  [disabled]="reviewing() || !reviewRationale.trim()"
-                  (click)="reviewReject()"
+            @if (confirmRejectOpen) {
+              <div class="confirm-backdrop" (click)="closeConfirm()">
+                <div
+                  class="confirm-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="confirm-reject-title"
+                  tabindex="-1"
+                  (click)="$event.stopPropagation()"
+                  (keydown)="onConfirmKey($event)"
+                  (keydown.escape)="closeConfirm()"
                 >
-                  Confirm reject
-                </button>
+                  <h3 id="confirm-reject-title">Reject this claim?</h3>
+                  <p class="muted">Rejecting closes the claim as denied with this rationale.</p>
+                  <div class="button-row decision-actions">
+                    <button type="button" class="btn btn--tertiary" data-testid="detail-review-reject-cancel" (click)="closeConfirm()">Keep working</button>
+                    <button
+                      type="button"
+                      class="btn btn--danger"
+                      data-testid="detail-review-reject-confirm"
+                      [disabled]="reviewing()"
+                      (click)="reviewReject()"
+                    >
+                      {{ reviewing() ? 'Rejecting…' : 'Confirm reject' }}
+                    </button>
+                  </div>
+                </div>
               </div>
             }
             @if (showNeedInfoForm) {
@@ -438,15 +554,24 @@
                   [(ngModel)]="reviewRequestedItems"
                   name="reviewRequestedItems"
                 ></textarea>
-                <button
-                  type="button"
-                  class="btn btn--secondary"
-                  data-testid="detail-review-need-info-confirm"
-                  [disabled]="reviewing() || !reviewRequestedItems.trim()"
-                  (click)="reviewNeedInfo()"
-                >
-                  Send back to claimant
-                </button>
+                <div class="button-row">
+                  <button
+                    type="button"
+                    class="btn btn--secondary"
+                    data-testid="detail-review-need-info-confirm"
+                    [disabled]="reviewing() || !reviewRequestedItems.trim()"
+                    (click)="reviewNeedInfo()"
+                  >
+                    Send back to claimant
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--tertiary"
+                    (click)="showNeedInfoForm = false"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             }
           </div>
@@ -471,9 +596,7 @@
                       data-testid="detail-verification-item-readonly"
                     >
                       <div class="ver-row__main ver-row__main--static">
-                        <span class="ver-state ver-state--{{ ver.status === 'COMPLETE' ? 'done' : 'todo' }}">
-                          {{ ver.status === 'COMPLETE' ? (ver.outcome ?? 'Done') : 'To do' }}
-                        </span>
+                        <span class="{{ verStateClass(ver) }}">{{ verStateLabel(ver) }}</span>
                         <span class="ver-row__title">{{ verTitle(ver.type) }}</span>
                         <span class="ver-row__meta">
                           {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
@@ -518,7 +641,7 @@
                 data-testid="detail-stage-back-current-3"
                 (click)="backToCurrentStage()"
               >
-                Back to {{ stage().toLowerCase() }}
+                Back to {{ statusText(stage()).toLowerCase() }}
               </button>
             </div>
           </section>
@@ -531,7 +654,7 @@
             }
           </div>
           <div class="panel__body">
-            <!-- Jira-style checklist progress: done over open, one bar. -->
+            <!-- Checklist progress: done over open, one bar, one language. -->
             <div class="ver-progress" role="status" aria-label="Verification progress">
               <div class="ver-progress__bar" aria-hidden="true">
                 <span
@@ -563,7 +686,7 @@
                       <svg class="ver-row__chev" viewBox="0 0 16 16" aria-hidden="true">
                         <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
-                      <span class="ver-state ver-state--{{ verState(ver) }}">{{ verStateLabel(ver) }}</span>
+                      <span class="{{ verStateClass(ver) }}">{{ verStateLabel(ver) }}</span>
                       <span class="ver-row__title">{{ verTitle(ver.type) }}</span>
                       <span class="ver-row__meta">
                         {{ ver.performedBy ?? 'Internal' }} · opened {{ verificationTimeText(ver.startedAt) }}
@@ -614,10 +737,10 @@
                                   [(ngModel)]="verOutcome[ver.id]"
                                   [name]="'verOutcome' + ver.id"
                                 >
-                                  <option value="PASSED">PASSED</option>
-                                  <option value="FAILED">FAILED</option>
-                                  <option value="WAIVED">WAIVED</option>
-                                  <option value="INCONCLUSIVE">INCONCLUSIVE</option>
+                                  <option value="PASSED">{{ statusText('PASSED') }}</option>
+                                  <option value="FAILED">{{ statusText('FAILED') }}</option>
+                                  <option value="WAIVED">{{ statusText('WAIVED') }}</option>
+                                  <option value="INCONCLUSIVE">{{ statusText('INCONCLUSIVE') }}</option>
                                 </select>
                               </div>
                               <div class="field">
@@ -646,7 +769,7 @@
                             </div>
                             <button
                               type="button"
-                              class="btn btn--primary"
+                              class="btn btn--secondary"
                               [attr.data-testid]="'detail-ver-save-' + ver.id"
                               [disabled]="savingVerification()"
                               (click)="saveVerification(ver.id)"
@@ -843,6 +966,13 @@
                     >
                       Send back to claimant
                     </button>
+                    <button
+                      type="button"
+                      class="btn btn--tertiary"
+                      (click)="showNeedInfoForm = false"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               }
@@ -858,10 +988,10 @@
                       [(ngModel)]="extraVerType"
                       name="extraVerType"
                     >
-                      <option value="DIGITAL">DIGITAL</option>
-                      <option value="PHYSICAL">PHYSICAL</option>
-                      <option value="DOCUMENT">DOCUMENT</option>
-                      <option value="CLAUSE">CLAUSE</option>
+                      <option value="DIGITAL">{{ statusText('DIGITAL') }}</option>
+                      <option value="PHYSICAL">{{ statusText('PHYSICAL') }}</option>
+                      <option value="DOCUMENT">{{ statusText('DOCUMENT') }}</option>
+                      <option value="CLAUSE">{{ statusText('CLAUSE') }}</option>
                     </select>
                   </div>
                   <div class="field">
@@ -921,6 +1051,13 @@
                     >
                       {{ sendingBack() ? 'Sending back…' : 'Confirm send-back' }}
                     </button>
+                    <button
+                      type="button"
+                      class="btn btn--tertiary"
+                      (click)="showSendBackForm = false"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               }
@@ -944,7 +1081,7 @@
               </p>
             }
             <div class="table-scroll">
-              <table class="cover-grid">
+              <table class="data-table cover-grid">
                 <thead>
                   <tr>
                     <th scope="col">Cover</th>
@@ -956,7 +1093,7 @@
                 </thead>
                 <tbody>
                   @for (cover of covers(); track cover.coverCode) {
-                    <tr>
+                    <tr data-cover-row tabindex="0" (keydown)="onCoverKey($event, cover.coverCode)">
                       <td>
                         <span class="mono">{{ cover.coverCode }}</span>
                         @if (cover.aboveLimit) {
@@ -994,8 +1131,8 @@
                           [(ngModel)]="coverDecision[cover.coverCode]"
                           [name]="'coverDecision' + cover.coverCode"
                         >
-                          <option value="APPROVED">APPROVED</option>
-                          <option value="REJECTED">REJECTED</option>
+                          <option value="APPROVED">{{ statusText('APPROVED') }}</option>
+                          <option value="REJECTED">{{ statusText('REJECTED') }}</option>
                         </select>
                         <label class="sr-only" [attr.for]="'cover-remarks-' + cover.coverCode">
                           Remarks for {{ cover.coverCode }} (required to reject)
@@ -1018,7 +1155,7 @@
                           >
                             <option value="">Denial reason…</option>
                             @for (reason of DENIAL_REASONS; track reason) {
-                              <option [value]="reason">{{ reason }}</option>
+                              <option [value]="reason">{{ statusText(reason) }}</option>
                             }
                           </select>
                         }
@@ -1123,8 +1260,8 @@
                 type="button"
                 class="btn btn--primary"
                 data-testid="detail-submit-decision"
-                [disabled]="deciding() || !rationaleReady()"
-                (click)="submitCoverDecision()"
+                [disabled]="deciding()"
+                (click)="openConfirm('submit')"
               >
                 Submit decision
               </button>
@@ -1138,6 +1275,35 @@
                 Ask claimant
               </button>
             </div>
+            @if (confirmSubmitOpen) {
+              <div class="confirm-backdrop" (click)="closeConfirm()">
+                <div
+                  class="confirm-dialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="confirm-submit-title"
+                  tabindex="-1"
+                  (click)="$event.stopPropagation()"
+                  (keydown)="onConfirmKey($event)"
+                  (keydown.escape)="closeConfirm()"
+                >
+                  <h3 id="confirm-submit-title">Submit this decision?</h3>
+                  <p class="muted">Approved {{ money(approvedTotal()) }} · net {{ money(netTotal()) }}. The claimant sees per-cover outcomes once submitted.</p>
+                  <div class="button-row decision-actions">
+                    <button type="button" class="btn btn--tertiary" data-testid="detail-submit-decision-cancel" (click)="closeConfirm()">Keep working</button>
+                    <button
+                      type="button"
+                      class="btn btn--primary"
+                      data-testid="detail-submit-decision-confirm"
+                      [disabled]="deciding()"
+                      (click)="submitCoverDecision()"
+                    >
+                      {{ deciding() ? 'Submitting…' : 'Confirm submit' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
             @if (showNeedInfoForm) {
               <div class="field" style="margin-top: var(--space-3)">
                 <label for="decision-requested-items">Requested items</label>
@@ -1158,6 +1324,13 @@
                     (click)="reviewNeedInfo()"
                   >
                     Send back to claimant
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn--tertiary"
+                    (click)="showNeedInfoForm = false"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>
@@ -1197,62 +1370,22 @@
                   >
                     {{ sendingBack() ? 'Sending back…' : 'Confirm send-back' }}
                   </button>
+                  <button
+                    type="button"
+                    class="btn btn--tertiary"
+                    (click)="showSendBackForm = false"
+                  >
+                    Cancel
+                  </button>
                 </div>
               </div>
             }
           </div>
         </section>
       }
-
-      <!-- Context, then the timeline last on every stage. -->
+    } @else if (section() === 'files') {
+      <!-- ======================= FILES ======================= -->
       <div class="support-rail">
-        <!-- ======================= CLAIM CONTEXT ======================= -->
-        <!-- Read-only record strip above the timeline: loss, policy, money.
-             Reserve editing and referral move into the stage panels where the
-             adjuster already works (verification assessment / decision). -->
-        <section class="panel context-strip" data-testid="detail-context-panel">
-          <div class="panel__body context-summary">
-            <div class="context-fact">
-              <span class="context-fact__label">Date of loss</span>
-              <span class="context-fact__value num" data-testid="detail-loss-date-field">{{ lossDateText() }}</span>
-            </div>
-            <div class="context-fact">
-              <span class="context-fact__label">Location</span>
-              <span class="context-fact__value" data-testid="detail-loss-location">{{ claim.lossLocation }}</span>
-            </div>
-            <div class="context-fact">
-              <span class="context-fact__label">Policy</span>
-              <span class="context-fact__value mono">{{ claim.policyNumber }}</span>
-            </div>
-            <div class="context-fact">
-              <span class="context-fact__label">Product</span>
-              <span class="context-fact__value">{{ claim.productCode }}</span>
-            </div>
-            <div class="context-fact">
-              <span class="context-fact__label">Holder</span>
-              <span class="context-fact__value">{{ claim.holderName }}</span>
-            </div>
-            @for (fact of coverageFacts(); track fact.label) {
-              <div class="context-fact">
-                <span class="context-fact__label">{{ fact.label }}</span>
-                <span class="context-fact__value">{{ fact.value }}</span>
-              </div>
-            }
-            <div class="context-fact">
-              <span class="context-fact__label">Reserve</span>
-              <span class="context-fact__value num" data-testid="detail-reserve-value">{{ reserveText() }}</span>
-            </div>
-            <div class="context-fact context-fact--story">
-              <span class="context-fact__label">What happened</span>
-              <span class="context-fact__value" data-testid="detail-loss-description">{{ claim.lossDescription }}</span>
-              @if (claim.claimantRemarks; as remarks) {
-                <span class="context-fact__value context-remarks" data-testid="detail-remarks">{{ remarks }}</span>
-              }
-            </div>
-          </div>
-          <pre class="code-block code-block--hidden" data-testid="detail-coverage">{{ coverageText() }}</pre>
-        </section>
-
         <!-- S3: required-documents checklist — what this product expects,
              with link/waive actions for the adjuster. Advisory only: the
              money gate stays untouched. -->
@@ -1264,7 +1397,7 @@
             </div>
             <div class="panel__body">
               @if (reqDocsError(); as reqMessage) {
-                <p class="muted">{{ reqMessage }}</p>
+                <p class="notice notice--warning" role="status">{{ reqMessage }}</p>
               }
               <ol class="ver-list">
                 @for (doc of requiredDocs(); track doc.checkId) {
@@ -1273,9 +1406,7 @@
                     [attr.data-testid]="'detail-reqdoc-' + doc.docKey"
                   >
                     <div class="ver-row__main ver-row__main--static">
-                      <span class="ver-state ver-state--{{ doc.status === 'RECEIVED' ? 'done' : 'todo' }}">
-                        {{ doc.status === 'RECEIVED' ? 'Received' : doc.status === 'WAIVED' ? 'Waived' : 'To do' }}
-                      </span>
+                      <span class="{{ reqDocStateClass(doc.status) }}">{{ reqDocStateLabel(doc.status) }}</span>
                       <span class="ver-row__title">{{ doc.displayName }}</span>
                       @if (doc.decidedBy) {
                         <span class="ver-row__meta">{{ doc.decidedBy }}</span>
@@ -1336,6 +1467,448 @@
               </ol>
             </div>
           </section>
+        }
+
+        <!-- Claim files: every attachment lands here; required docs link from this list. -->
+        <section class="panel support-card" aria-label="Claim files" data-testid="detail-files-panel">
+          <div class="panel__header">
+            <h2>Claim files</h2>
+            @if (attachmentViews().length > 0) {
+              <span class="panel__count num">{{ attachmentViews().length }}</span>
+            }
+          </div>
+          <div class="panel__body">
+            @if (attachmentViews().length === 0) {
+              <p class="muted">No files yet — attach the first document below.</p>
+            } @else {
+              <ul class="ver-docs">
+                @for (doc of attachmentViews(); track doc.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="btn btn--tertiary btn--sm"
+                      data-testid="detail-attachment"
+                      (click)="download(doc)"
+                      title="Download {{ docName(doc) }}"
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                      {{ docName(doc) }}
+                    </button>
+                  </li>
+                }
+              </ul>
+            }
+            @if (canDecide()) {
+              <div class="field doc-upload">
+                <label for="doc-choice">Attach a document</label>
+                <select
+                  id="doc-choice"
+                  class="input"
+                  data-testid="detail-doc-choice"
+                  [(ngModel)]="docChoice"
+                  name="docChoice"
+                >
+                  @for (label of DOC_LABELS; track label) {
+                    <option [value]="label">{{ label }}</option>
+                  }
+                </select>
+                @if (docChoice === 'Other…') {
+                  <label class="sr-only" for="doc-custom">Name this document</label>
+                  <input
+                    id="doc-custom"
+                    class="input"
+                    placeholder="Name this document"
+                    data-testid="detail-doc-custom"
+                    [(ngModel)]="docCustom"
+                    name="docCustom"
+                  />
+                }
+                <label class="sr-only" for="doc-file">File to attach</label>
+                <input
+                  #docFile
+                  id="doc-file"
+                  type="file"
+                  accept="image/*,.pdf,application/pdf"
+                  class="input"
+                  data-testid="detail-doc-file"
+                />
+                <label for="doc-doctype">Document type</label>
+                <select
+                  id="doc-doctype"
+                  class="input"
+                  data-testid="detail-attach-doctype"
+                  [(ngModel)]="attachDocType"
+                  name="attachDocType"
+                >
+                  @for (option of attachDocTypeOptions(); track option.value) {
+                    <option [value]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+                <label for="doc-replaces">Replaces (optional)</label>
+                <select
+                  id="doc-replaces"
+                  class="input"
+                  data-testid="detail-attach-replaces"
+                  [(ngModel)]="attachReplaces"
+                  name="attachReplaces"
+                >
+                  <option value="">No — a new document</option>
+                  @for (attachment of attachReplacesOptions(); track attachment.id) {
+                    <option [value]="attachment.id">{{ attachReplacesName(attachment) }}</option>
+                  }
+                </select>
+                <button
+                  type="button"
+                  class="btn btn--secondary"
+                  data-testid="detail-doc-upload"
+                  [disabled]="uploading()"
+                  (click)="uploadDoc(docFile)"
+                >
+                  {{ uploading() ? 'Attaching…' : 'Attach' }}
+                </button>
+              </div>
+            }
+          </div>
+        </section>
+      </div>
+    } @else if (section() === 'timeline') {
+      <!-- ======================= CLAIM TIMELINE ======================= -->
+      <!-- V17: one sequential feed — notes, documents, checks, milestones. -->
+      <section class="panel timeline-panel" data-testid="detail-timeline-panel">
+        <div class="panel__header timeline-panel__header">
+          <div>
+            <h2>Claim timeline</h2>
+            <p class="timeline-panel__sub">Every note, document, check and decision — oldest first.</p>
+          </div>
+          @if (timelineEntries().length > 0) {
+            <span class="panel__count">{{ timelineEntries().length }}</span>
+          }
+        </div>
+        <div class="panel__body">
+          @if (timelineError()) {
+            <p class="notice notice--warning" role="status">
+              The timeline could not be loaded.
+              <button type="button" class="btn btn--tertiary btn--sm" (click)="refresh()">Retry</button>
+            </p>
+          }
+          @if (timelineEntries().length === 0 && !timelineError()) {
+            <p class="muted" data-testid="detail-timeline-empty">
+              Nothing on the timeline yet — notes you add and documents you attach appear here.
+            </p>
+          } @else if (timelineEntries().length > 0) {
+            <div class="timeline-filters" role="group" aria-label="Filter timeline">
+              <button
+                type="button"
+                class="timeline-filter"
+                [class.is-active]="timelineFilter() === 'ALL'"
+                [attr.aria-pressed]="timelineFilter() === 'ALL'"
+                data-testid="detail-timeline-filter-all"
+                (click)="setTimelineFilter('ALL')"
+              >
+                All <span class="num">{{ timelineCount('ALL') }}</span>
+              </button>
+              <button
+                type="button"
+                class="timeline-filter"
+                [class.is-active]="timelineFilter() === 'NOTES'"
+                [attr.aria-pressed]="timelineFilter() === 'NOTES'"
+                data-testid="detail-timeline-filter-notes"
+                (click)="setTimelineFilter('NOTES')"
+              >
+                Notes <span class="num">{{ timelineCount('NOTES') }}</span>
+              </button>
+              <button
+                type="button"
+                class="timeline-filter"
+                [class.is-active]="timelineFilter() === 'DOCUMENTS'"
+                [attr.aria-pressed]="timelineFilter() === 'DOCUMENTS'"
+                data-testid="detail-timeline-filter-documents"
+                (click)="setTimelineFilter('DOCUMENTS')"
+              >
+                Documents <span class="num">{{ timelineCount('DOCUMENTS') }}</span>
+              </button>
+              <button
+                type="button"
+                class="timeline-filter"
+                [class.is-active]="timelineFilter() === 'CHECKS'"
+                [attr.aria-pressed]="timelineFilter() === 'CHECKS'"
+                data-testid="detail-timeline-filter-checks"
+                (click)="setTimelineFilter('CHECKS')"
+              >
+                Checks <span class="num">{{ timelineCount('CHECKS') }}</span>
+              </button>
+              <button
+                type="button"
+                class="timeline-filter"
+                [class.is-active]="timelineFilter() === 'MILESTONES'"
+                [attr.aria-pressed]="timelineFilter() === 'MILESTONES'"
+                data-testid="detail-timeline-filter-milestones"
+                (click)="setTimelineFilter('MILESTONES')"
+              >
+                Milestones <span class="num">{{ timelineCount('MILESTONES') }}</span>
+              </button>
+            </div>
+            @if (filteredTimeline().length === 0) {
+              <p class="muted" data-testid="detail-timeline-filtered-empty">
+                Nothing here under this filter — try clearing it.
+                <button
+                  type="button"
+                  class="btn btn--tertiary btn--sm"
+                  (click)="setTimelineFilter('ALL')"
+                >
+                  Show everything
+                </button>
+              </p>
+            } @else {
+              <ol class="timeline timeline--feed" data-testid="detail-timeline-list">
+                @for (entry of filteredTimeline(); track $index) {
+                  <li
+                    class="timeline__row timeline__row--{{ timelineGroup(entry.kind) }}"
+                    data-testid="detail-timeline-item"
+                  >
+                    <span
+                      class="timeline__marker timeline__marker--{{ timelineGroup(entry.kind) }}"
+                      [class.is-claimant]="timelineIsClaimant(entry.actor)"
+                      aria-hidden="true"
+                    >
+                      @if (timelineGroup(entry.kind) === 'document') {
+                        <svg viewBox="0 0 16 16">
+                          <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      } @else if (timelineGroup(entry.kind) === 'check') {
+                        <svg viewBox="0 0 16 16">
+                          <path d="M3.2 8.6l3.2 3.2 6.4-7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      } @else if (timelineGroup(entry.kind) === 'milestone') {
+                        <svg viewBox="0 0 16 16">
+                          <circle cx="8" cy="8" r="3" fill="currentColor" />
+                        </svg>
+                      } @else {
+                        {{ timelineInitials(entry.actor) }}
+                      }
+                    </span>
+                    @if (timelineGroup(entry.kind) === 'check' || timelineGroup(entry.kind) === 'milestone') {
+                      <div class="timeline-line">
+                        <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
+                          {{ timelineKindLabel(entry.kind) }}
+                        </span>
+                        @if (entry.detail) {
+                          <span class="timeline-line__text" data-testid="detail-timeline-detail">{{ entry.detail }}</span>
+                        }
+                        <span class="timeline-line__meta">
+                          <span data-testid="detail-timeline-actor">{{ entry.actor ?? 'Internal' }}</span>
+                          ·
+                          <span data-testid="detail-timeline-time">{{ timelineTime(entry.at) }}</span>
+                        </span>
+                      </div>
+                    } @else {
+                      <div class="timeline-card timeline-card--{{ timelineGroup(entry.kind) }}">
+                        <div class="timeline__head">
+                          <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
+                            {{ timelineKindLabel(entry.kind) }}
+                          </span>
+                          <span class="timeline__actor" data-testid="detail-timeline-actor">
+                            {{ entry.actor ?? 'Internal' }}
+                          </span>
+                          <span class="timeline__time" data-testid="detail-timeline-time">
+                            {{ timelineTime(entry.at) }}
+                          </span>
+                        </div>
+                        @if (timelineGroup(entry.kind) === 'document') {
+                          @if (timelineDoc(entry); as doc) {
+                            <button
+                              type="button"
+                              class="timeline-doc"
+                              data-testid="detail-attachment"
+                              (click)="download(doc)"
+                              title="Download {{ docName(doc) }}"
+                            >
+                              <span class="timeline-doc__icon" aria-hidden="true">
+                                <svg viewBox="0 0 16 16">
+                                  <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                              </span>
+                              <span class="timeline-doc__name">{{ docName(doc) }}</span>
+                              <span class="timeline-doc__scope">
+                                {{ entry.verificationId != null ? 'Verification evidence' : 'Attached' }}
+                              </span>
+                              <span class="timeline-doc__go" aria-hidden="true">
+                                <svg viewBox="0 0 16 16">
+                                  <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                              </span>
+                            </button>
+                            @if (supersedesName(entry.detail); as superseded) {
+                              <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                            }
+                          } @else if (entry.detail) {
+                            <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                            @if (supersedesName(entry.detail); as superseded) {
+                              <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                            }
+                          }
+                        } @else if (entry.detail) {
+                          <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
+                          @if (supersedesName(entry.detail); as superseded) {
+                            <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
+                          }
+                        }
+                      </div>
+                    }
+                  </li>
+                }
+              </ol>
+            }
+          }
+
+          @if (canDecide()) {
+            <!-- Add to the timeline — notes land here with your name and time. -->
+            <div class="timeline-add">
+              <p class="timeline-add__title">Add to the timeline</p>
+              <form (ngSubmit)="addNote()" class="field timeline__composer">
+                <label for="note">Add a note</label>
+                <textarea
+                  id="note"
+                  class="input"
+                  rows="2"
+                  placeholder="Observations, follow-ups, coverage checks…"
+                  data-testid="detail-note-input"
+                  [(ngModel)]="noteInput"
+                  name="note"
+                ></textarea>
+                <div class="form-actions note-form-actions">
+                  <button
+                    type="submit"
+                    class="btn btn--secondary"
+                    data-testid="detail-note-add"
+                    [disabled]="savingNote() || !noteInput.trim()"
+                  >
+                    Add note
+                  </button>
+                </div>
+              </form>
+            </div>
+          }
+        </div>
+      </section>
+    } @else {
+      <!-- ======================= REFERENCE ======================= -->
+      <div class="support-rail">
+        <!-- Read-only record strip: loss, policy, money. Reserve editing and
+             referral stay in the stage panels where the adjuster works. -->
+        <section class="panel context-strip" data-testid="detail-context-panel">
+          <div class="panel__header">
+            <h2>Claim context</h2>
+          </div>
+          <div class="panel__body context-summary">
+            <div class="context-fact">
+              <span class="context-fact__label">Date of loss</span>
+              <span class="context-fact__value num" data-testid="detail-loss-date-field">{{ lossDateText() }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Location</span>
+              <span class="context-fact__value" data-testid="detail-loss-location">{{ claim.lossLocation }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Policy</span>
+              <button
+                type="button"
+                class="btn btn--tertiary btn--sm mono"
+                data-testid="detail-policy-link"
+                title="{{ claim.policyNumber }}"
+                (click)="openPolicyModal()"
+              >{{ claim.policyNumber }}</button>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Product</span>
+              <span class="context-fact__value">{{ claim.productCode }}</span>
+            </div>
+            <div class="context-fact">
+              <span class="context-fact__label">Holder</span>
+              <span class="context-fact__value">{{ claim.holderName }}</span>
+            </div>
+            @for (fact of coverageFacts(); track fact.label) {
+              <div class="context-fact">
+                <span class="context-fact__label">{{ fact.label }}</span>
+                <span class="context-fact__value">{{ fact.value }}</span>
+              </div>
+            }
+            <div class="context-fact">
+              <span class="context-fact__label">Reserve</span>
+              <span class="context-fact__value num">{{ reserveText() }}</span>
+            </div>
+            <div class="context-fact context-fact--story">
+              <span class="context-fact__label">What happened</span>
+              <span class="context-fact__value" data-testid="detail-loss-description">{{ claim.lossDescription }}</span>
+              @if (claim.claimantRemarks?.trim(); as remarks) {
+                <span class="context-fact__value context-remarks" data-testid="detail-remarks">{{ remarks }}</span>
+              }
+            </div>
+          </div>
+          <pre class="code-block code-block--hidden" data-testid="detail-coverage">{{ coverageText() }}</pre>
+        </section>
+
+        <!-- V4 S1: policy-clause reference — the wording behind this claim's
+             covers, read-only. Product-level rows group under "General".
+             Full-width strip below claim context: clause rows need the measure.
+             Component APIs/data flow untouched. -->
+        <section class="panel clause-ref" aria-label="Policy clauses">
+          <div class="panel__header">
+            <h2>Policy clauses</h2>
+          </div>
+          <div class="panel__body clause-ref__body">
+            <app-clause-panel [claimNumber]="claimNumber"></app-clause-panel>
+          </div>
+        </section>
+
+        <!-- V4 S3: AI assistant — collapsed overflow control; expands into a
+             right drawer (presentation only: same component, same testids). -->
+        <button
+          type="button"
+          class="btn btn--secondary ai-fab"
+          data-testid="detail-ai-toggle"
+          [attr.aria-expanded]="aiDrawerOpen"
+          aria-controls="detail-ai-drawer"
+          [title]="aiSignalText()"
+          (click)="openAiDrawer()"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1.5 9.7 6l4.8 1.7-4.8 1.7L8 14l-1.7-4.6L1.5 7.7 6.3 6z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+          </svg>
+          {{ aiSignalText() }}
+          <span class="ai-fab__dot" aria-hidden="true"></span>
+        </button>
+        @if (aiDrawerOpen) {
+          <div class="ai-drawer" data-testid="detail-ai-drawer" id="detail-ai-drawer">
+            <div class="confirm-backdrop" (click)="closeAiDrawer()"></div>
+            <div
+              class="ai-drawer__panel"
+              role="dialog"
+              aria-modal="true"
+              aria-label="AI assistant"
+              tabindex="-1"
+              (keydown)="onAiDrawerKey($event)"
+              (keydown.escape)="closeAiDrawer()"
+            >
+              <div class="ai-drawer__head">
+                <h2>AI assistant</h2>
+                <span class="chip">Advisory only</span>
+                <button
+                  type="button"
+                  class="btn btn--tertiary btn--sm"
+                  data-testid="detail-ai-close"
+                  (click)="closeAiDrawer()"
+                >
+                  Close
+                </button>
+              </div>
+              <div class="ai-drawer__body">
+                <app-ai-panel [claimNumber]="claimNumber"></app-ai-panel>
+              </div>
+            </div>
+          </div>
         }
 
         <!-- Legacy single-figure claims carry no stage panels, so the reserve
@@ -1413,9 +1986,10 @@
             </div>
           </section>
 
-          <section class="panel support-card" data-testid="detail-audit-panel">
+          <section class="panel support-card caution-zone" data-testid="detail-audit-panel" aria-label="Audit trail">
             <div class="panel__header">
               <h2>Audit trail</h2>
+              <span class="chip">Read-only</span>
               @if (auditTrail().length > 0) {
                 <span class="panel__count">{{ auditTrail().length }}</span>
               }
@@ -1440,9 +2014,9 @@
                 <ol class="timeline" data-testid="detail-audit-list">
                   @for (entry of auditTrail(); track entry.id) {
                     <li class="timeline__item" data-testid="detail-audit-item">
-                      <p class="timeline__body"><span class="{{ auditActionLabel(entry.action) }}" data-testid="detail-audit-action">{{ entry.action }}</span></p>
-                      <p class="timeline__meta" data-testid="detail-audit-meta">{{ entry.createdAt }}</p>
-                      @if (entry.rationale) {
+                      <p class="timeline__body"><span class="{{ auditActionClass(entry.action) }}" data-testid="detail-audit-action" title="{{ entry.action }}">{{ auditActionLabel(entry.action) }}</span></p>
+                      <p class="timeline__meta" data-testid="detail-audit-meta">{{ auditTime(entry.createdAt) }}</p>
+                      @if (entry.rationale?.trim()) {
                         <p class="timeline__rationale" data-testid="detail-audit-rationale">{{ entry.rationale }}</p>
                       }
                     </li>
@@ -1452,298 +2026,17 @@
             </div>
           </section>
         }
-
-        <!-- ======================= CLAIM TIMELINE ======================= -->
-        <!-- V17: one sequential feed — notes, documents, checks, milestones.
-             Replaces the scattered Documents / Internal-notes / Audit boxes. -->
-        <section class="panel timeline-panel" data-testid="detail-timeline-panel">
-          <div class="panel__header timeline-panel__header">
-            <div>
-              <h2>Claim timeline</h2>
-              <p class="timeline-panel__sub">Every note, document, check and decision — oldest first.</p>
-            </div>
-            @if (timelineEntries().length > 0) {
-              <span class="panel__count">{{ timelineEntries().length }}</span>
-            }
-          </div>
-          <div class="panel__body">
-            @if (timelineEntries().length === 0) {
-              <p class="muted" data-testid="detail-timeline-empty">
-                Nothing on the timeline yet — notes you add and documents you attach appear here.
-              </p>
-            } @else {
-              <div class="timeline-filters" role="group" aria-label="Filter timeline">
-                <button
-                  type="button"
-                  class="timeline-filter"
-                  [class.is-active]="timelineFilter() === 'ALL'"
-                  [attr.aria-pressed]="timelineFilter() === 'ALL'"
-                  data-testid="detail-timeline-filter-all"
-                  (click)="setTimelineFilter('ALL')"
-                >
-                  All <span class="num">{{ timelineCount('ALL') }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="timeline-filter"
-                  [class.is-active]="timelineFilter() === 'NOTES'"
-                  [attr.aria-pressed]="timelineFilter() === 'NOTES'"
-                  data-testid="detail-timeline-filter-notes"
-                  (click)="setTimelineFilter('NOTES')"
-                >
-                  Notes <span class="num">{{ timelineCount('NOTES') }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="timeline-filter"
-                  [class.is-active]="timelineFilter() === 'DOCUMENTS'"
-                  [attr.aria-pressed]="timelineFilter() === 'DOCUMENTS'"
-                  data-testid="detail-timeline-filter-documents"
-                  (click)="setTimelineFilter('DOCUMENTS')"
-                >
-                  Documents <span class="num">{{ timelineCount('DOCUMENTS') }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="timeline-filter"
-                  [class.is-active]="timelineFilter() === 'CHECKS'"
-                  [attr.aria-pressed]="timelineFilter() === 'CHECKS'"
-                  data-testid="detail-timeline-filter-checks"
-                  (click)="setTimelineFilter('CHECKS')"
-                >
-                  Checks <span class="num">{{ timelineCount('CHECKS') }}</span>
-                </button>
-                <button
-                  type="button"
-                  class="timeline-filter"
-                  [class.is-active]="timelineFilter() === 'MILESTONES'"
-                  [attr.aria-pressed]="timelineFilter() === 'MILESTONES'"
-                  data-testid="detail-timeline-filter-milestones"
-                  (click)="setTimelineFilter('MILESTONES')"
-                >
-                  Milestones <span class="num">{{ timelineCount('MILESTONES') }}</span>
-                </button>
-              </div>
-              @if (filteredTimeline().length === 0) {
-                <p class="muted" data-testid="detail-timeline-filtered-empty">
-                  Nothing here under this filter.
-                  <button
-                    type="button"
-                    class="btn btn--tertiary btn--sm"
-                    (click)="setTimelineFilter('ALL')"
-                  >
-                    Show everything
-                  </button>
-                </p>
-              } @else {
-                <ol class="timeline timeline--feed" data-testid="detail-timeline-list">
-                  @for (entry of filteredTimeline(); track $index) {
-                    <li
-                      class="timeline__row timeline__row--{{ timelineGroup(entry.kind) }}"
-                      data-testid="detail-timeline-item"
-                    >
-                      <span
-                        class="timeline__marker timeline__marker--{{ timelineGroup(entry.kind) }}"
-                        [class.is-claimant]="timelineIsClaimant(entry.actor)"
-                        aria-hidden="true"
-                      >
-                        @if (timelineGroup(entry.kind) === 'document') {
-                          <svg viewBox="0 0 16 16">
-                            <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        } @else if (timelineGroup(entry.kind) === 'check') {
-                          <svg viewBox="0 0 16 16">
-                            <path d="M3.2 8.6l3.2 3.2 6.4-7.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        } @else if (timelineGroup(entry.kind) === 'milestone') {
-                          <svg viewBox="0 0 16 16">
-                            <circle cx="8" cy="8" r="3" fill="currentColor" />
-                          </svg>
-                        } @else {
-                          {{ timelineInitials(entry.actor) }}
-                        }
-                      </span>
-                      @if (timelineGroup(entry.kind) === 'check' || timelineGroup(entry.kind) === 'milestone') {
-                        <div class="timeline-line">
-                          <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
-                            {{ timelineKindLabel(entry.kind) }}
-                          </span>
-                          @if (entry.detail) {
-                            <span class="timeline-line__text" data-testid="detail-timeline-detail">{{ entry.detail }}</span>
-                          }
-                          <span class="timeline-line__meta">
-                            <span data-testid="detail-timeline-actor">{{ entry.actor ?? 'Internal' }}</span>
-                            ·
-                            <span data-testid="detail-timeline-time">{{ timelineTime(entry.at) }}</span>
-                          </span>
-                        </div>
-                      } @else {
-                        <div class="timeline-card timeline-card--{{ timelineGroup(entry.kind) }}">
-                          <div class="timeline__head">
-                            <span class="{{ timelineKindClass(entry.kind) }}" data-testid="detail-timeline-kind">
-                              {{ timelineKindLabel(entry.kind) }}
-                            </span>
-                            <span class="timeline__actor" data-testid="detail-timeline-actor">
-                              {{ entry.actor ?? 'Internal' }}
-                            </span>
-                            <span class="timeline__time" data-testid="detail-timeline-time">
-                              {{ timelineTime(entry.at) }}
-                            </span>
-                          </div>
-                          @if (timelineGroup(entry.kind) === 'document') {
-                            @if (timelineDoc(entry); as doc) {
-                              <button
-                                type="button"
-                                class="timeline-doc"
-                                data-testid="detail-attachment"
-                                (click)="download(doc)"
-                                title="Download {{ docName(doc) }}"
-                              >
-                                <span class="timeline-doc__icon" aria-hidden="true">
-                                  <svg viewBox="0 0 16 16">
-                                    <path d="M4 1.8h5l3 3v9.4H4z M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-                                  </svg>
-                                </span>
-                                <span class="timeline-doc__name">{{ docName(doc) }}</span>
-                                <span class="timeline-doc__scope">
-                                  {{ entry.verificationId != null ? 'Verification evidence' : 'Attached' }}
-                                </span>
-                                <span class="timeline-doc__go" aria-hidden="true">
-                                  <svg viewBox="0 0 16 16">
-                                    <path d="M8 2v8M4.8 7.2 8 10.4l3.2-3.2M2.8 13.2h10.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-                                  </svg>
-                                </span>
-                              </button>
-                              @if (supersedesName(entry.detail); as superseded) {
-                                <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
-                              }
-                            } @else if (entry.detail) {
-                              <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
-                              @if (supersedesName(entry.detail); as superseded) {
-                                <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
-                              }
-                            }
-                          } @else if (entry.detail) {
-                            <p class="timeline__body" data-testid="detail-timeline-detail">{{ entry.detail }}</p>
-                            @if (supersedesName(entry.detail); as superseded) {
-                              <p class="timeline__body" data-testid="detail-timeline-supersedes">supersedes {{ superseded }}</p>
-                            }
-                          }
-                        </div>
-                      }
-                    </li>
-                  }
-                </ol>
-              }
-            }
-
-            @if (canDecide()) {
-              <!-- Add to the timeline — notes and files land here with your name and time. -->
-              <div class="timeline-add">
-                <p class="timeline-add__title">Add to the timeline</p>
-                <div class="timeline-add__grid">
-                  <form (ngSubmit)="addNote()" class="field timeline__composer">
-                    <label for="note">Add a note</label>
-                    <textarea
-                      id="note"
-                      class="input"
-                      rows="2"
-                      placeholder="Observations, follow-ups, coverage checks…"
-                      data-testid="detail-note-input"
-                      [(ngModel)]="noteInput"
-                      name="note"
-                    ></textarea>
-                    <div class="form-actions note-form-actions">
-                      <button
-                        type="submit"
-                        class="btn btn--secondary"
-                        data-testid="detail-note-add"
-                        [disabled]="savingNote() || !noteInput.trim()"
-                      >
-                        Add note
-                      </button>
-                    </div>
-                  </form>
-
-                  <div class="field doc-upload">
-                    <label for="doc-choice">Attach a document</label>
-                    <select
-                      id="doc-choice"
-                      class="input"
-                      data-testid="detail-doc-choice"
-                      [(ngModel)]="docChoice"
-                      name="docChoice"
-                    >
-                      @for (label of DOC_LABELS; track label) {
-                        <option [value]="label">{{ label }}</option>
-                      }
-                    </select>
-                    @if (docChoice === 'Other…') {
-                      <label class="sr-only" for="doc-custom">Name this document</label>
-                      <input
-                        id="doc-custom"
-                        class="input"
-                        placeholder="Name this document"
-                        data-testid="detail-doc-custom"
-                        [(ngModel)]="docCustom"
-                        name="docCustom"
-                      />
-                    }
-                    <label class="sr-only" for="doc-file">File to attach</label>
-                    <input
-                      #docFile
-                      id="doc-file"
-                      type="file"
-                      accept="image/*,.pdf,application/pdf"
-                      class="input"
-                      data-testid="detail-doc-file"
-                    />
-                    <label for="doc-doctype">Document type</label>
-                    <select
-                      id="doc-doctype"
-                      class="input"
-                      data-testid="detail-attach-doctype"
-                      [(ngModel)]="attachDocType"
-                      name="attachDocType"
-                    >
-                      @for (option of attachDocTypeOptions(); track option.value) {
-                        <option [value]="option.value">{{ option.label }}</option>
-                      }
-                    </select>
-                    <label for="doc-replaces">Replaces (optional)</label>
-                    <select
-                      id="doc-replaces"
-                      class="input"
-                      data-testid="detail-attach-replaces"
-                      [(ngModel)]="attachReplaces"
-                      name="attachReplaces"
-                    >
-                      <option value="">No — a new document</option>
-                      @for (attachment of attachReplacesOptions(); track attachment.id) {
-                        <option [value]="attachment.id">{{ attachReplacesName(attachment) }}</option>
-                      }
-                    </select>
-                    <button
-                      type="button"
-                      class="btn btn--secondary"
-                      data-testid="detail-doc-upload"
-                      [disabled]="uploading()"
-                      (click)="uploadDoc(docFile)"
-                    >
-                      {{ uploading() ? 'Attaching…' : 'Attach' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            }
-          </div>
-        </section>
-
       </div>
-    } @else if (!isLegacy() && claim.status === 'CLOSED') {
-      <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
-    } @else if (isLegacy() && claim.status === 'CLOSED') {
-      <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
+    }
+
+    @if (section() === 'task' && !canDecide() && !isSupervisor()) {
+      @if (claim.status === 'CLOSED') {
+        <p class="muted" data-testid="detail-decision-closed">This claim is closed.</p>
+      } @else if (isSupervisor() || claim.status === 'ESCALATED_SUPERVISOR') {
+        <p class="muted">Waiting on a supervisor decision.</p>
+      } @else {
+        <p class="muted">Waiting on the holding adjuster — nothing for you to do here.</p>
+      }
     }
 
     <div class="footer-actions">
@@ -1756,5 +2049,15 @@
         </a>
       </div>
     </div>
+
+    <!-- Policy page in a modal: the whole policy-detail surface in place.
+         Esc/scrim closes with focus restore. -->
+    @if (policyModalOpen) {
+      <app-policy-modal
+        [policyNumber]="claim.policyNumber"
+        (closed)="closePolicyModal()"
+        (keydown)="onPolicyModalKey($event)"
+      ></app-policy-modal>
+    }
   }
 </main>

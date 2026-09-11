@@ -1,0 +1,78 @@
+<section class="ai-chat" data-testid="detail-ai-chat" aria-label="AI assistant chat">
+  <div
+    #thread
+    class="ai-chat__thread"
+    data-testid="detail-ai-thread"
+    role="log"
+    aria-live="polite"
+    aria-label="Conversation with the AI assistant"
+  >
+    @if (visibleMessages().length === 0) {
+      <p class="muted ai-chat__empty">No questions yet — ask about coverage, clauses, or next steps.</p>
+    } @else {
+      @for (message of visibleMessages(); track $index) {
+        <div
+          class="ai-chat__msg"
+          [class.ai-chat__msg--user]="message.role === 'user'"
+          [class.ai-chat__msg--assistant]="message.role === 'assistant'"
+          [attr.data-testid]="'detail-ai-msg-' + $index"
+        >
+          <span class="ai-chat__role">{{ message.role === 'user' ? 'You' : 'Assistant' }}</span>
+          <p class="ai-chat__text">{{ message.content }}</p>
+        </div>
+      }
+      @if (sending()) {
+        <div class="ai-chat__msg ai-chat__msg--assistant ai-chat__msg--typing" aria-hidden="true">
+          <span class="ai-chat__role">Assistant</span>
+          <p class="ai-chat__text"><span class="ai-chat__dots"><span></span><span></span><span></span></span></p>
+        </div>
+      }
+    }
+  </div>
+  @if (chatStatus(); as status) {
+    <p class="muted ai-chat__status" data-testid="detail-ai-chat-status" role="status">
+      {{ status === 'Fallback' ? 'Fallback — rules-only, not model output' : status }}@if (sending()) {<span> · Sending…</span>}
+    </p>
+  } @else if (sending()) {
+    <p class="muted ai-chat__status" role="status">Sending…</p>
+  }
+  <p class="muted ai-chat__disclaimer">Advisory only — the adjuster decides.</p>
+  @if (chatError(); as failure) {
+    <div class="ai-chat__error" role="alert">
+      <p class="notice notice--error" data-testid="detail-ai-chat-error">{{ failure }}</p>
+      <button
+        type="button"
+        class="btn btn--secondary btn--sm"
+        data-testid="detail-ai-chat-retry"
+        [disabled]="sending()"
+        (click)="retry()"
+      >
+        Retry
+      </button>
+    </div>
+  }
+  <form class="ai-chat__composer" (ngSubmit)="send()" aria-label="Ask the AI assistant">
+    <label class="sr-only" for="ai-chat-input">Ask about this claim</label>
+    <textarea
+      id="ai-chat-input"
+      class="input ai-chat__input"
+      data-testid="detail-ai-input"
+      rows="1"
+      [ngModel]="draft()"
+      (ngModelChange)="draft.set($event)"
+      name="draft"
+      (keydown.enter)="onEnter($event)"
+      [disabled]="sending()"
+      maxlength="2000"
+      placeholder="Ask about coverage, clauses, or next steps…"
+    ></textarea>
+    <button
+      type="submit"
+      class="btn btn--primary btn--sm ai-chat__send"
+      data-testid="detail-ai-send"
+      [disabled]="sending() || draft().trim() === ''"
+    >
+      <span class="ai-chat__send-label">{{ sending() ? 'Sending…' : 'Send' }}</span>
+    </button>
+  </form>
+</section>

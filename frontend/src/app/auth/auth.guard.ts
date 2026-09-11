@@ -31,6 +31,21 @@ export const internalGuard: CanActivateFn = async () => {
   return true;
 };
 
+/**
+ * Policy detail is shared: claimants read their own policy (cockpit), staff
+ * read any policy from the claim workspace. Either side alone passes.
+ */
+export const policyDetailGuard: CanActivateFn = async () => {
+  const router = inject(Router);
+  const authenticated = await ensureAuthenticated();
+  const allowedRoles = ['claimant', 'adjuster_l1', 'adjuster_l2', 'adjuster_l3', 'supervisor'];
+  if (!authenticated || !allowedRoles.some(hasRole)) {
+    await router.navigate(['']);
+    return false;
+  }
+  return true;
+};
+
 /** The escalation queue (/escalations) is supervisor-only (route-table row for slice 5). */
 export const supervisorGuard: CanActivateFn = async () => {
   const router = inject(Router);

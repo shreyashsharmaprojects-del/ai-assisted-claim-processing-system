@@ -34,6 +34,16 @@ interface ClaimantClaimView {
   steps: string[];
   covers?: FiledCover[] | null;
   claimedTotal?: number | null;
+  /** S3 required-documents tracker (claimed: displayName + status only, no internals). */
+  documentsReceived?: number | null;
+  documentsTotal?: number | null;
+  requiredDocuments?: RequiredDocItem[] | null;
+}
+
+/** One claimant-safe checklist item — label + status, never internals. */
+interface RequiredDocItem {
+  displayName: string;
+  status: string;
 }
 
 const MAX_PHOTOS = 5;
@@ -177,6 +187,60 @@ export class Fnol {
 
   protected money(value: number | null | undefined): string {
     return formatMoney(value);
+  }
+
+  // --- required documents (R) --------------------------------------------------
+  // Post-filing checklist path (no pre-filing required-docs GET exists: the only
+  // checklist surface is GET /api/claims/{n}/required-documents, which needs a
+  // claim number — see RequiredDocumentsController.requiredDocuments). The FNOL
+  // POST response already carries the freshly seeded checklist as
+  // documentsReceived/documentsTotal/requiredDocuments on ClaimantClaimView
+  // (ClaimService.fileFnol -> docsOf -> claimantDocs), so the result card renders
+  // what landed: RECEIVED rows for files attached at filing, PENDING rows with
+  // the "upload later from your claim tracker" hint. Missing docs never block
+  // filing (waive/link flow lives on the tracker).
+  // DocKey mechanism mirror: ClaimController.fileClaim reads an optional text
+  // part `docKey` (single key for the first photo) or `docKeys` (JSON array,
+  // positionally aligned with the photos order — see
+  // ClaimController.parseDocKeys + FnolInput.docKeyFor). This submit therefore
+  // appends the free photos with a null-aligned docKeys array, mirroring that
+  // exact mechanism (blank keys are a no-op in tryAutoLink, so extras stay fine).
+
+  /** True when the POST response carried the required-documents tracker. */
+  protected hasResultDocs(): boolean {
+    const view = this.result();
+    return view?.documentsTotal != null && (view.requiredDocuments?.length ?? 0) > 0;
+  }
+
+  /** "N of M received" line for the result-card tracker (empty when omitted). */
+  protected resultDocsCountText(): string {
+    const view = this.result();
+    const received = view?.documentsReceived ?? 0;
+    const total = view?.documentsTotal ?? 0;
+    return `Documents: ${received} of ${total} received`;
+  }
+
+  /** Per-item labels for the result-card tracker (displayName + status only). */
+  protected resultDocItems(): RequiredDocItem[] {
+    return this.result()?.requiredDocuments ?? [];
+  }
+
+  /** Friendly status word for one checklist item. */
+  protected resultDocStatus(item: RequiredDocItem): string {
+    return item.status === 'RECEIVED'
+      ? 'Received'
+      : item.status === 'WAIVED'
+        ? 'Waived'
+        : 'Pending';
+  }
+
+  /** Badge kind for one checklist item: received reads as success, pending warns. */
+  protected resultDocBadge(item: RequiredDocItem): string {
+    return item.status === 'RECEIVED'
+      ? 'badge badge--success'
+      : item.status === 'WAIVED'
+        ? 'badge badge--neutral'
+        : 'badge badge--warning';
   }
 
   /** Currency symbol derived from the locale formatter (en-GB: ₹) — for static labels. */
@@ -349,9 +413,17 @@ export class Fnol {
         form.append('covers', JSON.stringify(covers));
       }
       if (this.photoFiles) {
-        for (const file of Array.from(this.photoFiles)) {
+        const files = Array.from(this.photoFiles);
+        for (const file of files) {
           form.append('photos', file);
         }
+        // Mirror the backend docKey mechanism exactly: ClaimController
+        // reads an optional `docKey` (first photo) or `docKeys` JSON array
+        // aligned positionally with the photos order
+        // (ClaimController.parseDocKeys -> FnolInput.docKeyFor). FNOL files
+        // are free photos with no doc key, so the aligned array is all nulls
+        // (blank keys are a no-op in RequiredDocumentService.tryAutoLink).
+        form.append('docKeys', JSON.stringify(files.map(() => null)));
       }
       const view = await firstValueFrom(this.http.post<ClaimantClaimView>('/api/claims', form));
       this.result.set(view);

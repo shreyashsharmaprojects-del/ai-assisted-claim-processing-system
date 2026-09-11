@@ -1,10 +1,11 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, Input, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { badgeClass } from '../ui';
 import { formatDate, formatMoney } from '../format';
 import { serverMessage } from '../toasts';
+import { hasRole } from '../auth/auth.service';
 import type { CockpitPolicy } from './policies-cockpit';
 import { coerceAmount } from './policies-cockpit';
 
@@ -30,15 +31,23 @@ interface PolicyDetailResponse {
   templateUrl: './policy-detail.html',
   styleUrl: './policy-detail.css',
 })
-export class PolicyDetail {
+export class PolicyDetail implements OnInit {
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+
+  /** Embed override: when set, the component loads this policy instead of the route param. */
+  @Input() policyNumber: string | null = null;
 
   protected readonly detail = signal<PolicyDetailResponse | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly loaded = signal(false);
   protected readonly notFound = signal(false);
+
+  /** Claimants file claims; staff read from the workspace (button hidden). */
+  protected canFileClaim(): boolean {
+    return hasRole('claimant');
+  }
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
@@ -57,6 +66,11 @@ export class PolicyDetail {
   }
 
   constructor() {
+    // First load waits for ngOnInit: inputs are unset during construction,
+    // and the embedded (modal) path carries the number via @Input.
+  }
+
+  ngOnInit(): void {
     void this.load();
   }
 
@@ -64,7 +78,8 @@ export class PolicyDetail {
     this.error.set(null);
     this.notFound.set(false);
     this.loaded.set(false);
-    const policyNumber = this.route.snapshot.paramMap.get('policyNumber') ?? '';
+    const policyNumber =
+      this.policyNumber ?? this.route.snapshot.paramMap.get('policyNumber') ?? '';
     try {
       const detail = await firstValueFrom(
         this.http.get<PolicyDetailResponse>(

@@ -41,11 +41,13 @@
           {{ d.policy.productDisplayName }} · {{ d.policy.productCode }} · {{ d.policy.productFamily }}
         </p>
       </div>
-      <div class="page-banner__aside">
-        <button type="button" class="btn btn--primary" data-testid="policy-detail-file" (click)="fileClaim()">
-          File a claim
-        </button>
-      </div>
+      @if (canFileClaim()) {
+        <div class="page-banner__aside">
+          <button type="button" class="btn btn--primary" data-testid="policy-detail-file" (click)="fileClaim()">
+            File a claim
+          </button>
+        </div>
+      }
     </div>
 
     <section class="panel">

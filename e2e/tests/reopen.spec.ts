@@ -176,6 +176,7 @@ test('supervisor reopens a decided staged claim, tracker shows reopened, adjuste
   await holder.getByTestId('detail-approve-OPD').fill('5000');
   await holder.getByTestId('detail-decision-rationale').fill('Recommend full payment.');
   await holder.getByTestId('detail-submit-decision').click();
+  await holder.getByTestId('detail-submit-decision-confirm').click();
   await expect(holder.getByTestId('detail-decision-closed')).toBeVisible();
   await holder.context().close();
 
@@ -185,7 +186,7 @@ test('supervisor reopens a decided staged claim, tracker shows reopened, adjuste
   await signInSupervisor(supervisorPage);
   await supervisorPage.goto('/claims/' + claimNumber);
   await expect(supervisorPage.getByTestId('claim-detail-page')).toBeVisible();
-  await expect(supervisorPage.getByTestId('detail-status')).toContainText('CLOSED');
+  await expect(supervisorPage.getByTestId('detail-status')).toContainText('Closed');
 
   const rationale = `Reopened for re-review run ${Date.now()} — new evidence arrived.`;
   await supervisorPage.getByTestId('detail-reopen-toggle').click();
@@ -248,8 +249,9 @@ test('supervisor reopens a decided staged claim, tracker shows reopened, adjuste
   await reworker.getByTestId('detail-approve-OPD').fill('5000');
   await reworker.getByTestId('detail-decision-rationale').fill('Confirming full payment on rework.');
   await reworker.getByTestId('detail-submit-decision').click();
+  await reworker.getByTestId('detail-submit-decision-confirm').click();
   await expect(reworker.getByTestId('detail-decision-closed')).toBeVisible();
-  await expect(reworker.getByTestId('detail-status')).toContainText('CLOSED');
+  await expect(reworker.getByTestId('detail-status')).toContainText('Closed');
   await reworker.context().close();
 
   await claimantContext.close();

@@ -8,6 +8,8 @@ import java.util.Map;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.stereotype.Service;
 
 import com.claims.catalog.ProductRepository;
@@ -88,6 +90,89 @@ public class CockpitService {
         if (policy == null) {
             return null;
         }
+        return assembleDetail(policyNumber, policy);
+    }
+
+    /**
+     * Staff read path (adjusters/supervisor — the claim workspace policy modal):
+     * same assembled shape, loaded by policy number with no holder-email
+     * ownership check. The route already restricts to authenticated internal
+     * roles; staff see holder identity on the claim itself, so nothing new
+     * leaks. Unknown numbers still return null (caller maps to 404).
+     */
+    public CockpitPolicyDetailView policyDetailForStaff(String policyNumber) {
+        CockpitPolicyView policy = policyRow(policyNumber);
+        if (policy == null) {
+            return null;
+        }
+        return assembleDetail(policyNumber, policy);
+    }
+
+    /** True for internal roles (adjusters + supervisor), false for claimants. */
+    public static boolean isStaff(Authentication authentication) {
+        if (authentication == null) {
+            return false;
+        }
+        for (String role : List.of("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3", "SUPERVISOR")) {
+            if (authentication.getAuthorities().contains(new SimpleGrantedAuthority("ROLE_" + role))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** One policy row by number with derived remaining benefit (no email filter). */
+    private CockpitPolicyView policyRow(String policyNumber) {
+        List<CockpitPolicyView> rows = jdbcTemplate.query(
+                "SELECT p.policy_number, p.product_code, p.holder_name, p.holder_email, "
+                        + "p.status, p.sum_insured, "
+                        + "p.valid_from, p.valid_to, "
+                        + "(SELECT count(*) FROM policy_cover pc WHERE pc.policy_id = p.id) AS cover_count "
+                        + "FROM policy p WHERE p.policy_number = ?",
+                policyRow(), policyNumber);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        CockpitPolicyView row = withProductMeta(rows.get(0));
+        BigDecimal consumed = consumedByPolicyNumber(policyNumber);
+        BigDecimal remaining = row.sumInsured() == null ? null
+                : row.sumInsured().subtract(consumed);
+        return new CockpitPolicyView(row.policyNumber(), row.productCode(),
+                row.productFamily(), row.productDisplayName(),
+                row.holderName(), row.holderEmail(), row.status(), row.sumInsured(),
+                remaining, row.validFrom(), row.validTo(), row.coverCount());
+    }
+
+    /** Prior non-rejected consumption for one policy number (staff path). */
+    private BigDecimal consumedByPolicyNumber(String policyNumber) {
+        BigDecimal consumed = jdbcTemplate.queryForObject(
+                "SELECT coalesce(sum(c.indemnity_amount), 0) FROM claim c "
+                        + "JOIN policy p ON p.id = c.policy_id "
+                        + "WHERE p.policy_number = ? "
+                        + "AND c.decision IS DISTINCT FROM 'DENIED' "
+                        + "AND c.indemnity_amount IS NOT NULL",
+                BigDecimal.class, policyNumber);
+        return consumed == null ? BigDecimal.ZERO : consumed;
+    }
+
+    /** Product family/display enrichment shared by both read paths. */
+    private CockpitPolicyView withProductMeta(CockpitPolicyView row) {
+        Map<String, String> families = new HashMap<>();
+        Map<String, String> displayNames = new HashMap<>();
+        products.findAll().forEach(
+                product -> {
+                    families.put(product.getCode(), product.getFamily());
+                    displayNames.put(product.getCode(), product.getDisplayName());
+                });
+        return new CockpitPolicyView(row.policyNumber(), row.productCode(),
+                families.getOrDefault(row.productCode(), "NON_HEALTH"),
+                displayNames.getOrDefault(row.productCode(), row.productCode()),
+                row.holderName(), row.holderEmail(), row.status(), row.sumInsured(),
+                row.remainingBenefit(), row.validFrom(), row.validTo(), row.coverCount());
+    }
+
+    /** Covers + remaining + rating/clauses assembly shared by both read paths. */
+    private CockpitPolicyDetailView assembleDetail(String policyNumber, CockpitPolicyView policy) {
         Long policyId = jdbcTemplate.queryForObject(
                 "SELECT id FROM policy WHERE policy_number = ?", Long.class, policyNumber);
         List<CockpitCoverView> covers = jdbcTemplate.query(

@@ -2,36 +2,55 @@
   display: block;
 }
 
-/* Grey canvas behind everything.
-   Cool-slate wash: the canvas carries a whisper of blue so white cards read
-   as layered surfaces, not floating on printer paper. */
+/*
+ * App shell (doctrine §4): flat hairline chrome, no shadows, no gradients.
+ * 48px top bar -> 240px nav (collapsible to a 56px rail) -> full-bleed
+ * left-aligned content column. Claimants see the top bar only.
+ */
 .app-canvas {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding: var(--space-4);
-  gap: var(--space-4);
-  background:
-    radial-gradient(1200px 320px at 50% -120px, rgba(0, 86, 179, 0.06), transparent 70%),
-    var(--surface-sunken);
+  background: var(--surface-sunken);
 }
 
-/* ---- Floating top bar (rounded white card, reference style) ---- */
+/* Keyboard path into the content column (§8: focus ring everywhere). */
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: calc(-1 * var(--topbar-height));
+  z-index: var(--z-toast);
+  height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-on-accent);
+  background: var(--accent-600);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--duration-fast) var(--ease-out);
+}
+
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+/* ---- Top bar: 48px, flat, hairline bottom border ---- */
 .app-topbar {
   position: sticky;
-  top: var(--space-4);
+  top: 0;
   z-index: var(--z-sticky);
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  height: 60px;
+  height: var(--topbar-height);
   padding: 0 var(--space-4) 0 var(--space-3);
   background: var(--surface-default);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
+  border-bottom: 1px solid var(--border-default);
 }
 
 .brand {
@@ -104,24 +123,29 @@
   height: 14px;
 }
 
-/* ---- Layout row: sidebar card + content column ---- */
+/* ---- Layout row: sidebar + full-bleed content column ---- */
 .app-layout {
   flex: 1;
   display: flex;
   align-items: stretch;
-  gap: var(--space-4);
   min-height: 0;
 }
 
+/*
+ * Sidebar: doctrine §4 nav — items 32px, 13px type, 16px icon; active =
+ * tinted bg + 2px accent left border, never a pill. Flat: a right hairline
+ * only, no card, no radius, no shadow.
+ */
 .app-sidebar {
   flex: none;
-  width: 240px;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
   background: var(--surface-default);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--border-default);
+  padding: var(--space-3) 0;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar__head {
@@ -129,8 +153,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: 0 var(--space-3) var(--space-3);
-  margin-bottom: var(--space-3);
+  padding: 0 var(--space-4) var(--space-3);
+  margin-bottom: var(--space-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -140,10 +164,15 @@
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.nav-group {
+  padding: 0 var(--space-2);
 }
 
 .nav-group + .nav-group {
-  margin-top: var(--space-6);
+  margin-top: var(--space-4);
 }
 
 .nav-group__label {
@@ -154,21 +183,24 @@
   letter-spacing: 0.07em;
   padding: 0 var(--space-3);
   margin-bottom: var(--space-1);
+  white-space: nowrap;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  height: 40px;
+  gap: var(--space-2);
+  height: var(--control-height);
   padding: 0 var(--space-3);
   margin-bottom: 2px;
-  border-radius: var(--radius-md);
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
   text-decoration: none;
+  white-space: nowrap;
   transition: background-color var(--duration-fast) var(--ease-out),
-              color var(--duration-fast) var(--ease-out);
+    color var(--duration-fast) var(--ease-out);
 }
 
 .nav-item svg {
@@ -183,28 +215,16 @@
   color: var(--text-primary);
 }
 
-/* Active nav: solid accent block with white text and icon — the wayfinding
-   anchor of the sidebar. One active item, unmissable at a glance. */
+/* Active wayfinding: tinted bg + 2px accent left border (§4). */
 .nav-item.is-active {
-  background: var(--accent-600);
-  color: #fff;
+  background: var(--accent-50);
+  border-left-color: var(--accent-600);
+  color: var(--accent-700);
   font-weight: var(--weight-medium);
 }
 
 .nav-item.is-active svg {
-  color: #fff;
-}
-
-.nav-item.is-active .nav-item__count {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.28);
-  color: #fff;
-}
-
-.nav-item.is-active .nav-item__count--alert {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
+  color: var(--accent-600);
 }
 
 /* Queue-depth count at the row end: tabular, quiet, never a second accent. */
@@ -231,7 +251,96 @@
   border-color: var(--status-special-br);
 }
 
-/* ---- Content column: pages stack white cards on the canvas ---- */
+/* Sidebar footer: collapse toggle pinned to the bottom of the rail. */
+.sidebar__foot {
+  margin-top: auto;
+  padding: var(--space-3) var(--space-2) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sidebar__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.sidebar__toggle svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--gray-400);
+}
+
+.sidebar__toggle:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/*
+ * Collapsed rail (56px): icons stay, labels hide, counts hide — wayfinding
+ * survives via icon + title tooltip + active left border.
+ */
+.app-sidebar--collapsed {
+  width: 56px;
+}
+
+.app-sidebar--collapsed .sidebar__head {
+  justify-content: center;
+  padding: 0 0 var(--space-3);
+}
+
+.chip--rail {
+  padding: 0 var(--space-1);
+  height: 20px;
+  font-size: 10px;
+}
+
+.app-sidebar--collapsed .nav-group {
+  padding: 0 var(--space-2);
+}
+
+.app-sidebar--collapsed .nav-group__label {
+  visibility: hidden;
+  height: 14px;
+  margin-bottom: var(--space-1);
+  padding: 0;
+  text-align: center;
+}
+
+.app-sidebar--collapsed .nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.app-sidebar--collapsed .nav-item__label,
+.app-sidebar--collapsed .nav-item__count {
+  display: none;
+}
+
+.app-sidebar--collapsed .sidebar__foot {
+  display: flex;
+  justify-content: center;
+}
+
+.app-sidebar--collapsed .sidebar__toggle {
+  width: auto;
+  padding: 0 var(--space-2);
+}
+
+/* ---- Content column: pages stack flat panels on the canvas ---- */
 .app-content {
   flex: 1;
   min-width: 0;
@@ -239,7 +348,11 @@
   flex-direction: column;
 }
 
-/* ---- Toasts: quiet, specific, dismissible ---- */
+.app-content:focus {
+  outline: none;
+}
+
+/* ---- Toasts: quiet, specific, dismissible (overlay chrome: raised) ---- */
 .toast-stack {
   position: fixed;
   right: var(--space-6);
@@ -308,6 +421,11 @@
   height: 12px;
 }
 
+/*
+ * 1024px survival (§9): the sidebar becomes a top-docked horizontal strip so
+ * the content column keeps full width — no h-scroll, no content squeezed
+ * beside a 240px rail. Claimants have no sidebar, unaffected.
+ */
 @media (max-width: 1024px) {
   .app-layout {
     flex-direction: column;
@@ -315,5 +433,80 @@
 
   .app-sidebar {
     width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-2);
+    border-right: none;
+    border-bottom: 1px solid var(--border-default);
+    padding: var(--space-2) var(--space-3);
+    overflow-x: auto;
+  }
+
+  .sidebar__head {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding: 0 var(--space-2) 0 0;
+    flex: none;
+  }
+
+  .nav-group {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0;
+  }
+
+  .nav-group + .nav-group {
+    margin-top: 0;
+    border-left: 1px solid var(--border-subtle);
+    padding-left: var(--space-2);
+  }
+
+  .nav-group__label {
+    display: none;
+  }
+
+  .nav-item {
+    border-left-color: transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    margin-bottom: 0;
+  }
+
+  .nav-item.is-active {
+    border-left-color: transparent;
+    border-bottom-color: var(--accent-600);
+  }
+
+  .sidebar__foot {
+    margin-top: 0;
+    margin-left: auto;
+    padding: 0;
+    border-top: none;
+    flex: none;
+  }
+
+  /* No rail on narrow screens — the strip is already compact. */
+  .app-sidebar--collapsed {
+    width: 100%;
+  }
+
+  .app-sidebar--collapsed .nav-item__label,
+  .app-sidebar--collapsed .nav-item__count {
+    display: inline-flex;
+  }
+
+  .app-sidebar--collapsed .nav-item {
+    padding: 0 var(--space-3);
+  }
+
+  .topbar__right .user-chip__name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
+
+/* Reduced-motion: transitions on shell chrome follow the global rule in
+   styles.css; nothing shell-specific animates. */

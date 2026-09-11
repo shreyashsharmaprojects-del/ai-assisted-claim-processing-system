@@ -272,6 +272,22 @@ PAGES = [
      "The policy behind the covers: rating, clauses, validity.",
      ["Sum insured, room-rent caps, waiting periods and covered/excluded wording in plain view.",
       "A File-claim shortcut starts an FNOL pre-linked to this policy."]),
+
+    # ---- Adjuster workspace additions (V4 session) ----
+    ("43-ai-chat.png", "43 · AI assistant — answers on the workspace (live)",
+     "A drawer on the claim: the adjuster asks, the assistant answers from the claim's own covers and clauses.",
+     ["Asked whether the waiting period applies — the answer cites the maternity wording with a Live/Fallback serving path.",
+      "Chat is conversational and always available; the per-cover advisory artifact stays gated until Decision."]),
+
+    ("44-clauses.png", "44 · Policy clauses — the wording behind the covers",
+     "Every clause in scope for this claim's product and covers, readable without leaving the workspace.",
+     ["Product-level rows plus the MATERNITY sub-limit row (Rs 75,000 — twin deliveries count as one event), expandable to full wording.",
+      "Scoping is server-side: covers the claim does not carry never appear — no HOSPITALIZATION rows on a maternity claim."]),
+
+    ("45-policy-modal.png", "45 · Policy in place — whole page in a modal",
+     "The adjuster opens the full policy behind a claim without losing the workspace.",
+     ["Cover summary, covers with remaining limits, rating parameters and covered/excluded wording — the same page claimants see.",
+      "File-a-claim is hidden for staff: the workspace reads the policy, it never files from it."]),
 ]
 
 
@@ -291,7 +307,7 @@ def build():
     c.setFont(F, 13)
     c.drawCentredString(W / 2, H / 2 + 8, "Insurance claim processing — visual walkthrough")
     c.setFont(F, 10)
-    c.drawCentredString(W / 2, H / 2 - 20, "43 screenshots from the real running product, in the order a user meets them")
+    c.drawCentredString(W / 2, H / 2 - 20, "46 screenshots from the real running product, in the order a user meets them")
     c.setFont(F, 9)
     c.drawCentredString(W / 2, H / 2 - 44, "Claimant files and tracks  →  adjuster assesses and decides  →  supervisor oversees")
     c.showPage()

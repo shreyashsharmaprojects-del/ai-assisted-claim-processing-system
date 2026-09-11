@@ -546,6 +546,47 @@ Authorization: Bearer {{token}}
 POST {{host}}/api/outbox/1/retry
 Authorization: Bearer {{token}}
 
+### Policy clauses — claim view (assignee or SUPERVISOR; read-only reference)
+# The wording behind the claim's covers, selected by the claim's loss date
+# (product-level rows + the claim's own covers, sortOrder then id). Stranger ->
+# 404, never 403; claimant -> 403 at the URL. No audit rows (reference, not state).
+GET {{host}}/api/claims/CLM-000001/policy-clauses
+Authorization: Bearer {{token}}
+
+### Policy clauses — catalogue browse (staff; product + optional cover filter)
+# Unknown product -> empty list (never 404). Claimant -> 403 at the URL.
+GET {{host}}/api/clauses?productCode=HLTH-PLUS&coverCode=MATERNITY
+Authorization: Bearer {{token}}
+
+### AI advisory — request (assignee or SUPERVISOR; DECISION stage only)
+# Advisory only — the adjuster decides. First POST per claim version calls the
+# provider (COMPLETED) or falls back to deterministic rules (DEGRADED, panel
+# says so); repeat POSTs replay the stored row (no second provider call).
+# Pre-DECISION -> 400 naming the stage; stranger -> 404; claimant -> 403.
+# Writes one AI_ANALYSIS_REQUESTED audit row (first computation only).
+POST {{host}}/api/claims/CLM-000001/ai-analysis
+Authorization: Bearer {{token}}
+
+### AI advisory — latest snapshot (assignee or SUPERVISOR)
+# Newest version's frozen suggestions + status/model/error. No analysis yet ->
+# 404; stranger -> 404; claimant -> 403.
+GET {{host}}/api/claims/CLM-000001/ai-analysis
+Authorization: Bearer {{token}}
+
+### AI chat — ask about the claim (assignee or SUPERVISOR, every stage)
+# Stateless: send the transcript + question, get the transcript including the
+# new exchange back. Grounded in the live claim snapshot + served clauses;
+# advisory only, never writes money or stages. Stranger -> 404; claimant ->
+# 403. Writes one AI_CHAT_MESSAGE audit row per call.
+POST {{host}}/api/claims/CLM-000001/ai-chat
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "messages": [],
+  "question": "Does the waiting period apply to the maternity cover here?"
+}
+
 ### Required documents — list (staff: assignee or SUPERVISOR gets full rows)
 # Full rows [{checkId, docKey, displayName, status, attachmentId, decidedBy,
 # decidedAt}]; FNOL auto-seeds one PENDING row per required doc of the policy

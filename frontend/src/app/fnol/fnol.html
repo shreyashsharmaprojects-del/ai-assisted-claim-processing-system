@@ -71,6 +71,22 @@
           }
         </ol>
 
+        @if (hasResultDocs()) {
+          <h3 class="section-subhead">Required documents</h3>
+          <p class="cover-total" data-testid="fnol-result-docs-count">{{ resultDocsCountText() }}</p>
+          <ul class="cover-list reqdoc-list" data-testid="fnol-result-docs">
+            @for (item of resultDocItems(); track item.displayName) {
+              <li data-testid="fnol-result-doc">
+                <span>{{ item.displayName }}</span>
+                <span class="{{ resultDocBadge(item) }}" data-testid="fnol-result-doc-status">{{ resultDocStatus(item) }}</span>
+              </li>
+            }
+          </ul>
+          <p class="muted result-panel__note">
+            Anything still pending can be uploaded later from your claim tracker.
+          </p>
+        }
+
         <p class="muted result-panel__note">
           A confirmation email will be sent to the policyholder address.
         </p>
@@ -270,7 +286,7 @@
             </div>
 
             <div class="field">
-              <label for="photos">Evidence photos</label>
+              <label for="photos">Additional photos (optional)</label>
               <input
                 id="photos"
                 name="photos"
@@ -283,6 +299,10 @@
                 (change)="onPhotosSelected($event)"
               />
               <p class="field__hint" id="fnol-photos-hint" data-testid="fnol-photos-hint">{{ photoHint() }}</p>
+              <p class="field__hint" data-testid="fnol-reqdocs-hint">
+                If the adjuster needs specific documents, anything missing can be
+                uploaded later from your claim tracker — filing is never blocked.
+              </p>
             </div>
 
             <div class="field field--wide">

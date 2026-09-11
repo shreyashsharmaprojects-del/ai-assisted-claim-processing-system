@@ -4,7 +4,7 @@
 reviews its own reasoning, not the code, and it agrees with itself. If you only follow
 one thing from this workflow besides the plan gate, follow this.
 
-Read `docs/plan.md`, `docs/requirements.md`, `rules/yagni.md`, and the diff for the
+Read `docs/plan.md`, `docs/requirements.md`, `rules/yagni.md`, `rules/security.md`, and the diff for the
 slice. Read the code as if you're inheriting it from someone who has left the company.
 
 You are not fixing anything in this phase. You are producing a findings list.
@@ -58,6 +58,9 @@ because they produce confidence without protection.
 - Errors handled where they can happen. No empty catch blocks. No error message that
   leaks a stack trace to the user.
 - Anything that could lose or corrupt user data.
+- Check the diff against `rules/security.md`: cross-owner reads denied (rule 3),
+  no new sensitive field on any response (rule 9), no secret or token in the diff
+  (rule 8), uploads validated if touched (rule 7).
 
 ## Readability
 

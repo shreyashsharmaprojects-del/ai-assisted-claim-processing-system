@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { claimantGuard, internalGuard, supervisorGuard } from './auth/auth.guard';
+import { claimantGuard, internalGuard, policyDetailGuard, supervisorGuard } from './auth/auth.guard';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./home/home').then((m) => m.Home) },
@@ -20,7 +20,7 @@ export const routes: Routes = [
   },
   {
     path: 'policies/:policyNumber',
-    canActivate: [claimantGuard],
+    canActivate: [policyDetailGuard],
     loadComponent: () => import('./policies-cockpit/policy-detail').then((m) => m.PolicyDetail),
   },
   {

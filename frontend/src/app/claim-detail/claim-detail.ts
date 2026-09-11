@@ -1,11 +1,21 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { HttpClient, HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { accessToken, hasRole } from '../auth/auth.service';
-import { badgeClass } from '../ui';
-import { formatDate, formatDateTime, formatMoney, orDash } from '../format';
+import {
+  MAX_EVIDENCE_MB,
+  badgeClass,
+  currencySymbol as sharedCurrencySymbol,
+  downloadBlob as sharedDownloadBlob,
+  isEvidenceFile as sharedIsEvidenceFile,
+  statusLabel,
+} from '../ui';
+import { ClausePanelComponent } from '../clause-panel/clause-panel';
+import { AiPanelComponent } from '../ai-panel/ai-panel';
+import { PolicyModalComponent } from '../policy-modal/policy-modal';
+import { ageInDays, formatAge, formatDate, formatDateTime, formatMoney, orDash } from '../format';
 import { Toasts, serverMessage } from '../toasts';
 
 interface AttachmentView {
@@ -156,12 +166,8 @@ const VER_META: Record<string, { title: string; hint: string }> = {
   },
 };
 
-/** Mirrors the server evidence allowlist: images + PDF (10MB per file). */
-function isEvidenceFile(file: File): boolean {
-  return file.type.startsWith('image/') || file.type === 'application/pdf';
-}
-
-const MAX_DOC_MB = 10;
+/** Sections of the workspace. Stage order: task → files → timeline → reference. */
+type DetailSection = 'task' | 'files' | 'timeline' | 'reference';
 
 /**
  * The adjuster's claim workspace. One next step per stage — Review (validity),
@@ -173,7 +179,7 @@ const MAX_DOC_MB = 10;
  * exact V1 decision form.
  */
 @Component({
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, ClausePanelComponent, AiPanelComponent, PolicyModalComponent],
   selector: 'app-claim-detail',
   styleUrl: './claim-detail.css',
   templateUrl: './claim-detail.html',
@@ -181,12 +187,23 @@ const MAX_DOC_MB = 10;
 export class ClaimDetail {
   private readonly http = inject(HttpClient);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly toasts = inject(Toasts);
 
   protected readonly claimNumber = this.route.snapshot.paramMap.get('claimNumber') ?? '';
   protected readonly view = signal<StagedView | null>(null);
+  /** Page-level failure: load failed, or the claim exists but is not visible to this actor. */
   protected readonly error = signal<string | null>(null);
+  /** True when the load failed because the actor holds an ESCALATED_SUPERVISOR claim. */
+  protected readonly restricted = signal(false);
+  /** Server request reference for the page-level error (retry support). */
+  protected readonly errorReference = signal<string | null>(null);
+  /** Timeline-load failure hint (the workspace works, the feed is the casualty). */
+  protected readonly timelineError = signal(false);
   protected readonly loaded = signal(false);
+  /** Last successful load, for the stale indicator ("Updated 14:32" + refresh). */
+  protected readonly updatedAt = signal<string | null>(null);
+  protected readonly refreshing = signal(false);
   protected readonly auditTrail = signal<AuditEntry[]>([]);
   protected readonly auditError = signal<string | null>(null);
   /** V17: the unified claim timeline (notes + documents + checks + milestones). */
@@ -198,9 +215,97 @@ export class ClaimDetail {
   protected reqLinkFor: Record<number, string> = {};
   protected reqWaiveFor: Record<number, string> = {};
   protected showWaiveFor: Record<number, boolean> = {};
+  /** Workspace section (tab state, mirrored in the `section` query param). */
+  protected readonly section = signal<DetailSection>('task');
+  protected readonly SECTION_TABS: Array<{ id: DetailSection; label: string }> = [
+    { id: 'task', label: 'Task' },
+    { id: 'files', label: 'Files' },
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'reference', label: 'Reference' },
+  ];
+
+  /** Destructive confirms (doctrine §5: name the consequence + the verb).
+   * Reject + cover Submit arm behind a confirm; legacy Deny is single-click
+   * (e2e-pinned) with Undo recovery instead — see recoveryHint. */
+  protected confirmRejectOpen = false;
+  protected confirmSubmitOpen = false;
+  /** Focus origin for confirm dialogs (restored on cancel/close). */
+  private confirmOrigin: HTMLElement | null = null;
+  /** Element to receive focus when a confirm opens (first control). */
+  private confirmFocusTarget: HTMLElement | null = null;
+
+  /** H1 (owner fix-pass): submits stay enabled; on invalid submit the error
+   * names the missing field and focus moves to it. Validation/focus helper:
+   * sets the action error and focuses the field by element id. */
+  private failField(message: string, fieldId: string): void {
+    this.error.set(message);
+    queueMicrotask(() => {
+      document.getElementById(fieldId)?.focus();
+    });
+  }
+
+  /**
+   * Recovery path after a one-way action (doctrine §5: reversible = no dialog,
+   * Undo in toast — the backend exposes no undo endpoint, so the notice names
+   * the human recovery path: the timeline entry + who to ask). Set after
+   * Refer/Reject/Deny; cleared on load and at the start of the next action.
+   */
+  protected readonly recoveryHint = signal<string | null>(null);
 
   protected statusBadge(status: string): string {
     return badgeClass(status);
+  }
+
+  /** Sentence-case badge text (doctrine §5: display uses statusLabel, logic keeps tokens). */
+  protected statusText(status: string | null | undefined): string {
+    return statusLabel(status);
+  }
+
+  /** Filing-anchored SLA band (doctrine §2: filing date, never loss date).
+   * Filing-anchored only: when the filing moment is unknown (empty/failed
+   * timeline) there is no fallback — the band reads "filing date
+   * unavailable" (neutral). This is the authorized H2 presentation fix:
+   * display only, no validation/data-flow change. */
+  protected slaBand(): { label: string; kind: string } {
+    const filedAt = this.filedAt();
+    const days = ageInDays(filedAt);
+    if (days == null) {
+      return { label: 'Filing date unavailable', kind: 'badge badge--neutral' };
+    }
+    if (days >= 5) {
+      return { label: 'Breaching', kind: 'badge badge--danger' };
+    }
+    if (days >= 3) {
+      return { label: 'Due soon', kind: 'badge badge--warning' };
+    }
+    return { label: 'On track', kind: 'badge badge--neutral' };
+  }
+
+  protected filedAgeText(): string {
+    return formatAge(this.filedAt());
+  }
+
+  /** Filing date for the SLA clock: the timeline FILED milestone, else the
+   * earliest timeline stamp. Never falls back to the loss date (owner H2
+   * fix): null when unknown, and the SLA band names the gap. */
+  private filedAt(): string | null {
+    const feed = this.timeline();
+    const filed = feed.find((e) => e.kind === 'FILED');
+    if (filed?.at) {
+      return filed.at;
+    }
+    const stamps = feed.map((e) => e.at).filter((at): at is string => at != null && at !== '');
+    if (stamps.length > 0) {
+      stamps.sort();
+      return stamps[0];
+    }
+    return null;
+  }
+
+  /** Filing display (M9, authorized presentation exception): absolute date
+   * alongside the relative age; em dash when the filing moment is unknown. */
+  protected filedDateText(): string {
+    return formatDate(this.filedAt());
   }
 
   protected lossDateText(): string {
@@ -318,7 +423,78 @@ export class ClaimDetail {
   protected attachReplaces = '';
 
   constructor() {
+    const initial = this.route.snapshot.queryParamMap.get('section');
+    if (initial === 'task' || initial === 'files' || initial === 'timeline' || initial === 'reference') {
+      this.section.set(initial);
+    }
     void this.load();
+  }
+
+  /** Section tabs keep URL state (doctrine §4: tabs carry state in the URL). */
+  protected setSection(next: DetailSection): void {
+    if (this.section() === next) {
+      return;
+    }
+    this.section.set(next);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { section: next === 'task' ? null : next },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  /** Keyboard floor (doctrine §8): roving tabindex on cover rows — j/k move
+   * row focus, Enter activates the row's primary control (or expands). */
+  protected onCoverKey(event: KeyboardEvent, coverCode: string): void {
+    const row = (event.target as HTMLElement | null)?.closest?.('tr');
+    if (!row) {
+      return;
+    }
+    const tbody = row.parentElement;
+    if (!tbody) {
+      return;
+    }
+    const rows = Array.from(tbody.querySelectorAll('tr[data-cover-row]'));
+    // Skip the key handler when focus sits in an editable control except for
+    // Escape (inputs keep their native keys; j/k must not hijack typing).
+    const inField = (event.target as HTMLElement | null)?.closest?.(
+      'input, select, textarea',
+    );
+    const key = event.key.toLowerCase();
+    if ((key === 'j' || key === 'k') && !inField) {
+      event.preventDefault();
+      const index = rows.indexOf(row);
+      const next = key === 'j' ? rows[index + 1] : rows[index - 1];
+      (next as HTMLElement | undefined)?.focus();
+    } else if (event.key === 'Enter' && !inField) {
+      event.preventDefault();
+      this.activateCoverRow(row, coverCode);
+    }
+  }
+
+  /** Enter on a cover row: focus/click its primary control, else expand. */
+  private activateCoverRow(row: HTMLElement, coverCode: string): void {
+    const primary = row.querySelector<HTMLElement>(
+      `[data-testid="detail-ver-save-${coverCode}"], [data-testid="detail-submit-decision"], [data-testid="detail-save-assessment"], [data-testid="detail-review-advance"]`,
+    );
+    if (primary) {
+      primary.focus();
+      primary.click();
+      return;
+    }
+    const toggle = row.querySelector<HTMLElement>('[data-testid^="detail-ver-toggle-"]');
+    if (toggle) {
+      toggle.focus();
+      toggle.click();
+      return;
+    }
+    (row.querySelector('input, select, button') as HTMLElement | null)?.focus();
+  }
+
+  /** Single stepper language for the whole screen: done %, no duplicate tracker. */
+  protected stepperHint(): string {
+    return `${this.checklistDone()} of ${this.checklistTotal()} checks`;
   }
 
   coverageText(): string {
@@ -349,9 +525,9 @@ export class ClaimDetail {
       }
       const rest = Object.entries(record)
         .filter(([key]) => !known.has(key))
-        .map(([key, value]) => `${key}: ${coverageScalar(value)}`);
+        .map(([key, value]) => `${readableKey(key)}: ${coverageScalar(value)}`);
       if (rest.length > 0) {
-        facts.push({ label: 'Other', value: rest.join(' · ') });
+        facts.push({ label: 'Other cover facts', value: rest.join(' · ') });
       }
     }
     return facts;
@@ -363,7 +539,12 @@ export class ClaimDetail {
   }
 
   protected auditActionLabel(action: string): string {
-    return actionClass(action);
+    return statusLabel(action);
+  }
+
+  /** Audit badges route through the one badge map (M1: no local actionClass). */
+  protected auditActionClass(action: string): string {
+    return badgeClass(action);
   }
 
   // --- stage helpers ----------------------------------------------------------
@@ -541,7 +722,10 @@ export class ClaimDetail {
     this.error.set(null);
     this.decisionResult.set(null);
     if (this.reopenRationale.trim().length < 20) {
-      this.error.set('A rationale of at least 20 characters is required to reopen a claim.');
+      this.failField(
+        'A rationale of at least 20 characters is required to reopen a claim.',
+        'detail-reopen-rationale-field',
+      );
       return;
     }
     this.reopening.set(true);
@@ -605,8 +789,12 @@ export class ClaimDetail {
 
   /** Currency symbol from the locale formatter (en-GB: ₹) — for static labels. */
   protected currencySymbol(): string {
-    const shaped = formatMoney(0).replace(/[\d.,\s ]+/g, '').trim();
-    return shaped === '' ? '₹' : shaped;
+    return sharedCurrencySymbol();
+  }
+
+  /** Evidence allowlist (ui.ts mirror: images + PDF). */
+  private evidenceFile(file: File): boolean {
+    return sharedIsEvidenceFile(file);
   }
 
   protected assessedTotal(): number {
@@ -814,23 +1002,46 @@ export class ClaimDetail {
   }
 
   protected timelineKindClass(kind: string): string {
-    switch (kind) {
-      case 'FILED':
-        return 'badge badge--info';
-      case 'NOTE':
-        return 'badge badge--neutral';
-      case 'DOCUMENT':
-        return 'badge badge--special';
-      case 'VERIFICATION_OPENED':
-      case 'VERIFICATION_COMPLETED':
-        return 'badge badge--success';
-      default:
-        return 'badge badge--neutral';
-    }
+    return badgeClass(kind);
   }
 
   protected timelineTime(value: string | null | undefined): string {
     return formatDateTime(value);
+  }
+
+  /** Audit timestamps render through formatDateTime (M2). */
+  protected auditTime(value: string | null | undefined): string {
+    return formatDateTime(value);
+  }
+
+  /** Stale indicator ("Updated 14:32" + refresh control, doctrine §7). */
+  protected updatedText(): string {
+    const at = this.updatedAt();
+    if (!at) {
+      return '';
+    }
+    const time = formatDateTime(at);
+    return time === '—' ? '' : `Updated ${time}`;
+  }
+
+  async refresh() {
+    this.refreshing.set(true);
+    try {
+      const headers = await this.authHeaders();
+      if (!headers) {
+        return;
+      }
+      await this.reloadStaged(headers);
+      await this.loadTimeline(headers);
+      if (this.isSupervisor()) {
+        await this.loadAudit(headers);
+      }
+      this.updatedAt.set(new Date().toISOString());
+    } catch (err) {
+      this.error.set(serverMessage(err, 'Could not refresh this claim.'));
+    } finally {
+      this.refreshing.set(false);
+    }
   }
 
   /** Download a timeline document row by its attachment id. */
@@ -890,6 +1101,8 @@ export class ClaimDetail {
 
   async load() {
     this.error.set(null);
+    this.errorReference.set(null);
+    this.restricted.set(false);
     this.conflictNotice.set(null);
     this.loaded.set(false);
     try {
@@ -934,7 +1147,8 @@ export class ClaimDetail {
       this.applyView(view);
       // V17: the timeline loads with the claim (same auth, best-effort — the
       // workspace works without it, milestones still show in the audit panel).
-      void this.loadTimeline(headers);
+      await this.loadTimeline(headers);
+      this.updatedAt.set(new Date().toISOString());
       // S3: the required-documents checklist (same auth, best-effort — the
       // workspace works without it).
       void this.loadRequiredDocs(headers);
@@ -942,10 +1156,22 @@ export class ClaimDetail {
         void this.loadAudit(headers);
       }
     } catch (err) {
-      this.error.set(serverMessage(err, 'Could not load this claim.'));
+      this.failLoad(err);
     } finally {
       this.loaded.set(true);
     }
+  }
+
+  /** Page-level failure: restricted (not visible to this actor) vs plain load error. */
+  private failLoad(err: unknown): void {
+    if (err instanceof HttpErrorResponse && err.status === 404) {
+      this.restricted.set(true);
+      this.error.set('This claim is assigned to someone else — ask a supervisor for access.');
+      this.errorReference.set(null);
+      return;
+    }
+    this.error.set(serverMessage(err, 'Could not load this claim.'));
+    this.errorReference.set(errorReference(err));
   }
 
   private applyView(view: StagedView): void {
@@ -1001,7 +1227,8 @@ export class ClaimDetail {
   /**
    * S5: on 409, refetch the claim (the retry then goes out against the fresh
    * version) and raise the warning banner. Returns true when the error was a
-   * conflict (handled); false otherwise.
+   * conflict (handled); false otherwise. The stale banner names the moment and
+   * offers the retry, so the adjuster sees what moved under them.
    */
   private async handleConflict(headers: HttpHeaders, err: unknown): Promise<boolean> {
     if (!this.isConflict(err)) {
@@ -1010,10 +1237,13 @@ export class ClaimDetail {
     try {
       await this.reloadStaged(headers);
       await this.loadTimeline(headers);
+      this.updatedAt.set(new Date().toISOString());
     } catch {
       // The banner still explains what happened even when the refetch fails.
     }
-    this.conflictNotice.set('Someone changed this claim — reloaded the latest');
+    this.conflictNotice.set(
+      'Someone changed this claim while you worked — reloaded the latest. Review it, then retry.',
+    );
     return true;
   }
 
@@ -1057,8 +1287,10 @@ export class ClaimDetail {
         }),
       );
       this.timeline.set(feed ?? []);
+      this.timelineError.set(false);
     } catch {
       this.timeline.set([]);
+      this.timelineError.set(true);
     }
   }
 
@@ -1173,8 +1405,13 @@ export class ClaimDetail {
     await this.review('ADVANCE', this.reviewRationale.trim());
   }
 
+  /** Reject is destructive (closes the claim): armed behind a confirm, then Undo. */
   async reviewReject() {
     await this.review('REJECT', this.reviewRationale.trim());
+    if (this.decisionResult() != null) {
+      this.confirmRejectOpen = false;
+      this.noteRecovery('Rejected at review — claim closed');
+    }
   }
 
   async reviewNeedInfo() {
@@ -1185,11 +1422,11 @@ export class ClaimDetail {
     this.error.set(null);
     this.decisionResult.set(null);
     if (!text) {
-      this.error.set(
-        action === 'NEED_INFO'
-          ? 'Describe what you need from the claimant.'
-          : 'A rationale is required.',
-      );
+      if (action === 'NEED_INFO') {
+        this.failField('Describe what you need from the claimant.', 'review-requested-items');
+      } else {
+        this.failField('A rationale is required.', 'review-rationale');
+      }
       return;
     }
     this.reviewing.set(true);
@@ -1227,6 +1464,174 @@ export class ClaimDetail {
     }
   }
 
+  /** Confirm-dialog plumbing: focus moves into the dialog on open (H2/M8),
+   * Tab traps while open, Esc closes with restore. */
+  protected openConfirm(which: 'reject' | 'submit'): void {
+    this.confirmOrigin = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.confirmRejectOpen = which === 'reject';
+    this.confirmSubmitOpen = which === 'submit';
+    const targetId = which === 'reject' ? 'detail-review-reject-confirm' : 'detail-submit-decision-confirm';
+    queueMicrotask(() => {
+      const dialog = document.querySelector('[role="dialog"]');
+      this.confirmFocusTarget =
+        (document.querySelector(`[data-testid="${targetId}"]`) as HTMLElement | null) ??
+        (dialog?.querySelector<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ) ??
+          null);
+      this.confirmFocusTarget?.focus();
+    });
+  }
+
+  protected closeConfirm(): void {
+    this.confirmRejectOpen = false;
+    this.confirmSubmitOpen = false;
+    this.confirmOrigin?.focus();
+    this.confirmOrigin = null;
+  }
+
+  protected onConfirmKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeConfirm();
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const dialog = (event.currentTarget as HTMLElement | null)?.closest?.('[role="dialog"]');
+    const focusables = Array.from(
+      dialog?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ??
+        [],
+    ).filter((el) => !el.hasAttribute('disabled'));
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /** Policy modal (owner add): the whole policy page in place, opened from
+   * either policy link. Mount stays alive (no data-flow change); the modal
+   * traps focus, Esc closes with restore. */
+  protected policyModalOpen = false;
+  private policyModalOrigin: HTMLElement | null = null;
+
+  protected openPolicyModal(): void {
+    this.policyModalOrigin =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.policyModalOpen = true;
+    queueMicrotask(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="detail-policy-modal"] [role="dialog"] button')
+        ?.focus();
+    });
+  }
+
+  protected closePolicyModal(): void {
+    this.policyModalOpen = false;
+    this.policyModalOrigin?.focus();
+    this.policyModalOrigin = null;
+  }
+
+  protected onPolicyModalKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closePolicyModal();
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const dialog = (event.currentTarget as HTMLElement | null)?.closest?.('[role="dialog"]');
+    const focusables = Array.from(
+      dialog?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ??
+        [],
+    ).filter((el) => !el.hasAttribute('disabled'));
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /** AI overflow drawer (owner add): collapsed icon control that expands
+   * the chat into a right drawer. Mount stays alive (no data-flow
+   * change); the drawer traps focus, Esc closes with restore. */
+  protected aiDrawerOpen = false;
+  private aiDrawerOrigin: HTMLElement | null = null;
+
+  protected openAiDrawer(): void {
+    this.aiDrawerOrigin =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.aiDrawerOpen = true;
+    queueMicrotask(() => {
+      document
+        .querySelector<HTMLElement>('[data-testid="detail-ai-drawer"] [role="dialog"] button')
+        ?.focus();
+    });
+  }
+
+  protected closeAiDrawer(): void {
+    this.aiDrawerOpen = false;
+    this.aiDrawerOrigin?.focus();
+    this.aiDrawerOrigin = null;
+  }
+
+  protected onAiDrawerKey(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeAiDrawer();
+      return;
+    }
+    if (event.key !== 'Tab') {
+      return;
+    }
+    const dialog = (event.currentTarget as HTMLElement | null)?.closest?.('[role="dialog"]');
+    const focusables = Array.from(
+      dialog?.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') ??
+        [],
+    ).filter((el) => !el.hasAttribute('disabled'));
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  /** Collapsed-icon label: chat-only surface (owner add; advisory removed). */
+  protected aiSignalText(): string {
+    return 'AI chat available';
+  }
+
+  /** Recovery path after a one-way action (no undo endpoint — name the human path). */
+  private noteRecovery(label: string): void {
+    this.recoveryHint.set(
+      `${label}. To reverse it, ask a supervisor to reopen the claim — the timeline keeps the full record.`,
+    );
+  }
+
   // --- verifications ------------------------------------------------------------
 
   /** A row starts expanded while it still needs work, collapsed once done. */
@@ -1254,15 +1659,44 @@ export class ClaimDetail {
   }
 
   protected verStateLabel(ver: VerificationView): string {
+    if (this.verState(ver) === 'done') {
+      return statusLabel(ver.outcome ?? 'COMPLETE');
+    }
     switch (this.verState(ver)) {
-      case 'done':
-        return ver.outcome ?? 'Done';
       case 'working':
-        return 'In progress';
+        return statusLabel('IN_PROGRESS');
       case 'cancelled':
-        return 'Cancelled';
+        return statusLabel('CANCELLED');
       default:
-        return 'To do';
+        return statusLabel('PENDING');
+    }
+  }
+
+  /** Required-doc states route through the one badge map (M4). */
+  protected reqDocStateClass(status: string): string {
+    if (status === 'RECEIVED') return badgeClass('RECEIVED');
+    if (status === 'WAIVED') return badgeClass('WAIVED');
+    return badgeClass('PENDING');
+  }
+
+  protected reqDocStateLabel(status: string): string {
+    if (status === 'RECEIVED') return statusLabel('RECEIVED');
+    if (status === 'WAIVED') return statusLabel('WAIVED');
+    return statusLabel('PENDING');
+  }
+
+  /** Verification lozenges route through the one badge map (M4). */
+  protected verStateClass(ver: VerificationView): string {
+    if (this.verState(ver) === 'done') {
+      return badgeClass(ver.outcome ?? 'COMPLETE');
+    }
+    switch (this.verState(ver)) {
+      case 'working':
+        return badgeClass('IN_PROGRESS');
+      case 'cancelled':
+        return badgeClass('CANCELLED');
+      default:
+        return badgeClass('PENDING');
     }
   }
 
@@ -1334,7 +1768,7 @@ export class ClaimDetail {
     this.error.set(null);
     this.decisionResult.set(null);
     if (!this.assessmentRationale.trim()) {
-      this.error.set('A rationale is required to record an assessment.');
+      this.failField('A rationale is required to record an assessment.', 'assessment-rationale');
       return;
     }
     this.assessing.set(true);
@@ -1385,9 +1819,15 @@ export class ClaimDetail {
 
   async approve() {
     if (this.rationaleLength() < this.RATIONALE_MIN) {
-      this.error.set(
+      this.failField(
         `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+        'decision-rationale',
       );
+      return;
+    }
+    const amount = Number(this.decisionAmount);
+    if (!this.decisionAmount || Number.isNaN(amount) || amount <= 0) {
+      this.failField('Enter an indemnity amount greater than zero to approve.', 'decision-amount');
       return;
     }
     await this.decide({
@@ -1399,12 +1839,16 @@ export class ClaimDetail {
 
   async deny() {
     if (this.rationaleLength() < this.RATIONALE_MIN) {
-      this.error.set(
+      this.failField(
         `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+        'decision-rationale',
       );
       return;
     }
     await this.decide({ decision: 'DENIED', rationale: this.decisionRationale.trim() });
+    if (this.decisionResult() != null) {
+      this.noteRecovery('Denied — claim closed');
+    }
   }
 
   async reassign() {
@@ -1479,7 +1923,8 @@ export class ClaimDetail {
       return `Approved for ${formatMoney(outcome.indemnityAmount)} — claim closed.`;
     }
     if (outcome.decision === 'DENIED') {
-      const remarks = outcome.decisionRemarks == null ? '' : ` ${outcome.decisionRemarks}`;
+      // DENIED remarks render only when the server sent text (no empty <p>).
+      const remarks = outcome.decisionRemarks?.trim() ? ` ${outcome.decisionRemarks.trim()}` : '';
       return `Denied — claim closed.${remarks}`;
     }
     if (outcome.escalatedTo === 'SUPERVISOR') {
@@ -1494,11 +1939,14 @@ export class ClaimDetail {
     this.error.set(null);
     this.decisionResult.set(null);
     if (this.rationaleLength() < this.RATIONALE_MIN) {
-      this.error.set(
+      this.confirmSubmitOpen = false;
+      this.failField(
         `A rationale of at least ${this.RATIONALE_MIN} characters is required to decide a claim.`,
+        'cover-decision-rationale',
       );
       return;
     }
+    this.confirmSubmitOpen = false;
     this.deciding.set(true);
     const headers = await this.authHeaders();
     if (!headers) {
@@ -1600,6 +2048,7 @@ export class ClaimDetail {
       // confirmation on screen instead of refetching.
       this.leftHands.set(true);
       this.decisionResult.set(`Referred upwards to ${where}.`);
+      this.noteRecovery(`Referred upwards to ${where}`);
       this.toasts.success('Claim referred upwards.');
     } catch (err) {
       this.error.set(serverMessage(err, 'Could not refer the claim.'));
@@ -1623,12 +2072,12 @@ export class ClaimDetail {
       this.error.set('Choose a file to attach.');
       return;
     }
-    if (!isEvidenceFile(file)) {
+    if (!this.evidenceFile(file)) {
       this.error.set(`"${file.name}" must be image or PDF files.`);
       return;
     }
-    if (file.size > MAX_DOC_MB * 1024 * 1024) {
-      this.error.set(`"${file.name}" is over ${MAX_DOC_MB} MB — choose a smaller file.`);
+    if (file.size > MAX_EVIDENCE_MB * 1024 * 1024) {
+      this.error.set(`"${file.name}" is over ${MAX_EVIDENCE_MB} MB — choose a smaller file.`);
       return;
     }
     this.uploading.set(true);
@@ -1758,12 +2207,7 @@ export class ClaimDetail {
           responseType: 'blob',
         }),
       );
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = attachment.originalName;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      sharedDownloadBlob(blob, null, attachment.originalName);
     } catch (err) {
       this.error.set(serverMessage(err, 'Could not download the photo.'));
     }
@@ -1785,7 +2229,7 @@ export class ClaimDetail {
           observe: 'response',
         }),
       );
-      downloadBlob(
+      sharedDownloadBlob(
         response.body ?? new Blob(),
         response.headers.get('Content-Disposition'),
         `audit-${this.claimNumber}.csv`,
@@ -1808,41 +2252,57 @@ export class ClaimDetail {
   }
 }
 
-function actionClass(action: string): string {  switch (action) {
-    case 'DECISION':
-      return 'badge badge--success';
-    case 'CLAIM_ESCALATED':
-    case 'CLAIM_REFERRED':
-      return 'badge badge--special';
-    case 'CLAIM_REASSIGNED':
-      return 'badge badge--warning';
-    case 'RESERVE_SET':
-      return 'badge badge--info';
-    default:
-      return 'badge badge--neutral';
+/**
+ * NOTE (cross-screen divergence, reported not fixed): auth here builds manual
+ * Authorization headers via accessToken() while other screens ride the shared
+ * authInterceptor. Refactoring to one path is behaviour-adjacent — left alone.
+ */
+
+/** Human-readable label for an unknown coverage key (`sum_insured` → "Sum insured"). */
+function readableKey(key: string): string {
+  const words = String(key).split('_').filter((w) => w !== '');
+  if (words.length === 0) {
+    return key;
   }
+  return words
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
 }
 
-/** S8 (V23): blob download honoring Content-Disposition, with a sane fallback name. */
-function downloadBlob(blob: Blob, disposition: string | null, fallbackName: string): void {
-  const name = /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(disposition ?? '')?.[3]?.trim()
-    || /filename[^;=\n]*=((["'])(.*?)\2|([^;\n]*))/.exec(disposition ?? '')?.[4]?.trim()
-    || fallbackName;
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-/** One-line scalar for an unknown coverage key (objects/arrays collapse). */
+/** One-line scalar for an unknown coverage value (objects/arrays render readably). */
 function coverageScalar(value: unknown): string {
   if (value == null) {
     return '—';
   }
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
+    const text = String(value).trim();
+    return text === '' ? '—' : text;
   }
-  return '…';
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return '—';
+    }
+    return value.map((item) => coverageScalar(item)).join(', ');
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return '—';
+    }
+    return entries.map(([key, nested]) => `${readableKey(key)}: ${coverageScalar(nested)}`).join('; ');
+  }
+  return '—';
+}
+
+/** Server request reference for error states (doctrine §7: every error names a reference). */
+function errorReference(err: unknown): string | null {
+  if (err instanceof HttpErrorResponse) {
+    const body = err.error as { message?: string } | string | null;
+    const text = typeof body === 'string' ? body : body?.message;
+    const match = /\(Reference: ([A-Za-z0-9_-]+)\)/.exec(text ?? '');
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
 }

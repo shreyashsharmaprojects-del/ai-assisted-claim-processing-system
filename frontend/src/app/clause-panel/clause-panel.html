@@ -1,0 +1,50 @@
+<section class="clause-panel" data-testid="detail-clauses" aria-label="Policy clauses">
+  @if (loading()) {
+    <p class="muted">Loading policy clauses…</p>
+  } @else if (error(); as message) {
+    <p class="notice notice--error" data-testid="detail-clauses-error" role="alert">{{ message }}</p>
+    <button
+      type="button"
+      class="btn btn--secondary btn--sm"
+      data-testid="detail-clauses-retry"
+      (click)="retry()"
+    >
+      Try again
+    </button>
+  } @else if (clauses().length === 0) {
+    <p class="muted">No policy clauses apply to this claim.</p>
+  } @else {
+    @for (group of groups(); track group.key) {
+      <div class="clause-group">
+        <h3 class="clause-group__heading">{{ group.heading }}</h3>
+        <ul class="clause-list">
+          @for (clause of group.clauses; track clause.id) {
+            <li class="clause-card" [attr.data-testid]="'detail-clause-' + clause.clauseRef">
+              <div class="clause-card__head">
+                <span class="mono clause-card__ref">{{ clause.clauseRef }}</span>
+                <span class="clause-card__title" title="{{ clause.title }}">{{ clause.title }}</span>
+                <span class="badge badge--neutral clause-card__badge">{{ typeLabel(clause.clauseType) }}</span>
+                <button
+                  type="button"
+                  class="btn btn--tertiary btn--sm clause-card__toggle"
+                  data-testid="detail-clause-toggle"
+                  [attr.aria-expanded]="isExpanded(clause)"
+                  (click)="toggle(clause)"
+                >
+                  {{ isExpanded(clause) ? 'Hide wording' : 'Show wording' }}
+                </button>
+              </div>
+              <div class="clause-card__meta">
+                <span class="clause-card__facts">{{ factsText(clause) }}</span>
+                <span class="clause-card__value num">{{ definedValue(clause) }}</span>
+              </div>
+              @if (isExpanded(clause)) {
+                <p class="clause-card__text">{{ clause.clauseText }}</p>
+              }
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  }
+</section>

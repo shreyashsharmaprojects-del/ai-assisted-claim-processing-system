@@ -39,6 +39,33 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/claims").hasRole("CLAIMANT")
+                        // V28 (V4 S1): the policy-clause reference surface — internal
+                        // staff only (claimant is 403 at the URL); the claim GET
+                        // enforces assignee/supervisor inside the service
+                        // (404-not-403). Declared before the generic
+                        // /api/claims/* claimant rule so it is not shadowed.
+                        .requestMatchers(HttpMethod.GET, "/api/clauses")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/policy-clauses")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        // V30 (V4 S2): AI advisory snapshots — internal staff
+                        // only (claimant is 403 at the URL); assignee/
+                        // supervisor enforced in the service (404-not-403).
+                        // Before the generic claimant /api/claims/* rule.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/ai-analysis")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        .requestMatchers(HttpMethod.GET, "/api/claims/*/ai-analysis")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
+                        // AI chat (V4 S3): conversational advisory, every
+                        // stage, stateless (POST only — no stored transcript
+                        // to GET). Same staff gate as the advisory snapshots.
+                        .requestMatchers(HttpMethod.POST, "/api/claims/*/ai-chat")
+                                .hasAnyRole("ADJUSTER_L1", "ADJUSTER_L2", "ADJUSTER_L3",
+                                        "SUPERVISOR")
                         .requestMatchers(HttpMethod.GET, "/api/claims/mine").hasRole("CLAIMANT")
                         .requestMatchers(HttpMethod.GET, "/api/claims/*").hasRole("CLAIMANT")
                         // V16: the claimant's NEED_INFO document upload (own claim,

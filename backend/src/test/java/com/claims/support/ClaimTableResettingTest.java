@@ -48,13 +48,23 @@ public abstract class ClaimTableResettingTest {
      * <p>V25 adds {@code notification} (FK to {@code claim}, so CASCADE covers
      * it) and {@code notification_preference} (keyed by claimant subject, no
      * claim FK — {@code §0.7} requires it here for hermetic prefs).
+     *
+     * <p>V4 Session 1 adds {@code policy_clause} (reference data seeded by
+     * migration V29, FK to {@code product} — a seed table never truncated, so
+     * clause rows survive every test like V19's {@code required_document} rows
+     * do). {@code product_cover} needs no listing either: V26 seeds it once
+     * and no test writes it. Only {@code claim}-rooted tables are truncated.
+     * <p>V4 Session 2 adds {@code claim_ai_analysis} (per-claim advisory
+     * snapshots, no FK to {@code claim} — retention-deleted claims must not
+     * drag snapshots, so CASCADE from {@code claim} would not cover it).
+     * Listed here so each test starts with a clean advisory trail.
      */
     @BeforeEach
     final void resetClaimTablesBetweenTests() {
         jdbcTemplate.execute(
                 "TRUNCATE claim, attachment, internal_note, payment, audit_log, fnol_submission, "
                         + "email_outbox, verification, privacy_request, notification, "
-                        + "notification_preference RESTART IDENTITY CASCADE");
+                        + "notification_preference, claim_ai_analysis RESTART IDENTITY CASCADE");
         jdbcTemplate.update("UPDATE policy SET holder_name = CASE policy_number "
                 + "WHEN 'POL-10001' THEN 'Ada Lovelace' "
                 + "WHEN 'POL-20002' THEN 'Grace Hopper' "

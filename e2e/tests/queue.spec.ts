@@ -361,10 +361,10 @@ test('supervisor approves an escalated claim with rationale and it closes', asyn
   await expect(escalationRow).toHaveCount(1);
   await escalationRow.getByTestId('esc-open-claim').click();
   await expect(supervisorPage.getByTestId('claim-detail-page')).toBeVisible();
-  await expect(supervisorPage.getByTestId('detail-status')).toContainText('ESCALATED_SUPERVISOR');
+  await expect(supervisorPage.getByTestId('detail-status')).toContainText('Escalated supervisor');
   // The supervisor sees the immutable audit trail and the reassign panel.
   await expect(supervisorPage.getByTestId('detail-audit-panel')).toBeVisible();
-  await expect(supervisorPage.getByTestId('detail-audit-list')).toContainText('CLAIM_ESCALATED');
+  await expect(supervisorPage.getByTestId('detail-audit-list')).toContainText('Claim escalated');
 
   // Approve with a rationale: the claim closes and leaves the escalation queue.
   await supervisorPage.getByTestId('detail-decision-amount').fill('1200000.00');

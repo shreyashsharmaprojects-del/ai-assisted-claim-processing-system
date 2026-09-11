@@ -375,6 +375,7 @@ test('capture demo screenshots against the live seeded stack', async ({ browser 
   // 26 — cover decision grid filled, before submitting.
   await decider.screenshot({ path: 'shots/26-cover-decision.png' });
   await decider.getByTestId('detail-submit-decision').click();
+  await decider.getByTestId('detail-submit-decision-confirm').click();
   await expect(decider.getByTestId('detail-decision-closed')).toBeVisible();
 
   // 27 — closed-claim read-only view (PARTIALLY_APPROVED, payment recorded).

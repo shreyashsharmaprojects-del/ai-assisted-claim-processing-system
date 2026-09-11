@@ -166,6 +166,24 @@ class CockpitIntegrationTest extends ClaimTableResettingTest {
     }
 
     @Test
+    void adjusterReadsAnyPolicyByNumberForTheClaimWorkspaceModal() throws Exception {
+        HttpResponse<String> response = get("/api/policies/POL-10001",
+                JwtTestConfig.tokenFor("sub-l1", "adjuster_l1"));
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("HOSPITALIZATION"), response.body());
+        assertTrue(response.body().contains("remainingSubLimit"), response.body());
+        assertTrue(response.body().contains("Ada Lovelace"),
+                "staff see holder identity (already on the claim): " + response.body());
+    }
+
+    @Test
+    void adjusterUnknownPolicyNumberIs404() throws Exception {
+        HttpResponse<String> response = get("/api/policies/POL-99999",
+                JwtTestConfig.tokenFor("sub-l1", "adjuster_l1"));
+        assertEquals(404, response.statusCode(), response.body());
+    }
+
+    @Test
     void cockpitMineIsClaimantOnly() throws Exception {
         assertEquals(401, get("/api/policies/mine", null).statusCode());
         assertEquals(403, get("/api/policies/mine",

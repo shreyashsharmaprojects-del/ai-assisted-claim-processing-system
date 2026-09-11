@@ -282,6 +282,32 @@ it so the error is readable. Files live on disk under `CLAIMS_UPLOADS_DIR` with 
 in `attachment.storage_path` — a DB restore without the volume restore orphans them.
 Restore both together (above).
 
+**Policy-clause reference data (V4 S1) looks wrong or empty.**
+Clauses are reference seeds, not claim state: `product_cover` (20 rows) and
+`policy_clause` (174 rows) load once via Flyway V26–V29 and are never truncated
+by tests. If `policy_clause` is empty or `policy_cover` lost rows after a
+manual DB operation, re-apply V26–V29 in version order (`sort -V`, not glob
+order) and re-check `flyway_schema_history` has success rows for 26–29; a
+`DROP`/restore that skips seeds needs the V13 `policy_cover` rows (25) restored
+too. The adjuster panel reads `GET /api/claims/{n}/policy-clauses`
+(loss-date-selected); an empty panel on a covered claim usually means the seeds
+above, not the endpoint.
+
+**AI advisory stuck on DEGRADED / rules-only (V4 S2).**
+DEGRADED is a designed state, not an outage: with `DEEPSEEK_API_KEY` blank the
+service serves deterministic rules (`CoverageRules`) and the panel says
+"Rules-only fallback — provider unavailable". To enable live COMPLETED
+advisories, set `DEEPSEEK_API_KEY` (+ optional `DEEPSEEK_MODEL`, default
+`deepseek-flash`, `DEEPSEEK_BASE_URL`) in the backend environment and restart —
+no migration, no rebuild. The key is NEVER written to files/logs/audit rows;
+the client logs only model id, latency ms, and response length. Stored rows
+are frozen per (claim, claim_version): a claim advised while the key was blank
+keeps its DEGRADED snapshot — POST again after the claim version moves (any
+write bumps `@Version`) for a fresh COMPLETED row. Provider 4xx/5xx or bad
+model JSON also degrades (reason in `claim_ai_analysis.error_message`, ops
+eyes only) rather than failing the request. `claim_ai_analysis` is per-claim
+state: tests truncate it every test; never restore it from reference seeds.
+
 ## Security notes
 
 - Secrets live in the environment, never in git (`.env` is gitignored; CI injects

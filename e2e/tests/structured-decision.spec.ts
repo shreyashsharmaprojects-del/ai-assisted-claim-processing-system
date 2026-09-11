@@ -159,11 +159,19 @@ test('structured decision: reject a cover with a code, count hint, then close', 
   await holder.getByTestId('detail-cover-remarks-DAYCARE')
     .fill('Daycare follow-ups unrelated to the admitted procedure.');
 
-  // (4) Short rationale: the count hint shows the min-length error and
-  // submit stays blocked client-side.
+  // (4) Short rationale: submit stays enabled per §9 — the invalid submit
+  // shows the field-naming error (page-level alert) with no write; retry
+  // recovers the DECISION workspace, then the valid submit below closes it.
   await holder.getByTestId('detail-decision-rationale').fill('Too short');
   await expect(holder.getByTestId('detail-rationale-count')).toContainText('at least');
-  await expect(holder.getByTestId('detail-submit-decision')).toBeDisabled();
+  await expect(holder.getByTestId('detail-submit-decision')).toBeEnabled();
+  await holder.getByTestId('detail-submit-decision').click();
+  await holder.getByTestId('detail-submit-decision-confirm').click();
+  await expect(holder.getByTestId('claim-detail-error')).toContainText(/at least 20 characters/);
+  await expect(holder.getByTestId('detail-decision-closed')).toHaveCount(0);
+  await holder.getByTestId('claim-detail-retry').click();
+  await expect(holder.getByTestId('detail-decision-rationale')).toBeVisible();
+  await expect(holder.getByTestId('detail-stage-DECISION')).toHaveClass(/is-current/);
 
   // (5) Full rationale: the count updates past the 20-char floor, submit
   // enables, and the split decision closes the claim.
@@ -173,7 +181,8 @@ test('structured decision: reject a cover with a code, count hint, then close', 
     .toContainText(`${rationale.length}/20`);
   await expect(holder.getByTestId('detail-submit-decision')).toBeEnabled();
   await holder.getByTestId('detail-submit-decision').click();
+  await holder.getByTestId('detail-submit-decision-confirm').click();
   await expect(holder.getByTestId('detail-decision-closed')).toBeVisible();
-  await expect(holder.getByTestId('detail-status')).toContainText('CLOSED');
+  await expect(holder.getByTestId('detail-status')).toContainText('Closed');
   await holder.context().close();
 });

@@ -109,3 +109,23 @@
 .cover-total {
   margin-top: var(--space-2);
 }
+
+/* R: FNOL required-documents result rows. Same field language as the form
+   (12px labels, badge pills for state), token-only — no new hex. */
+.reqdoc-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding-left: 0;
+}
+
+.reqdoc-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--gray-200);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

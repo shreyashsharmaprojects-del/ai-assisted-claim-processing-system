@@ -38,9 +38,12 @@ public class CockpitController {
     @GetMapping("/{policyNumber}")
     public CockpitPolicyDetailView detail(@PathVariable String policyNumber,
             Authentication authentication) {
-        CockpitPolicyDetailView detail = cockpit.policyDetail(
-                policyNumber.trim().toUpperCase(java.util.Locale.ROOT),
-                holderEmail(authentication));
+        String number = policyNumber.trim().toUpperCase(java.util.Locale.ROOT);
+        // Staff (claim workspace policy modal) read by number with no
+        // holder-email ownership check; claimants keep the ownership path.
+        CockpitPolicyDetailView detail = CockpitService.isStaff(authentication)
+                ? cockpit.policyDetailForStaff(number)
+                : cockpit.policyDetail(number, holderEmail(authentication));
         if (detail == null) {
             throw new ClaimNotFoundException();
         }

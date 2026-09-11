@@ -1,0 +1,18 @@
+/* AI panel: chat-only surface. Owner call — the per-cover advisory artifact
+   was removed; this is a thin flex passthrough so the chat transcript flexes
+   and the composer bottom-anchors. Tokens only. */
+.ai-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.ai-panel app-ai-chat {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}

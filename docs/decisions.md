@@ -5,6 +5,210 @@ not to build. Newest first.
 
 ## Decisions
 
+### 2026-09-11 — V4 S2 AI advisory at DECISION (V30 + DeepSeek client, degraded-honest)
+
+**Context:** Session 1 gave adjusters clause wording but no per-cover
+recommendation — Session 2 adds an advisory panel at DECISION only, grounded
+in the loss-date-selected clauses. Plan: V4 session prompts, Session 2. The
+provider is DeepSeek over its OpenAI-compatible wire format (plain
+`java.net.http.HttpClient`, no SDK; `DEEPSEEK_MODEL=deepseek-flash`, verified
+on DeepSeek's own pricing page 2026-09-11). The API key arrived via chat and
+was NEVER written to any file/log/audit row — key handling is environment
+only, and the key is rotated after the session.
+
+**What changed (all additive; V1–V25 untouched):**
+- **Migration `V30__claim_ai_analysis.sql`:** `claim_ai_analysis` table —
+  `UNIQUE (claim_id, claim_version)` dedupe key, `status` CHECK
+  (`COMPLETED|DEGRADED|FAILED`), JSONB `clause_ids` / `claim_snapshot` /
+  `output_json`, `model`, `error_message`, `requested_by`. No FK to claim
+  (retention-deleted claims must not drag snapshots).
+- **Provider (`com.claims.ai.client`, new):** `DeepSeekProperties`
+  (`claims.ai.*` + env overrides, apiKey redacted in toString) +
+  `DeepSeekClient` (POST `{base}/chat/completions`, temperature 0.2,
+  `response_format json_object`, 5s/30s timeouts; fail-closed when
+  unconfigured; logs model+latency+length only — never key/prompts/PII) +
+  `ProviderException`. One-line `@Autowired` on the primary ctor (two-ctor
+  ambiguity broke Spring wiring); `@ConfigurationPropertiesScan` registered
+  on the app (the repo's first `@ConfigurationProperties` bean).
+- **Prompt + validation (`com.claims.ai.prompt`, new, pure static):**
+  `AiPromptBuilder` (system role + compact facts; clause text truncated to
+  800 chars) + `AiOutputValidator` (strict: exact cover set, served-ids-only
+  cites, enum, rationale ≤500, payable ≥0 — violations throw, never
+  silently trimmed).
+- **Rules fallback (`com.claims.ai.rules`, new, pure static):**
+  `CoverageRules` — conservative arithmetic only: waiting periods always
+  NEEDS_MORE_INFO (the snapshot deliberately carries no policy inception
+  date, so they can never approve/reject); cover SUB_LIMIT caps payable;
+  CO_PAY chains after caps; null assessed → NEEDS_MORE_INFO; no signal →
+  assessed stands "subject to adjuster review". Rule 1 fires first, so
+  HLTH-PLUS's always-served waiting clauses (3.1 product-level + 7.1) make
+  the HTTP-level DEGRADED suggestion NEEDS_MORE_INFO/null-payable — the
+  90000→75000 cap and 10%→67500.00 chain are unit-covered with hand-built
+  inputs instead (orchestrator ruling, cited in test comments; the
+  assessment guard at `StagedWorkflowService` also rejects assessed >
+  sub-limit, so the cap is unreachable via HTTP by design).
+- **Service + endpoints (`com.claims.ai.analysis`, new):**
+  `POST/GET /api/claims/{n}/ai-analysis` — DECISION-gated (pre-DECISION 400
+  naming the stage), assignee/supervisor via `ClaimAccess` (404-not-403),
+  staff roles at the URL (claimant 403, anon 401), dedupe replay per
+  (claim, version) with no second provider call or audit row, one
+  `AI_ANALYSIS_REQUESTED` audit row per first computation, simultaneous
+  POSTs resolved by the UNIQUE key (loser re-reads the winner). JSONB
+  columns mapped with Hibernate's built-in `@JdbcTypeCode(SqlTypes.JSON)`
+  (no new dep; Postgres rejects plain varchar→jsonb binds). Rules failure
+  → FAILED; GET with no analysis → 404.
+- **Frontend:** standalone `ai-panel/` (DECISION-only via bound
+  `shownStage()` — empty container off-stage; request/re-request button,
+  COMPLETED model line, DEGRADED rules-only notice + reason, FAILED retry,
+  advisory-only disclaimer, testids `detail-ai`, `detail-ai-{cover}`,
+  `detail-ai-request/error/status`), mounted in the claim support rail
+  after the clause panel. `api.http` gained AI examples;
+  `ClaimTableResettingTest` truncates `claim_ai_analysis` (per-claim state,
+  not reference data).
+
+**Verified:** `AiAnalysisIntegrationTest` 5/5 + `AiOutputValidatorTest`
+10/10 (15/15 green: pre-DECISION 400, DEGRADED rules-only shape + 1 audit
+row, dedupe replay, 404/403/401/200 matrix, GET 404→200, validator
+violations, rules cap/co-pay/waiting/null/no-signal); backend compile +
+`tsc --noEmit` clean; E2E `ai-advisory.spec.ts` written (testids,
+expect-polling, skip-not-fail mount gate). E2E green 2026-09-11 (harness:
+container db + keycloak on :8090, Playwright-booted backend :8082 +
+frontend :4200): `ai-advisory.spec.ts` + `clauses.spec.ts` 2/2 passed —
+DEGRADED MATERNITY suggestion served at DECISION, reload replays without
+re-POST, clause scoping + toggle all asserted. (First attempt failed on a
+harness-invocation mistake: `npx --prefix e2e` runs Playwright from the
+root so it misses `e2e/playwright.config.ts` — no baseURL, no webServers;
+run from inside `e2e/`.) Live provider check 2026-09-11: key + model
+`deepseek-flash` verified working via one-off curl (in-memory env only,
+never written) — `{"ping": true}` returned `finish_reason stop` at a 500
+max-tokens budget (a 50-token budget truncates: reasoning tokens consume
+it, so the app's 1500-token budget in `DeepSeekClient` is correctly sized).
+Rotate the key after the session.
+
+### 2026-09-11 — V4 S3 rail polish + AI chat every stage + FNOL required-docs prompt
+
+**Context:** Two complaints in one: the support rail (Required documents /
+Policy clauses / AI advisory) looked misaligned — three cards built at
+different times with three header idioms and double-framed inner cards; and
+the AI was a one-shot DECISION-only button, not something the adjuster could
+talk to. Separately: FNOL let claimants attach only random extras — the
+required-docs checklist appeared only after filing. Plan: this session.
+Design language enforced from the `enterprise-ui` skill (token ramp, one
+shadow recipe, flat tint inner rows, checklist diagnostic).
+
+**What changed (no migration; V1–V25 untouched):**
+- **Rail polish (frontend only, every testid stable):** one card language —
+  `panel__header` baselines aligned, inner rows flattened to tint +
+  `border-subtle` with NO inner shadow (the panel owns the single
+  `--shadow-card`), one gap scale, row order ref/mono → title → badge →
+  right meta, group headings 12px medium tertiary, reqDocs error promoted
+  from bare muted line to `notice--warning`. Fixed the docs `@if`
+  whitespace jam. Found + fixed (orchestrator): `.notice--warning` had NO
+  CSS rule (used 6×, defined 0×) — added the warning tint triple to
+  `styles.css` from tokens.
+- **AI chat (`com.claims.ai.chat`, new backend):** `ChatClient` (plain-text
+  completion, temp 0.2, 800 tokens, history capped 10 pairs × 1000 chars) +
+  `AiChatService` (stage-AGNOSTIC — REVIEW through DECISION; question
+  ≤2000, history ≤20, clause text 500 × 40; provider failures become
+  assistant messages, never 500s; one `AI_CHAT_MESSAGE` audit row per call;
+  stateless — transcript lives in the SPA) + `POST
+  /api/claims/{n}/ai-chat` (staff roles, 404-not-403). `SecurityConfig`
+  matcher placed with the ai-analysis pair; `api.http` gained the chat
+  example.
+- **AI card (frontend):** renamed "AI assistant", ungated to ALL stages —
+  chat thread on top (Live/Fallback status, `aria-live`, Enter-to-send,
+  50-message cap, question preserved on transport error) + the per-cover
+  advisory artifact still DECISION-gated beneath it, now with "Refresh
+  advisory" semantics (replay per version, recompute on version move).
+- **FNOL required-docs (frontend only, no backend change):** step-2 photos
+  relabelled "Additional photos (optional)" + advisory hint; submit sends
+  positionally-aligned docKeys through the pre-existing auto-link (blanks =
+  no-op, extras path preserved); result card renders the returned checklist
+  (RECEIVED/PENDING) with a tracker upload-later hint. Filing never blocked
+  (waive/link flow untouched). Post-filing path chosen deliberately: NO
+  pre-filing required-docs GET exists, and hardcoding V19 seeds in the SPA
+  would rot.
+
+**Verified:** `AiChatIntegrationTest` 5/5 (REVIEW-stage DEGRADED + audit,
+transcript round-trip, 400s incl. >20-history and >4000-char entries with no
+audit, auth matrix, statelessness) + prior 21 = 26/26 backend green; `tsc`
+clean; E2E 4/4 serial (`ai-chat` 2/2 incl. chat-at-REVIEW
++ FNOL checklist, `ai-advisory` updated for chat-visible/advisory-locked
+pre-DECISION, `clauses` unchanged). Parallel E2E is flaky at filing
+(rate-limit/duplicate guard across workers) — run `--workers=1` when green
+matters. Dev app left running (:4200 + keyed :8081) for manual testing.
+**Deliberately not built:** server-persisted chat history, chat for
+claimants, pre-filing docs endpoint, provider retry/backoff.
+
+**Review follow-ups applied (fresh review: 1 blocker + 7 should-fix, all
+done):** client transcript capped at 20 turns mirroring the server (long
+sessions can never 400) + `maxlength=2000` on the composer; chat Fallback
+status reads "rules-only, not model output" + advisory-only line in the
+chat card; refresh button wired to staleness (`showRerequest` drives a
+"claim changed — refresh" note); WAIVED docs wear the neutral cancelled
+lozenge instead of the blue todo; "ask below" → "ask above"; stale E2E
+comment fixed; key moved to gitignored `.env`, backend relaunched from
+env-file only (no secret on the process table or in logs).
+**Deliberately not built (Non-goals):** claimant AI view, inception-date
+snapshot (waiting periods stay NEEDS_MORE_INFO from rules by design),
+model-output auto-fill of decision inputs, provider retry/backoff beyond
+single-attempt-then-fallback, clause versioning UI.
+
+### 2026-09-11 — V4 S1 clause catalogue + adjuster clause panel (V26–V29, read-only)
+
+**Context:** Adjusters decided covers with the wording in their heads — no
+reference surface, so Session 2's AI advisory would cite clauses that exist
+nowhere assertable. Plan: V4 session prompts, Session 1. Static seed text was
+authored offline (3 Wave-1 subagents, disjoint product families) and committed
+as fixed SQL — never generated at runtime, so every test is assertable.
+
+**What changed (all additive; V1–V25 untouched):**
+- **Migration `V26__product_cover_catalog.sql`:** `product_cover` table
+  (`product_code, cover_code` PK) + 20 rows — HLTH-BASIC 3 (never MATERNITY),
+  HLTH-PLUS 5, HLTH-CRIT 2, AUTO-STD 2, AUTO-COM 2, PROP-HOME 2, PROP-FIRE 1
+  (new FIRE code), legacy HOME 2 + AUTO 1, HLTH-ORPHAN 0 (deliberately
+  unmapped, mirrors the empty S3 checklist).
+- **Migration `V27__align_policy_covers.sql`:** `policy_cover.display_name`
+  alignment + nullable `product_code` backfill (SET NOT NULL after fill) +
+  trigger + FK to the catalogue; 25 seed rows intact.
+- **Migration `V28__policy_clause.sql`:** `policy_clause` table with typed
+  columns (`waiting_period_days` / `sub_limit_amount` / `co_pay_percent`,
+  each non-null exactly for its clause type via CHECK) +
+  `UNIQUE (product_code, clause_ref, effective_from)` +
+  `effective_to > effective_from` + trigger rejecting non-catalogued covers
+  + lookup index. Selection is ALWAYS by claim loss_date, never today.
+- **Migration `V29__seed_policy_clauses.sql`:** 174 static rows (Health 74:
+  BASIC 22 / PLUS 30 / CRIT 19 / ORPHAN 3; Motor 50: AUTO 14 / STD 18 / COM
+  18; Property 50: HOME 18 / PROP-HOME 18 / PROP-FIRE 14). Every SUB_LIMIT
+  equals its V26 default. The HLTH-PLUS MATERNITY 7.1 pair (270d
+  2020-01-01→2024-04-01, superseded by 180d from 2024-04-01) exercises
+  date-based selection both directions.
+- **Read path (`com.claims.clause`, SELECTs only, no audit rows):** `GET
+  /api/clauses?productCode=&coverCode=` (staff catalogue browse; blank→400,
+  unknown→`[]`/200) + `GET /api/claims/{n}/policy-clauses` (loss-date
+  wording for product-level + the claim's own covers; 404-not-403 via
+  `ClaimAccess`, claimant 403 at the URL). `SecurityConfig` matchers sit
+  before the generic claimant rule so they are not shadowed.
+- **Frontend:** standalone `clause-panel/` (General group + per-cover
+  groups, per-clause toggle, testids `detail-clauses`,
+  `detail-clause-{ref}`, `detail-clause-toggle`), mounted in the claim
+  support rail. `api.http` gained clause examples; `.env.example` gained
+  `DEEPSEEK_*` placeholders (`deepseek-flash`, verified on DeepSeek's own
+  pricing page 2026-09-11 — no SDK, plain RestClient in Session 2).
+
+**Verified:** fresh-DB V1–V29 migrate (20 catalogue / 174 clauses / 25
+covers); `PolicyClauseIntegrationTest` 6/6 → 9/9 after review (maternity
+270/180 both directions, cover scoping, 404/403/401/200 matrix incl.
+nonexistent-claim 404, catalogue narrowing + unknown/blank/missing-param);
+`tsc --noEmit` clean; full suite 301 run — clause tests green, 115 errors
+are pre-existing container-infra (fake Docker answers version checks but
+cannot start postgres:16-alpine; sibling Mailpit/Postgres tests fail the
+same way on the clean tree). E2E `clauses.spec.ts` written (testids,
+expect-polling) but NOT RUN — harness down (Keycloak :8090 closed).
+**Deliberately not built (Non-goals):** AI calls from the app (Session 2),
+claimant clause view, clause versioning UI, maternity arithmetic (Session 2
+reads the typed columns).
+
 ### 2026-09-10 — S11 locale/timezone + accessibility pass (second-customer ready)
 
 **Context:** Money was hardcoded `₹`-concat/`toFixed(2)`, dates were hand-built

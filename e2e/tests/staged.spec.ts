@@ -176,6 +176,7 @@ test('staged claim flows review to verification to decision, gates, and refers u
   await expect(adjusterPage.getByTestId('detail-authority-hint')).toContainText('limit');
   await adjusterPage.getByTestId('detail-decision-rationale').fill('Recommend full payment.');
   await adjusterPage.getByTestId('detail-submit-decision').click();
+  await adjusterPage.getByTestId('detail-submit-decision-confirm').click();
 
   // The gate holds: proposals saved, nothing closed, referral offered.
   await expect(adjusterPage.getByTestId('detail-gate-banner')).toBeVisible();

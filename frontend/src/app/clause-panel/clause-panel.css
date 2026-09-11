@@ -1,0 +1,124 @@
+/* Clause panel: quiet read-only groups of policy wording rows. Headings
+   separate product-level ("General") rows from per-cover rows. Every row is
+   a two-line grid — line 1: ref + title + type badge + toggle; line 2: the
+   defined facts left, the headline value right (tabular). Uniform rhythm,
+   hairline separators, no shadows. Tokens only. */
+.clause-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.clause-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.clause-group__heading {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-tertiary);
+  margin: var(--space-2) 0 0;
+}
+
+.clause-group:first-child .clause-group__heading {
+  margin-top: 0;
+}
+
+.clause-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-default);
+  overflow: hidden;
+}
+
+.clause-card {
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-default);
+  box-shadow: none;
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+  min-height: var(--row-height);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.clause-card + .clause-card {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.clause-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.clause-card__ref {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+}
+
+.clause-card__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clause-card__badge {
+  flex: none;
+}
+
+.clause-card__toggle {
+  flex: none;
+}
+
+.clause-card__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  padding-left: calc(var(--space-2) + 3ch);
+}
+
+.clause-card__facts {
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clause-card__value {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.clause-card__text {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  margin: var(--space-2) 0 0;
+  border-top: 1px dashed var(--border-default);
+  padding-top: var(--space-2);
+  overflow-wrap: anywhere;
+  max-width: 72ch;
+}

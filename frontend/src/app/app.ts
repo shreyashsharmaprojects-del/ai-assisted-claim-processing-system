@@ -27,6 +27,17 @@ export class App implements OnDestroy {
   protected readonly sessionVersion = signal(0);
 
   /**
+   * Sidebar rail state: 240px expanded, 56px collapsed rail (doctrine §4).
+   * In-memory only — no preference store exists by decision (§2), so the
+   * choice resets on reload. Toggled from the sidebar footer button.
+   */
+  protected readonly sidebarCollapsed = signal(false);
+
+  protected toggleSidebar(): void {
+    this.sidebarCollapsed.update((v) => !v);
+  }
+
+  /**
    * Queue-depth badges: quiet counts beside My queue / Escalations so an operator
    * sees pressure before opening the list. Best-effort — a failed fetch hides the
    * badge instead of erroring the whole shell.

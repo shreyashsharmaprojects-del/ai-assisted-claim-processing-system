@@ -1,0 +1,60 @@
+/* Policy modal: whole policy page in an 880px complex dialog (doctrine §5)
+   on a scrim. The embedded page keeps its own layout; the shell only frames
+   it — head, scrollable body. Tokens only. */
+.policy-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+}
+
+.policy-modal__scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.policy-modal__dialog {
+  position: absolute;
+  left: 50%;
+  top: var(--space-8);
+  transform: translateX(-50%);
+  width: min(880px, calc(100% - var(--space-8)));
+  max-height: calc(100% - var(--space-8));
+  background: var(--surface-default);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-overlay);
+  display: flex;
+  flex-direction: column;
+}
+
+.policy-modal__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.policy-modal__head h2 {
+  font-size: var(--text-md);
+  margin: 0;
+}
+
+.policy-modal__head .btn {
+  margin-left: auto;
+}
+
+.policy-modal__body {
+  padding: var(--space-4);
+  overflow: auto;
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  .policy-modal__dialog {
+    top: var(--space-4);
+    width: calc(100% - var(--space-4));
+    max-height: calc(100% - var(--space-4));
+  }
+}

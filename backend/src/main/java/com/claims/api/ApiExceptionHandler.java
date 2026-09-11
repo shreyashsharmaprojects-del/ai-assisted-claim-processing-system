@@ -66,7 +66,8 @@ public class ApiExceptionHandler {
      * empty body, or a path variable of the wrong type, is the caller's fault — never a 500.
      */
     @ExceptionHandler({HttpMessageNotReadableException.class,
-            MethodArgumentTypeMismatchException.class})
+            MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
     public ResponseEntity<ErrorResponse> unreadableRequest(Exception ex) {
         return ResponseEntity.badRequest()
                 .body(new ErrorResponse("The request could not be read: check the body and path values."));
