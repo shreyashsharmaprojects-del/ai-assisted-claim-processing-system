@@ -358,18 +358,21 @@ def build():
         c.setFont(base.F, 10)
         c.drawString(MARGIN, y, subtitle)
         # Air between heading block and screenshot so the title reads first.
-        y -= 28
+        y -= 20
         groups = [base.wrap(b, 9.5, CONTENT_W - 16) for b in bullets]
         text_h = sum(len(g) for g in groups) * 13 + 10
-        img_top, img_bottom = y, BOTTOM + text_h + 20
+        # Bullet zone sits a breath above the footer; leftover slot space is
+        # split evenly above/below the width-bound image (centered).
+        img_top, img_bottom = y, BOTTOM + text_h + 14
         img = PILImage.open(os.path.join(base.SHOTS, shot))
         iw, ih = img.size
         scale = min(CONTENT_W / iw, (img_top - img_bottom) / ih)
         dw, dh = iw * scale, ih * scale
+        img_y = img_bottom + (img_top - img_bottom - dh) / 2
         c.drawImage(os.path.join(base.SHOTS, shot), MARGIN + (CONTENT_W - dw) / 2,
-                    img_bottom, dw, dh, preserveAspectRatio=True, anchor="c")
-        # bullets sit below the screenshot with breathing room, not fused to it.
-        y = img_bottom - 20
+                    img_y, dw, dh, preserveAspectRatio=True, anchor="c")
+        # bullets sit below the slot with breathing room, not fused to it.
+        y = img_bottom - 14
         c.setFont(base.F, 9.5)
         c.setFillColor(MUTED)
         for g in groups:
