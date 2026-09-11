@@ -1,7 +1,7 @@
 # ClaimFlow — Insurance Claim Processing System (Angular + Spring Boot)
 
 ![CI](https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system/actions/workflows/ci.yml/badge.svg)
-![Backend tests](https://img.shields.io/badge/backend-295%2F295-green)
+![Backend tests](https://img.shields.io/badge/backend-299%2F299-green)
 ![E2E](https://img.shields.io/badge/E2E-Plawright-green)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![Angular](https://img.shields.io/badge/Angular-22-red)
@@ -17,7 +17,7 @@ the least-loaded qualified adjuster, adjusters assess it through a staged workfl
 **Playwright** end-to-end tests.
 
 > 📕 **Full visual demo:** [`demo/ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf)
-> — 56 pages covering every role and every feature (42 live screenshots + 11
+> — 59 pages covering every role and every feature (45 live screenshots + 11
 > capability deep-dives + system map). Start here if you are evaluating the project.
 
 ## ✨ Features
@@ -38,6 +38,14 @@ the least-loaded qualified adjuster, adjusters assess it through a staged workfl
 - **Authority gate** — inside your limit closes + pays; above it saves a proposal and
   refers upward; **optimistic locking** — concurrent edits get a conflict banner, never a
   silent overwrite (HTTP 409)
+- **AI assistant drawer** — chat about the claim (waiting periods, sub-limits, wording)
+  answered from the claim's own covers and clauses, with a Live/Fallback serving path;
+  the per-cover advisory artifact stays gated until Decision
+- **Policy clauses panel** — every clause in scope for the claim's product and covers,
+  expandable to full wording; scoping is server-side (covers the claim does not carry
+  never appear)
+- **Policy in place** — either policy link opens the whole policy page in a modal
+  (cover summary, covers with remaining limits, terms); File-a-claim is hidden for staff
 
 **Supervisor console**
 - Book-wide overview dashboard (open, exposure, approvals, aging) + escalations queue
@@ -56,6 +64,7 @@ the least-loaded qualified adjuster, adjusters assess it through a staged workfl
 | Privacy (GDPR) | Claimant self-export, supervisor anonymize, 7-year retention report |
 | Notifications | Bell + unread count, in-app center, email/in-app/SMS prefs, outbox never loses mail |
 | Locale & a11y | INR (`₹1,500.00`), en-GB dates, tenant timezone, full keyboard + screen-reader support |
+| AI (DeepSeek) | Chat + per-cover advisory via OpenAI-wire REST (no SDK); `DEEPSEEK_API_KEY` empty → rules-only fallback, never a failure |
 
 **Security by design** — Keycloak OIDC/PKCE; 404-not-403 on every cross-owner read;
 hard claimant/carrier visibility wall (asserted in tests); rate-limited FNOL;
@@ -66,7 +75,7 @@ append-only audit log (no edit/delete endpoint exists).
 | Layer | Technology |
 |---|---|
 | Frontend | Angular 22 SPA, `keycloak-js`, Intl formatters, `frontend/` |
-| Backend | Spring Boot 3, Java 21, Maven, Spring Data JPA + Flyway (V1–V25), `backend/` |
+| Backend | Spring Boot 3, Java 21, Maven, Spring Data JPA + Flyway (V1–V30), `backend/` |
 | Database | PostgreSQL 16 (`claims` dev, `claims_e2e` hermetic E2E) |
 | Auth | Keycloak 26, OIDC/PKCE, realm `claims` |
 | Email | Mailpit (SMTP :1025, UI :8025), transactional outbox pattern |
@@ -84,10 +93,10 @@ Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
 
 | Path | What |
 |---|---|
-| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail, escalations, supervisor overview, authority settings, notifications, staff + privacy admin. |
-| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V25), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, staged workflow, decision/gate, escalation + aging, supervisor admin (reassign, reopen, dashboard, authority config, audit export, policy book, email outbox, metrics), staff, privacy, notifications. |
-| `e2e/` | Playwright (14 spec files) against the dedicated `claims_e2e` DB. `e2e/shots/` + `shots.spec.ts` capture the demo screenshots. |
-| `demo/` | [`ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf) (56-page visual demo), [`DEMO-PROMPT.md`](demo/DEMO-PROMPT.md) (reusable demo-generation prompt), `build_pdf.py` + `build_full_demo_pdf.py` (PDF builders). |
+| `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail (AI drawer, clauses, policy modal), escalations, supervisor overview, authority settings, notifications, staff + privacy admin. |
+| `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V30), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, staged workflow, decision/gate, escalation + aging, supervisor admin (reassign, reopen, dashboard, authority config, audit export, policy book, email outbox, metrics), staff, privacy, notifications, AI chat/advisory (DeepSeek), policy clauses. |
+| `e2e/` | Playwright (18 spec files) against the dedicated `claims_e2e` DB. `e2e/shots/` + `shots.spec.ts` capture the demo screenshots; `new-shots.spec.ts` captures the AI/clauses/modal pages. |
+| `demo/` | [`ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf) (59-page visual demo), [`ClaimFlow-Demo.pdf`](demo/ClaimFlow-Demo.pdf) (46-page journey), [`DEMO-PROMPT.md`](demo/DEMO-PROMPT.md) (reusable demo-generation prompt), `build_pdf.py` + `build_full_demo_pdf.py` (PDF builders). |
 | `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
 | `scripts/` | `demo-seed.sql` / `demo-reset.sql` — sales-demo book (dev `claims` DB only). |
 | `docker/` | DB bootstrap (creates `claims_e2e`). |
@@ -106,14 +115,16 @@ cd ai-assisted-claim-processing-system
 npm run setup        # copies .env.example -> .env and renders keycloak/realm-export.json
 npm run db:up        # Postgres + Mailpit + Keycloak (realm "claims"), waits for health
 npm ci --prefix frontend
-npm run backend      # Spring Boot on http://localhost:8081 (Flyway migrates V1..V25 on boot)
+npm run backend      # Spring Boot on http://localhost:8081 (Flyway migrates V1..V30 on boot)
 npm --prefix frontend start   # Angular on http://localhost:4200 (proxies /api -> :8081)
 ```
 
 Credentials are **never committed** — `.env.example` lists every variable
 (`DB_USERNAME`, `DB_PASSWORD`, `KEYCLOAK_ADMIN_*`, `ADJUSTER_PASSWORD`,
-`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`). Values in `.env` are DEV-ONLY for the
-throwaway local stack.
+`SUPERVISOR_PASSWORD`, `CLAIMANT_PASSWORD`, `DEEPSEEK_API_KEY`,
+`DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`). Values in `.env` are DEV-ONLY for the
+throwaway local stack. Leave `DEEPSEEK_API_KEY` empty to run the AI surfaces on
+the rules-only fallback (no live LLM calls).
 
 **Sign in at http://localhost:4200:**
 - **Claimant:** `ada.lovelace` (POL-10001, HLTH-PLUS ₹10L) · `grace.hopper`
@@ -134,16 +145,17 @@ throwaway local stack.
 ## 🧪 Tests
 
 ```bash
-npm run backend:test   # unit + integration: 295/295 green (Testcontainers Postgres+Mailpit,
+npm run backend:test   # unit + integration: 299/299 green (Testcontainers Postgres+Mailpit,
                        # or claims_test DB fallback when Docker is unavailable)
 npm run db:up
 npx --prefix e2e playwright install chromium
 npm run e2e            # hermetic Playwright: own backend :8082 + ng serve, claims_e2e truncated
 ```
 
-Backend **295/295** green · frontend build green · hermetic E2E green across
+Backend **299/299** green · frontend build green · hermetic E2E green across
 `fnol`, `covers`, `queue`, `staged`, `conflict`, `reopen`, `staff`,
-`structured-decision`, `privacy`, `notifications`, `need-info-docs`.
+`structured-decision`, `privacy`, `notifications`, `need-info-docs`,
+`ai-chat`, `clauses`.
 E2E never touches the dev `claims` database. `docs/progress.md` is the source of
 truth for status; `docs/decisions.md` logs every slice decision (S1–S11).
 
@@ -157,12 +169,14 @@ npm run demo:reset   # deletes all demo rows (audit_log rows stay: append-only)
 ```
 
 Screenshots: `npx playwright test --config shots.config.ts` from `e2e/` (after
-`npm run demo:seed`) → `e2e/shots/` → `python3 demo/build_full_demo_pdf.py`
-rebuilds the 56-page PDF. See `demo/DEMO-PROMPT.md` for the reusable prompt.
+`npm run demo:seed`) → `e2e/shots/` → then `npx playwright test --config
+new-shots.config.ts` for the AI/clauses/modal pages → `python3
+demo/build_full_demo_pdf.py` rebuilds the 59-page PDF (or `build_pdf.py` for the
+46-page journey). See `demo/DEMO-PROMPT.md` for the reusable prompt.
 
 ## 🗄️ Migrations
 
-Flyway runs on backend boot: empty database → current in one step (V1–V25).
+Flyway runs on backend boot: empty database → current in one step (V1–V30).
 `backend/src/main/resources/db/migration/`. Tables are intentionally vertical; later
 slices add columns via new migrations — V1–V17 are never edited
 (see `docs/decisions.md`).
