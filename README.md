@@ -1,4 +1,4 @@
-# ClaimFlow — Insurance Claim Processing System (Angular + Spring Boot)
+# AI Assisted System — Insurance Claim Processing (Angular + Spring Boot)
 
 ![CI](https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system/actions/workflows/ci.yml/badge.svg)
 ![Backend tests](https://img.shields.io/badge/backend-299%2F299-green)
