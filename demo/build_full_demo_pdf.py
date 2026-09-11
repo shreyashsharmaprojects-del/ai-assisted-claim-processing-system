@@ -1,4 +1,4 @@
-"""ClaimFlow COMPLETE demo PDF — core journey + every platform capability (S1-S11).
+"""OpenClaimFlow COMPLETE demo PDF — core journey + every platform capability (S1-S11).
 
 Builds on demo/build_pdf.py: reuses its 42 screenshot pages (the claimant →
 adjuster → supervisor journey), then appends a second part with one page per
@@ -6,7 +6,7 @@ plan-v3 slice (S1 evidence integrity … S11 locale/a11y) plus a closing system-
 appendix. Capability pages carry no screenshot — they describe the feature, how
 to demo it live (route, testids, API), and which suite proves it.
 
-Output: demo/ClaimFlow-Complete-Demo.pdf (the original ClaimFlow-Demo.pdf is
+Output: demo/OpenClaimFlow-Complete-Demo.pdf (the original OpenClaimFlow-Demo.pdf is
 left untouched).
 
 Usage:  python3 demo/build_full_demo_pdf.py   (needs e2e/shots/*.png present)
@@ -25,7 +25,7 @@ from reportlab.pdfgen.canvas import Canvas
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_pdf as base  # noqa: E402  (reuses PAGES, palette, wrap)
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ClaimFlow-Complete-Demo.pdf")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "OpenClaimFlow-Complete-Demo.pdf")
 
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 registerFont(TTFont("Mono", f"{FONT_DIR}/DejaVuSansMono.ttf"))
@@ -181,11 +181,11 @@ def header(c, i, total, section):
 def footer(c, i, total):
     c.setFillColor(MUTED)
     c.setFont(base.F, 8)
-    c.drawCentredString(W / 2, 12 * mm, f"ClaimFlow complete demo  •  page {i} of {total}")
+    c.drawCentredString(W / 2, 12 * mm, f"OpenClaimFlow complete demo  •  page {i} of {total}")
 
 
 def divider(c, i, total, title, subtitle, bullets):
-    header(c, i, total, "ClaimFlow — complete demo")
+    header(c, i, total, "OpenClaimFlow — complete demo")
     y = TOP - 60
     c.setFillColor(BLUE)
     c.setFont(base.FB, 26)
@@ -209,7 +209,7 @@ def divider(c, i, total, title, subtitle, bullets):
 
 
 def capability_page(c, i, total, code_title, subtitle, whats, try_lines, proved):
-    header(c, i, total, "ClaimFlow — complete demo · platform capabilities")
+    header(c, i, total, "OpenClaimFlow — complete demo · platform capabilities")
     y = TOP - 34
     c.setFillColor(INK)
     c.setFont(base.FB, 16)
@@ -269,7 +269,7 @@ def capability_page(c, i, total, code_title, subtitle, whats, try_lines, proved)
 
 
 def appendix(c, i, total):
-    header(c, i, total, "ClaimFlow — complete demo · appendix")
+    header(c, i, total, "OpenClaimFlow — complete demo · appendix")
     y = TOP - 34
     c.setFillColor(INK)
     c.setFont(base.FB, 16)
@@ -322,7 +322,7 @@ def build():
     # ---- cover ----
     c.setFillColor(BLUE)
     c.setFont(base.FB, 30)
-    c.drawCentredString(W / 2, H / 2 + 52, "ClaimFlow")
+    c.drawCentredString(W / 2, H / 2 + 52, "OpenClaimFlow")
     c.setFillColor(MUTED)
     c.setFont(base.F, 13)
     c.drawCentredString(W / 2, H / 2 + 18, "The complete demo — every role, every capability")
@@ -348,7 +348,7 @@ def build():
 
     # ---- Part A: one page per screenshot (same renderer as build_pdf) ----
     for (shot, title, subtitle, bullets) in base.PAGES:
-        header(c, n, total, "ClaimFlow — complete demo · A. the journey")
+        header(c, n, total, "OpenClaimFlow — complete demo · A. the journey")
         y = TOP - 34
         c.setFillColor(INK)
         c.setFont(base.FB, 16)

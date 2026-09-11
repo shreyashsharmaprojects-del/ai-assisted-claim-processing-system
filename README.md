@@ -1,4 +1,4 @@
-# AI-Assisted Claim Processing System
+# OpenClaimFlow
 
 ![CI](https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system/actions/workflows/ci.yml/badge.svg)
 ![Backend tests](https://img.shields.io/badge/backend-299%2F299-green)
@@ -7,7 +7,7 @@
 ![Angular](https://img.shields.io/badge/Angular-22-red)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue)
 
-**ClaimFlow** is a complete, production-grade **insurance claim processing system**:
+**OpenClaimFlow** is a complete, production-grade **insurance claim processing system**:
 claimants file losses online (FNOL — First Notice of Loss), the claim is auto-routed to
 the least-loaded qualified adjuster, adjusters assess it through a staged workflow
 (review → verification → assessment → decision), and supervisors oversee the whole book
@@ -16,7 +16,7 @@ the least-loaded qualified adjuster, adjusters assess it through a staged workfl
 **PostgreSQL 16** with Flyway migrations, **Keycloak** SSO (OIDC/PKCE), and
 **Playwright** end-to-end tests.
 
-> 📕 **Full visual demo:** [`demo/ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf)
+> 📕 **Full visual demo:** [`demo/OpenClaimFlow-Complete-Demo.pdf`](demo/OpenClaimFlow-Complete-Demo.pdf)
 > — 59 pages covering every role and every feature (45 live screenshots + 11
 > capability deep-dives + system map). Start here if you are evaluating the project.
 
@@ -96,7 +96,7 @@ Angular SPA (frontend/)  --OIDC/PKCE-->  Keycloak (:8090)
 | `frontend/` | Angular 22 SPA, `keycloak-js`. Home, FNOL form, claimant status + my-claims, adjuster queue, claim detail (AI drawer, clauses, policy modal), escalations, supervisor overview, authority settings, notifications, staff + privacy admin. |
 | `backend/` | Spring Boot (Java 21, Maven), Spring Data JPA + Flyway (V1–V30), OIDC resource server. Claimant surface (FNOL, `/api/claims/mine`), internal work surface, staged workflow, decision/gate, escalation + aging, supervisor admin (reassign, reopen, dashboard, authority config, audit export, policy book, email outbox, metrics), staff, privacy, notifications, AI chat/advisory (DeepSeek), policy clauses. |
 | `e2e/` | Playwright (18 spec files) against the dedicated `claims_e2e` DB. `e2e/shots/` + `shots.spec.ts` capture the demo screenshots; `new-shots.spec.ts` captures the AI/clauses/modal pages. |
-| `demo/` | [`ClaimFlow-Complete-Demo.pdf`](demo/ClaimFlow-Complete-Demo.pdf) (59-page visual demo), [`ClaimFlow-Demo.pdf`](demo/ClaimFlow-Demo.pdf) (46-page journey), [`DEMO-PROMPT.md`](demo/DEMO-PROMPT.md) (reusable demo-generation prompt), `build_pdf.py` + `build_full_demo_pdf.py` (PDF builders). |
+| `demo/` | [`OpenClaimFlow-Complete-Demo.pdf`](demo/OpenClaimFlow-Complete-Demo.pdf) (59-page visual demo), [`OpenClaimFlow-Demo.pdf`](demo/OpenClaimFlow-Demo.pdf) (46-page journey), [`DEMO-PROMPT.md`](demo/DEMO-PROMPT.md) (reusable demo-generation prompt), `build_pdf.py` + `build_full_demo_pdf.py` (PDF builders). |
 | `keycloak/` | Realm template + `render-realm.mjs` (passwords render from env, see below). |
 | `scripts/` | `demo-seed.sql` / `demo-reset.sql` — sales-demo book (dev `claims` DB only). |
 | `docker/` | DB bootstrap (creates `claims_e2e`). |

@@ -64,7 +64,7 @@ restart keeps the stale realm: `Realm already exists. Import skipped`), and
 Admin-API-created users get random subs that mismatch `app_user.keycloak_sub` → empty
 queues (queue resolves by subject, not email) — prefer template + fresh import.
 
-**Demo deck `demo/ClaimFlow-Demo.pdf` is a 17-page simple walkthrough: cover +
+**Demo deck `demo/OpenClaimFlow-Demo.pdf` is a 46-page walkthrough: cover +
 one full-width screenshot per page with 2 short explanation bullets** (was a dense
 16-page card/diagram deck): landing,
 FNOL wizard (2 steps), claim-number confirmation, claimant track screen, my-claims

@@ -1,6 +1,6 @@
-"""ClaimFlow demo PDF — the full product walkthrough: one screenshot per page.
+"""OpenClaimFlow demo PDF — the full product walkthrough: one screenshot per page.
 
-Generates demo/ClaimFlow-Demo.pdf from e2e/shots/*.png (captured by
+Generates demo/OpenClaimFlow-Demo.pdf from e2e/shots/*.png (captured by
 e2e/tests/shots.spec.ts via `npx playwright test --config shots.config.ts`
 from e2e/ after `npm run demo:seed`).
 
@@ -24,7 +24,7 @@ registerFont(TTFont("Body", f"{FONT_DIR}/DejaVuSans.ttf"))
 registerFont(TTFont("Body-Bold", f"{FONT_DIR}/DejaVuSans-Bold.ttf"))
 F, FB = "Body", "Body-Bold"
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ClaimFlow-Demo.pdf")
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "OpenClaimFlow-Demo.pdf")
 SHOTS = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "e2e", "shots"))
 
 BLUE = HexColor("#0056B3")
@@ -302,7 +302,7 @@ def build():
     # ---- cover ----
     c.setFillColor(BLUE)
     c.setFont(FB, 30)
-    c.drawCentredString(W / 2, H / 2 + 40, "ClaimFlow")
+    c.drawCentredString(W / 2, H / 2 + 40, "OpenClaimFlow")
     c.setFillColor(MUTED)
     c.setFont(F, 13)
     c.drawCentredString(W / 2, H / 2 + 8, "Insurance claim processing — visual walkthrough")
@@ -317,7 +317,7 @@ def build():
         # header
         c.setFillColor(BLUE)
         c.setFont(FB, 9)
-        c.drawString(MARGIN, TOP, "ClaimFlow — demo walkthrough")
+        c.drawString(MARGIN, TOP, "OpenClaimFlow — demo walkthrough")
         c.setFillColor(MUTED)
         c.setFont(F, 9)
         c.drawRightString(W - MARGIN, TOP, f"{i} / {total}")
@@ -360,7 +360,7 @@ def build():
         # footer
         c.setFillColor(MUTED)
         c.setFont(F, 8)
-        c.drawCentredString(W / 2, 12 * mm, f"ClaimFlow demo  •  page {i} of {total}")
+        c.drawCentredString(W / 2, 12 * mm, f"OpenClaimFlow demo  •  page {i} of {total}")
         c.showPage()
 
     c.save()

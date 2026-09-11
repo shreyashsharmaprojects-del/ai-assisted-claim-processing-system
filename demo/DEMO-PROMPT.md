@@ -1,13 +1,13 @@
-# Complete Demo Prompt — ClaimFlow Insurance Claim Processing App (improved)
+# Complete Demo Prompt — OpenClaimFlow Insurance Claim Processing App (improved)
 
 > Copy-paste this prompt into any AI assistant (or a fresh session) to generate a
-> complete end-to-end demonstration of the ClaimFlow claim processing system.
+> complete end-to-end demonstration of the OpenClaimFlow claim processing system.
 
 ---
 
 ## The prompt
 
-**"Create a complete, self-contained demonstration of the ClaimFlow insurance
+**"Create a complete, self-contained demonstration of the OpenClaimFlow insurance
 claim processing application — a single-carrier system where claimants file
 losses (FNOL), adjusters assess them through a staged workflow, and supervisors
 oversee the whole book. The demo must cover the full journey of a claim across
@@ -85,7 +85,7 @@ append-only (no edit/delete exists).
 
 ### Output format
 
-A4 PDF, one page per screenshot: small header ('ClaimFlow — complete demo'),
+A4 PDF, one page per screenshot: small header ('OpenClaimFlow — complete demo'),
 section number + title, one-line subtitle, the screenshot as large as the page
 allows, and 2–3 explanation bullets beneath. Open with a cover page (product
 name, tagline, page count, role→colour legend) and close with an appendix page
