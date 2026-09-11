@@ -333,12 +333,13 @@ def build():
         c.setFillColor(MUTED)
         c.setFont(F, 10)
         c.drawString(MARGIN, y, subtitle)
-        y -= 12
+        # Air between heading block and screenshot so the title reads first.
+        y -= 28
 
         # wrap bullets first so we know how much vertical room the image gets
         groups = [wrap(b, 9.5, CONTENT_W - 16) for b in bullets]
         text_h = sum(len(g) for g in groups) * 13 + 10
-        img_top, img_bottom = y, BOTTOM + text_h
+        img_top, img_bottom = y, BOTTOM + text_h + 20
 
         img = PILImage.open(os.path.join(SHOTS, shot))
         iw, ih = img.size
@@ -347,8 +348,8 @@ def build():
         c.drawImage(os.path.join(SHOTS, shot), MARGIN + (CONTENT_W - dw) / 2, img_bottom,
                     dw, dh, preserveAspectRatio=True, anchor="c")
 
-        # bullets
-        y = img_bottom - 12
+        # bullets sit below the screenshot with breathing room, not fused to it.
+        y = img_bottom - 20
         c.setFont(F, 9.5)
         c.setFillColor(MUTED)
         for g in groups:
