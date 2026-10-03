@@ -12,6 +12,10 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
     rel="stylesheet"
   />
+  <!-- Runtime coordinates, injected by the edge server from the request Host.
+       Must run before the Angular bundle: it is read synchronously at module
+       load, so no initializer ordering can beat it. -->
+  <script src="assets/config.js"></script>
 </head>
 <body>
   <app-root></app-root>

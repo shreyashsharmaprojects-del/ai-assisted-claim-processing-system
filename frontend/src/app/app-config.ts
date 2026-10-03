@@ -15,10 +15,20 @@ export interface AppConfig {
   keycloakClientId: string;
 }
 
+/**
+ * Coordinates injected synchronously by the edge server (assets/config.js),
+ * read at module load. The served origin is not known at build time, and the
+ * Keycloak client can be constructed at any moment, so the value has to be
+ * correct before any initializer runs — this global guarantees that.
+ */
+const INJECTED: Partial<AppConfig> =
+  (globalThis as unknown as { __CLAIMS_CONFIG__?: Partial<AppConfig> }).__CLAIMS_CONFIG__ ?? {};
+
 const DEFAULTS: AppConfig = {
   keycloakUrl: 'http://localhost:8090',
   keycloakRealm: 'claims',
   keycloakClientId: 'claims-frontend',
+  ...INJECTED,
 };
 
 let active: AppConfig = { ...DEFAULTS };
