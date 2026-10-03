@@ -1,5 +1,7 @@
 # OpenClaimFlow  (AI Assisted Claim Processing System)
 
+**Live demo:** https://interface-profession-warning-warnings.trycloudflare.com — sign in with any demo account shown on the sign-in page.
+
 ![CI](https://github.com/shreyashsharmaprojects-del/ai-assisted-claim-processing-system/actions/workflows/ci.yml/badge.svg)
 ![Backend tests](https://img.shields.io/badge/backend-299%2F299-green)
 ![E2E](https://img.shields.io/badge/E2E-Plawright-green)
