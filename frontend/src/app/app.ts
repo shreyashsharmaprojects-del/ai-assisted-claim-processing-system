@@ -11,6 +11,12 @@ import {
 } from './auth/auth.service';
 import { Toasts } from './toasts';
 
+/** The landing route is the root URL, with or without a query string or fragment. */
+function isLandingUrl(url: string): boolean {
+  const path = url.split(/[?#]/)[0];
+  return path === '' || path === '/';
+}
+
 @Component({
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   selector: 'app-root',
@@ -25,6 +31,18 @@ export class App implements OnDestroy {
 
   /** Bump to re-render the chrome when the session changes (sign-in/out, expiry). */
   protected readonly sessionVersion = signal(0);
+
+  /**
+   * True while the public landing route is showing — the ONLY place the shell
+   * chrome is suppressed, because that page carries its own top bar and the two
+   * would stack.
+   *
+   * This is keyed off the ROUTE, not off the session. Keying it off the session
+   * was a bug: `/home` is an unguarded route, so the app never initialises
+   * Keycloak there, `isSignedIn()` stays false, and a signed-in visitor arriving
+   * on /home lost the entire top bar — no nav, no user chip, no sign-out.
+   */
+  protected readonly onLanding = signal(isLandingUrl(this.router.url));
 
   /**
    * Sidebar rail state: 240px expanded, 56px collapsed rail (doctrine §4).
@@ -61,6 +79,7 @@ export class App implements OnDestroy {
     });
     this.navSub = this.router.events.subscribe((event) => {
       if (event instanceof NavigationEnd) {
+        this.onLanding.set(isLandingUrl(this.router.url));
         this.refreshNotifUnread();
       }
     });

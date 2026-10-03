@@ -508,5 +508,79 @@
   }
 }
 
+/* ============================================================
+   Mobile top bar (§9 survival): collapse the claimant/internal nav
+   text to icons so a phone-width header never overflows. Each icon
+   carries aria-label + title; the primary action stays recognisable.
+   Desktop keeps full labels.
+   ============================================================ */
+@media (max-width: 860px) {
+  .topbar__right {
+    gap: var(--space-2);
+  }
+
+  /* The nav is icon-only at this width, so the icon has to have a size. These
+     SVGs carry a viewBox but no width/height attributes, and nothing else sizes
+     an svg inside .topbar__right — computed, they were 0x0, which rendered the
+     nav as empty outlined buttons with no glyph. */
+  .topbar__right .btn svg {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    display: block;
+  }
+
+  .topbar__right .topbar-label {
+    display: none;
+  }
+
+  .topbar__right .btn--sm {
+    min-height: 40px;
+    padding: 0 var(--space-2);
+  }
+
+  .brand__sub {
+    display: none;
+  }
+
+  /* A phone cannot hold the wordmark + five icon buttons + the user chip:
+     measured, that combination overflowed by 43px at 390px (scrollWidth 433).
+     The shield mark still identifies the app; the name is on the landing page. */
+  .brand__name {
+    display: none;
+  }
+
+  .topbar__right .user-chip__name {
+    display: none;
+  }
+
+  .user-chip {
+    padding: 0 var(--space-2);
+  }
+}
+
+/* ============================================================
+   Phone sidebar (§9): the 1024px strip becomes a clean horizontal
+   rail — the desktop collapse toggle and workspace eyebrow are
+   desktop-only affordances and come off; nav items stay visible
+   and the strip scrolls within itself (no page h-scroll).
+   ============================================================ */
+@media (max-width: 720px) {
+  .app-sidebar {
+    gap: var(--space-1);
+    padding: var(--space-2);
+  }
+
+  .sidebar__head,
+  .sidebar__foot {
+    display: none;
+  }
+
+  .nav-item {
+    flex: none;
+    padding: 0 var(--space-3);
+  }
+}
+
 /* Reduced-motion: transitions on shell chrome follow the global rule in
    styles.css; nothing shell-specific animates. */
