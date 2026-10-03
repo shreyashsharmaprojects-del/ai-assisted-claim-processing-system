@@ -2,7 +2,8 @@ import { Routes } from '@angular/router';
 import { claimantGuard, internalGuard, policyDetailGuard, supervisorGuard } from './auth/auth.guard';
 
 export const routes: Routes = [
-  { path: '', loadComponent: () => import('./home/home').then((m) => m.Home) },
+  { path: '', loadComponent: () => import('./landing/landing').then((m) => m.Landing) },
+  { path: 'home', loadComponent: () => import('./home/home').then((m) => m.Home) },
   {
     path: 'claim/new',
     canActivate: [claimantGuard],

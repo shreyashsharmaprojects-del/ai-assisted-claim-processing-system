@@ -1,0 +1,372 @@
+<div class="landing" data-testid="landing">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <span class="brand">
+        <span class="brand-mark">OpenClaimFlow</span>
+        <span class="brand-sub">claims</span>
+      </span>
+      <div class="topbar-right">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          data-testid="landing-signin-top"
+          (click)="signIn()"
+          [disabled]="signingIn()"
+        >
+          Sign in
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="page">
+      <div class="page-head">
+        <p class="eyebrow">Loss management</p>
+        <h1 class="page-title">OpenClaimFlow</h1>
+        <p class="page-sub">
+          OpenClaimFlow is a working claim processing backend, not a CRUD scaffold: a Spring
+          Boot API over PostgreSQL behind an Angular SPA, with a claim lifecycle — filing,
+          routing, staged assessment, an authority gate, and an append-only audit trail — that
+          runs end to end. This page is the system, from service topology to the exact request
+          path a claim takes.
+        </p>
+      </div>
+
+      <div class="lp-entry">
+        <p class="lp-entry-note">A running application with real data — not a mock-up.</p>
+        <button
+          type="button"
+          class="btn btn-primary"
+          data-testid="landing-signin-entry"
+          (click)="signIn()"
+          [disabled]="signingIn()"
+        >
+          Sign in
+        </button>
+        <p class="hint">Demo credentials are available on request — claimant, adjuster, or supervisor roles.</p>
+      </div>
+
+      <section>
+        <h2 class="section-title">Architecture</h2>
+
+        <div class="arch">
+          <div class="tier">
+            <span class="tier-label">Client</span>
+            <span class="node">
+              <b>frontend/</b> &mdash; Angular 22 SPA. <span class="mono">keycloak-js</span>
+              (OIDC/PKCE) + <span class="mono">Intl</span> formatters; route guards split
+              claimant, internal, and supervisor surfaces
+            </span>
+          </div>
+
+          <p class="arrow">HTTPS &middot; <span class="mono">/api</span> &middot; Bearer JWT &darr; &nbsp;&nbsp;|&nbsp;&nbsp; OIDC/PKCE (S256) &rarr; Keycloak</p>
+
+          <div class="tier">
+            <span class="tier-label">Edge / API</span>
+            <span class="node">
+              <b>backend/</b> <span class="port">:8081</span> &mdash; Spring Boot 3 &middot; Java 21.
+              OIDC resource server: validates every JWT against Keycloak; only
+              <span class="mono">GET /api/health</span> and <span class="mono">GET /api/ready</span>
+              are public. In prod, nginx <span class="port">:8080</span> fronts the SPA +
+              <span class="mono">/api</span> proxy and shape-limits
+              <span class="mono">POST /api/claims</span>
+            </span>
+          </div>
+
+          <p class="arrow">in-process &middot; controller &rarr; service &darr;</p>
+
+          <div class="tier tier--stack">
+            <span class="tier-label">Service layer (modules, one JVM)</span>
+            <ul class="node-grid">
+              <li class="node"><b>claim</b> &mdash; FNOL, staged workflow, decision, attachments, privacy</li>
+              <li class="node"><b>assignment</b> &mdash; ClaimAssigner + LoadBalancer (least-loaded)</li>
+              <li class="node"><b>routing</b> &mdash; ClaimClassifier + AuthorityGate (pure fn) + config</li>
+              <li class="node"><b>aging</b> &mdash; AgingPolicy: 3d&rarr;L2, 5d&rarr;supervisor</li>
+              <li class="node"><b>ai</b> &mdash; DeepSeek chat + advisory, rules fallback, validator</li>
+              <li class="node"><b>clause</b> &mdash; policy-clause catalogue (loss-date wording)</li>
+              <li class="node"><b>outbox + notify</b> &mdash; email outbox, in-app, SMS seam</li>
+              <li class="node"><b>audit</b> &mdash; append-only audit_log (V7 trigger)</li>
+              <li class="node node--infra"><b>staff</b> &middot; <b>policy</b> &middot; <b>queue</b> &middot; <b>metrics</b> &mdash; supervisor surfaces</li>
+            </ul>
+          </div>
+
+          <p class="arrow">JDBC &middot; Flyway V1&ndash;V30 &darr; &nbsp;&nbsp;|&nbsp;&nbsp; object key <span class="mono">{{ '{' }}claimId{{ '}' }}/{{ '{' }}uuid{{ '}' }}{{ '{' }}ext{{ '}' }}</span> &darr;</p>
+
+          <div class="tier">
+            <span class="tier-label">Data stores</span>
+            <span class="node">
+              <b>PostgreSQL 16</b> <span class="port">:5432</span> &mdash;
+              <span class="db">claims</span> (dev) + <span class="db">claims_e2e</span> (hermetic E2E)
+              &middot; <b>object storage</b> &mdash; filesystem default, S3 seam
+              (<span class="mono">MinIO</span> <span class="port">:9000</span>) &middot;
+              <b>Keycloak 26</b> <span class="port">:8090</span> &mdash; realm
+              <span class="mono">claims</span>
+            </span>
+          </div>
+
+          <p class="arrow">SMTP &middot; JSON over HTTPS &darr;</p>
+
+          <div class="tier">
+            <span class="tier-label">External</span>
+            <span class="node">
+              <b>Mailpit</b> <span class="port">:1025</span> &mdash; email outbox delivery &middot;
+              <b>DeepSeek</b> &mdash; OpenAI-wire REST (optional; blank key &rarr; rules fallback) &middot;
+              <b>nginx</b> &mdash; IP flood shaping on FNOL
+            </span>
+          </div>
+        </div>
+
+        <h3 class="sub-title">What happens when a claim is filed</h3>
+        <ol class="lp-steps">
+          <li>
+            The claimant files a first notice of loss at
+            <span class="mono">POST /api/claims</span> (multipart: policy number, holder name/email,
+            loss date/location/description, optional <span class="mono">covers</span> JSON, photos). The
+            policy must be <span class="mono">ACTIVE</span> and holder-matched, or the response is the
+            same 404 shape as a missing policy &mdash; no existence signal. A per-claimant rate limit
+            (20 filings / 24h, 429 + <span class="mono">Retry-After</span>) is enforced against the
+            <span class="mono">fnol_submission</span> ledger.
+          </li>
+          <li>
+            On receipt the claim number is issued immediately:
+            <span class="mono">nextval('claim_number_seq')</span> becomes
+            <span class="mono">CLM-000123</span>. A duplicate guard runs <b>before</b> the number
+            is burned &mdash; same policy + loss date + cover set (order-insensitive, amounts
+            ignored) within 24h returns the original number as HTTP 409.
+          </li>
+          <li>
+            The claim is routed and assigned inside the filing transaction.
+            <b>ClaimClassifier</b> maps the product code to a level (L1/L2/L3) from the authority
+            config; <b>ClaimAssigner</b> locks the level's adjusters
+            (<span class="mono">SELECT &hellip; FOR UPDATE</span>) and
+            <b>LoadBalancer</b> picks the least-loaded qualified adjuster (fewest open claims,
+            lowest id on ties). The claim is never observable as <span class="mono">UNASSIGNED</span>;
+            with no eligible adjuster it parks there and logs a warning.
+          </li>
+          <li>
+            The assigned adjuster works a staged workflow &mdash; <span class="mono">REVIEW</span>
+            &rarr; <span class="mono">VERIFICATION</span> &rarr; <span class="mono">DECISION</span>
+            (orthogonal to status) &mdash; via
+            <span class="mono">POST /api/claims/{{ '{' }}n{{ '}' }}/review</span>,
+            <span class="mono">PUT /api/claims/{{ '{' }}n{{ '}' }}/assessment</span> and per-cover verification
+            records. Server-side guardrails reject an assessed amount above the cover's sub-limit,
+            and send-back parks the claim at <span class="mono">NEED_INFO</span> for the claimant.
+          </li>
+          <li>
+            The authority gate &mdash; <b>AuthorityGate</b>, a pure function &mdash; compares the
+            proposed amount to the actor's level limit. Inside the limit the claim closes and a
+            payment row is recorded; above it the claim is re-assigned to the least-loaded L2 or
+            moved to <span class="mono">ESCALATED_SUPERVISOR</span>. No-self-approval is structural:
+            an escalation always leaves the actor's hands. Denials are never authority-gated.
+          </li>
+          <li>
+            Every closure carries a &ge;20-character rationale, and every
+            <span class="mono">REJECTED</span> cover carries one of 7 denial codes
+            (<span class="mono">DenialReason</span>: NOT_COVERED, EXCLUDED_PER_CLAUSE,
+            ABOVE_SUB_LIMIT_EXHAUSTED, INSUFFICIENT_EVIDENCE, DUPLICATE_PRE_EXISTING,
+            FRAUD_SUSPECTED_REFERRAL, OTHER). Validation runs before any write &mdash; a bad body
+            never moves the claim.
+          </li>
+          <li>
+            Concurrent edits are detected, not overwritten: <span class="mono">claim.version</span>
+            (<span class="mono">@Version</span>, V21) makes every money-path write a
+            compare-and-swap, and a stale <span class="mono">expectedVersion</span> returns 409. In
+            parallel, <b>AgingScheduler</b> (03:00, tenant timezone) pushes undecided claims
+            3 days old to L2 and 5 days old to the supervisor; reopening is supervisor-only
+            (<span class="mono">POST /api/claims/{{ '{' }}n{{ '}' }}/reopen</span>, version-checked, rationale
+            required).
+          </li>
+          <li>
+            Every state change appends to <span class="mono">audit_log</span> (V7 DB trigger,
+            append-only &mdash; no edit or delete endpoint exists). Claimant, assignment and decision
+            emails are transactional outbox rows in <span class="mono">email_outbox</span>, written
+            in the same transaction and delivered by a 60-second dispatcher (8 attempts, backoff)
+            so a decision mail is never lost.
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2 class="section-title">Data &amp; identity</h2>
+        <div class="cap-list">
+          <div class="cap">
+            <span class="cap-label">One PostgreSQL 16, schema owned by Flyway</span>
+            <span class="cap-desc">
+              <span class="mono">claims</span> (dev) and <span class="mono">claims_e2e</span>
+              (hermetic E2E) behind V1&ndash;V30 migrations. Migrations are forward-only and
+              immutable &mdash; the audit log has no down-migration.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Keycloak realms and roles scope every surface</span>
+            <span class="cap-desc">
+              Realm <span class="mono">claims</span>; roles claimant, adjuster_l1, adjuster_l2,
+              adjuster_l3, supervisor map to ROLE_* authorities. The SPA authenticates with
+              OIDC/PKCE (S256), silent <span class="mono">check-sso</span> on guarded routes.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">404, never 403</span>
+            <span class="cap-desc">
+              Object-level auth lives in <b>ClaimAccess</b>: a claim is visible to the supervisor
+              or its assigned adjuster (JWT subject &rarr; staff cache). "May not see" becomes a
+              not-found response, so nothing reveals that a claim number exists.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">The claimant visibility wall</span>
+            <span class="cap-desc">
+              Claimant DTOs never carry reserves, internal notes, the assignee, deductible,
+              adjustment, verifier or proposals &mdash; asserted in tests. On closure a claimant
+              sees per-cover decisions, approved amounts and net payable only.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Evidence is validated and pinned</span>
+            <span class="cap-desc">
+              <b>PhotoValidator</b>: count (&le;5) &rarr; content type (image or PDF) &rarr; size
+              (&le;10&nbsp;MB) &rarr; magic bytes (PNG/JPEG/GIF/WEBP/PDF); SHA-256 + size recorded
+              per attachment. Storage sits behind <b>PhotoStorage</b> &mdash; filesystem default, an
+              S3-compatible seam for prod with no code change.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Privacy and 7-year retention</span>
+            <span class="cap-desc">
+              Claimant self-export (<span class="mono">GET /api/privacy/me/export</span>, metadata
+              only &mdash; never bytes), supervisor anonymisation (overwrites listed columns, leaves
+              the audit log untouched), and a report-only retention view
+              (<span class="mono">claims.retention.closed-years=7</span>, no auto-delete).
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">The AI assistant</h2>
+        <div class="cap-list">
+          <div class="cap">
+            <span class="cap-label">Grounded in the claim's own covers and clauses</span>
+            <span class="cap-desc">
+              <span class="mono">GET /api/claims/{{ '{' }}n{{ '}' }}/policy-clauses</span> returns loss-date-selected
+              wording for the product and the claim's opted covers only; the advisory prompt is
+              built from that, not from free-form retrieval.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Answers that cite, validated server-side</span>
+            <span class="cap-desc">
+              <b>AiOutputValidator</b> is strict: the exact cover set, cites restricted to
+              served clause ids, bounded rationale and non-negative payable. A model citing an
+              out-of-scope clause is rejected, never silently trimmed.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Out-of-scope covers excluded before the model sees them</span>
+            <span class="cap-desc">
+              Clause scoping happens in the service (<b>PolicyClauseService.forClaim</b>), so covers
+              the claim does not carry never reach the panel or the prompt.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Rules-only fallback, not a failure</span>
+            <span class="cap-desc">
+              With <span class="mono">DEEPSEEK_API_KEY</span> blank (or a provider error) the client
+              fails closed and <b>CoverageRules</b> serves a deterministic DEGRADED advisory
+              (waiting periods &rarr; needs-more-info, sub-limit caps payable, co-pay chains). The
+              outcome is recorded &mdash; COMPLETED / DEGRADED / FAILED &mdash; and deduped per
+              (claim, version). Advisory only: no decision path branches on it.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="section-title">Decisions, not just features</h2>
+        <div class="cap-list">
+          <div class="cap">
+            <span class="cap-label">A monolith with module boundaries, not microservices</span>
+            <span class="cap-desc">
+              One Spring Boot app, packages enforcing the seams; there is no Kafka &mdash; event
+              delivery is a transactional email outbox. Documented in <span class="mono">docs/decisions.md</span>.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Transactional outbox over fire-and-forget mail</span>
+            <span class="cap-desc">
+              Mail rows commit with the claim; a 60s dispatcher retries (8 attempts, backoff).
+              A decision can never be decided without its email being durably queued.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">The authority gate is a pure function</span>
+            <span class="cap-desc">
+              Exhaustively unit-tested without a database; no-self-approval is structural, not an
+              extra check.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Optimistic locking over silent overwrites</span>
+            <span class="cap-desc">
+              <span class="mono">@Version</span> + expectedVersion compare-and-swap turn a
+              concurrent edit into a 409 conflict banner (V3 S5 in <span class="mono">docs/decisions.md</span>).
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Filesystem-first storage with an S3 seam</span>
+            <span class="cap-desc">
+              <span class="mono">claims.storage.backend</span> flips the bean; zero-dependency SigV4
+              for S3, object keys portable across backends.
+            </span>
+          </div>
+          <div class="cap">
+            <span class="cap-label">Degrade-honest AI</span>
+            <span class="cap-desc">
+              A blank API key is a designed DEGRADED state, never a thrown error; the key is
+              never written to files, logs or audit rows.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <p class="stack">
+        Angular 22 &middot; TypeScript &middot; Spring Boot 3 (Java 21) &middot; PostgreSQL 16 &middot;
+        Flyway (30 migrations) &middot; Keycloak 26 (OIDC/PKCE) &middot; Playwright &middot;
+        299 backend tests &middot; 18 Playwright specs
+      </p>
+
+      <div class="cta">
+        <button
+          type="button"
+          class="btn btn-primary"
+          data-testid="landing-signin"
+          (click)="signIn()"
+          [disabled]="signingIn()"
+        >
+          Sign in
+        </button>
+        <p class="hint">Demo credentials are available on request — claimant, adjuster, or supervisor roles.</p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <span>
+      Made by
+      <a
+        href="https://github.com/shreyashsharmaprojects-del"
+        target="_blank"
+        rel="noopener"
+        title="GitHub — shreyashsharmaprojects-del"
+        >Shreyash Sharma</a
+      >
+      ·
+      <a href="https://www.linkedin.com/in/shreyash-sharma-908b741a9" target="_blank" rel="noopener"
+        >LinkedIn</a
+      >
+      ·
+      <a href="mailto:shreyashms2501@gmail.com">shreyashms2501@gmail.com</a>
+    </span>
+  </footer>
+</div>

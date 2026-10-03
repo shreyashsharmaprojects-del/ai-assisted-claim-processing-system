@@ -1,0 +1,470 @@
+/*
+ * OpenClaimFlow — public pre-login landing screen.
+ *
+ * A calm, dense, workmanlike "information console": hierarchy comes from type
+ * scale, weight and spacing; colour is reserved for meaning (one accent for
+ * links / focus / the primary action). The token block below maps the shared
+ * front-page standard onto THIS app's own design system (src/styles.css,
+ * docs/ui-doctrine.md) — cool-slate ramp, Inter, corporate blue #0056B3 —
+ * rather than importing another app's palette.
+ *
+ * Everything is scoped to this component: the tokens live on :host and the
+ * remaining rules are component-scoped by Angular's emulated encapsulation, so
+ * the app's global stylesheet is untouched. The two class names that also exist
+ * globally — .page and .btn — are restated here with the spec's values so they
+ * win inside this component.
+ */
+
+:host {
+  color-scheme: light;
+
+  /* ---- Tokens: this app's OWN enterprise design system ----
+   * Source of truth: src/styles.css + docs/ui-doctrine.md (cool-slate ramp,
+   * Inter, corporate blue). The shared front-page standard governs structure
+   * and density, not another app's palette — a landing that contradicts the
+   * app behind it reads as two different products. */
+  --bg: var(--surface-tint);         /* --gray-50  #F8FAFC */
+  --surface: var(--surface-default); /* --gray-0   #FFFFFF */
+  --surface-2: var(--gray-100);      /* #F1F5F9 */
+  --ink: var(--text-primary);        /* --gray-900 #0F172A */
+  --ink-2: var(--text-secondary);    /* --gray-600 #475569 */
+  --muted: var(--text-tertiary);     /* --gray-500 #64748B */
+  --faint: var(--text-disabled);     /* --gray-400 #94A3B8 */
+  --line: var(--border-default);     /* --gray-200 #E2E8F0 */
+  --line-2: var(--border-strong);    /* --gray-300 #CBD5E1 */
+
+  /* the one accent — links, focus, the primary action */
+  --accent: var(--accent-600);       /* #0056B3 */
+  --accent-strong: var(--accent-700);/* #004A94 */
+  --on-accent: var(--text-on-accent);
+
+  /* meaning colours */
+  --credit: var(--status-success-fg);
+  --credit-bg: var(--status-success-bg);
+  --debit: var(--status-danger-fg);
+  --debit-bg: var(--status-danger-bg);
+  --warn: var(--status-warning-fg);
+  --warn-bg: var(--status-warning-bg);
+
+  --radius: var(--radius-md);       /* 4px */
+  --shadow: var(--shadow-flat);     /* none — doctrine §2: static panels are border-only */
+
+  --sans: var(--font-sans);
+  --mono: var(--font-mono);
+
+  /* Self-contained page: fill the shell's content column with the paper tone. */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+/* ---- top bar --------------------------------------------------------------- */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0 16px;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--ink);
+  margin-right: auto;
+}
+
+.brand-mark {
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- layout ---------------------------------------------------------------- */
+.main {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.page {
+  display: block;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 24px 16px 56px;
+  width: 100%;
+}
+
+.page-head {
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 1.375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.page-sub {
+  font-size: 0.875rem;
+  color: var(--muted);
+  max-width: 64ch;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin: 0 0 6px;
+}
+
+/* ---- entry block (primary action, right after the lede) --------------------- */
+.lp-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.lp-entry-note {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  margin-bottom: 2px;
+}
+
+.lp-entry .hint {
+  margin-top: 0;
+}
+
+.section-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 24px 0 8px;
+}
+
+/* ---- architecture ---------------------------------------------------------- */
+.arch {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.tier {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tier-label {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.node {
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.node b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.node-grid {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node-grid .node {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.node--infra {
+  grid-column: 1 / -1;
+}
+
+.port,
+.mono {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--ink);
+}
+
+.db {
+  display: inline-block;
+  margin-left: 4px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  padding: 0 5px;
+}
+
+.arrow {
+  margin: 8px 0;
+  padding-left: 12px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sub-title {
+  margin: 24px 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.lp-steps {
+  margin: 0;
+  padding-left: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.lp-steps li {
+  margin-bottom: 10px;
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.lp-steps li::marker {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.lp-steps b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---- capability list -------------------------------------------------------- */
+.cap-list {
+  border-top: 1px solid var(--line);
+}
+
+.cap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cap-label {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.cap-desc {
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+/* ---- technology line + call to action --------------------------------------- */
+.stack {
+  margin: 24px 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.cta {
+  margin-top: 24px;
+}
+
+.cta .hint {
+  margin-top: 8px;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ---- buttons --------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: auto;
+  padding: 8px 14px;
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--line-2);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 0.8125rem;
+}
+
+/* ---- footer ----------------------------------------------------------------- */
+.footer {
+  border-top: 1px solid var(--line);
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.footer a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.footer a:hover {
+  color: var(--ink);
+}
+
+/* ---- responsive ------------------------------------------------------------- */
+@media (min-width: 640px) {
+  .page {
+    padding: 32px 24px 64px;
+  }
+
+  .node-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .cap {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 24px;
+  }
+
+  .cap-label {
+    flex: 0 0 340px;
+  }
+
+  .cap-desc {
+    flex: 1 1 auto;
+  }
+}
+
+@media (min-width: 960px) {
+  .tier {
+    padding: 14px 16px;
+  }
+}

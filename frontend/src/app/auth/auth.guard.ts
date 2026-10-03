@@ -13,7 +13,7 @@ export const claimantGuard: CanActivateFn = async () => {
   const router = inject(Router);
   const authenticated = await ensureAuthenticated();
   if (!authenticated || !hasRole('claimant')) {
-    await router.navigate(['']);
+    await router.navigate(['/home']);
     return false;
   }
   return true;
@@ -25,7 +25,7 @@ export const internalGuard: CanActivateFn = async () => {
   const authenticated = await ensureAuthenticated();
   const internalRoles = ['adjuster_l1', 'adjuster_l2', 'adjuster_l3', 'supervisor'];
   if (!authenticated || !internalRoles.some(hasRole)) {
-    await router.navigate(['']);
+    await router.navigate(['/home']);
     return false;
   }
   return true;
@@ -40,7 +40,7 @@ export const policyDetailGuard: CanActivateFn = async () => {
   const authenticated = await ensureAuthenticated();
   const allowedRoles = ['claimant', 'adjuster_l1', 'adjuster_l2', 'adjuster_l3', 'supervisor'];
   if (!authenticated || !allowedRoles.some(hasRole)) {
-    await router.navigate(['']);
+    await router.navigate(['/home']);
     return false;
   }
   return true;
@@ -51,7 +51,7 @@ export const supervisorGuard: CanActivateFn = async () => {
   const router = inject(Router);
   const authenticated = await ensureAuthenticated();
   if (!authenticated || !hasRole('supervisor')) {
-    await router.navigate(['']);
+    await router.navigate(['/home']);
     return false;
   }
   return true;
