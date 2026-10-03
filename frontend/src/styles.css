@@ -858,6 +858,24 @@ section.group .group__title {
 .table-scroll {
   overflow-x: auto;
   position: relative;
+  /* Smooth momentum scroll on touch + a thin visible scrollbar so a
+     horizontally scrollable table advertises itself (doctrine §9). */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gray-300) transparent;
+}
+
+.table-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--gray-300);
+  border-radius: var(--radius-full);
+}
+
+.table-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 table.data-table {
@@ -1371,4 +1389,52 @@ pre.code-block {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================================
+   Mobile (≤720px) — the signed-in application on a phone.
+   Additive: desktop is untouched above this width.
+   ============================================================ */
+
+@media (max-width: 720px) {
+  /* More content room: 16px page gutters instead of 24px. */
+  .page {
+    padding: var(--space-4);
+  }
+
+  .page-banner {
+    padding: var(--space-4);
+  }
+
+  /* Stat tiles / banner actions stack full-width instead of squeezing
+     two-per-row with a 24px gap. */
+  .page-banner__aside {
+    gap: var(--space-3);
+    width: 100%;
+  }
+
+  .panel__header,
+  .panel__body,
+  .panel__body--tight {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  /* Touch targets: primary/action controls reach 44px (doctrine §8).
+     Row-action .btn--sm stays compact for dense tables. */
+  .btn:not(.btn--sm) {
+    height: 44px;
+  }
+
+  input.input:not(.input--sm),
+  select.input:not(.input--sm) {
+    height: 44px;
+  }
+
+  /* Action bars wrap instead of overflowing a phone viewport. */
+  .form-actions,
+  .footer-actions,
+  .button-row {
+    flex-wrap: wrap;
+  }
 }
